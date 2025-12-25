@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import os
 import re
 import json
@@ -9,16 +11,21 @@ from datetime import datetime
 # ReAct
 # Reasoning And Acting
 
+# ========================= 任务描述 =========================
+# 1. 写一个贪吃蛇游戏，使用 HTML、CSS、JavaScript 实现，代码分别放在不同的文件中
+
+
 # ======================== 基础配置 ========================
-# model = "deepseek-ai/deepseek-v3.1-terminus"
+
 model = "Qwen/Qwen3-235B-A22B-Instruct-2507"
 client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY"),
+    api_key=os.getenv("SILICONFLOW_API_KEY"),
     base_url="https://api.siliconflow.cn/v1",
 )
 
 operating_system = "macOS"
 work_dir = os.path.join(os.path.dirname(__file__), "workspace3")
+work_dir = work_dir.replace('\\', '/') # 规范化路径，确保在 Windows 上使用正确的反斜杠
 debug_mode = True
 
 
@@ -55,7 +62,7 @@ class ReadFileTool(Tool):
         self.set_metadata(name, description, parameters)
 
     def run(self, parameters):
-        with open(parameters["path"], "r") as file:
+        with open(parameters["path"], "r", encoding="utf-8") as file:
             return file.read()
 
 
@@ -83,7 +90,7 @@ class WriteFileTool(Tool):
     def run(self, parameters):
         if not self.validate_parameters(parameters):
             return f"文件{parameters['path']}路径错误"
-        with open(parameters["path"], "w") as file:
+        with open(parameters["path"], "w", encoding="utf-8") as file:
             file.write(parameters["content"])
         return f"文件{parameters['path']}写入成功"
 
@@ -171,6 +178,24 @@ class RenameFileTool(Tool):
             os.rename(parameters["path"], parameters["new_name"])
             return f"文件{parameters['path']}重命名成功"
 
+class CreateFolderTool(Tool):
+    def __init__(self):
+        super().__init__()
+        name = self.__class__.__name__
+        description = "创建文件夹"
+        parameters = {
+            "type": "object",
+            "properties": {"path": {"type": "string", "description": "文件夹路径"}},
+        }
+        self.set_metadata(name, description, parameters)
+
+    def run(self, parameters):
+        if not os.path.exists(parameters["path"]):
+            os.makedirs(parameters["path"])
+            return f"文件夹{parameters['path']}创建成功"
+        else:
+            return f"文件夹{parameters['path']}已存在"
+
 
 class ListFilesTool(Tool):
     def __init__(self):
@@ -197,6 +222,7 @@ tools = [
     CreateFileTool(),
     RenameFileTool(),
     ListFilesTool(),
+    CreateFolderTool(),
 ]
 
 
@@ -314,12 +340,15 @@ def chat(task_message):
             "\n-------------------------------- 流式输出开始 --------------------------------"
         )
         for chunk in stream_response:
+
             if chunk.choices[0].delta.reasoning_content:
                 print(chunk.choices[0].delta.reasoning_content, end="", flush=True)
+
             if chunk.choices[0].delta.content:
                 chunk_content = chunk.choices[0].delta.content
                 content += chunk_content
                 print(chunk_content, end="", flush=True)
+
         print(
             "\n-------------------------------- 流式输出结束 --------------------------------\n"
         )
@@ -403,7 +432,6 @@ def chat(task_message):
             raise RuntimeError("模型未输出 <action> 或 <final_answer>")
 
 
-# 写一个贪吃蛇游戏，使用 HTML、CSS、JavaScript 实现，代码分别放在不同的文件中
 if __name__ == "__main__":
     try:
         while True:
