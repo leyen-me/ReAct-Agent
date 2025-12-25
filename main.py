@@ -1,14 +1,16 @@
 import os
 import re
 import json
-from openai import OpenAI
+from openai import OpenAI, Stream
+from openai.types.chat import ChatCompletionChunk
 
 # ReAct
 # Reasoning And Acting
 
 # ======================== 基础配置 ========================
 # model = "deepseek-ai/deepseek-v3.1-terminus"
-model = "Pro/deepseek-ai/DeepSeek-V3.2"
+# model = "Pro/deepseek-ai/DeepSeek-V3.2"
+model = "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B"
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
     base_url="https://api.siliconflow.cn/v1",
@@ -272,8 +274,25 @@ def chat(task_message):
                 f"-------------------------------- {chat_count} --------------------------------"
             )
             print(json.dumps(messages, indent=4, ensure_ascii=False))
-        response = client.chat.completions.create(model=model, messages=messages)
-        content = response.choices[0].message.content
+        
+        # 使用流式响应
+        stream_response: Stream[ChatCompletionChunk] = client.chat.completions.create(
+            model=model, 
+            messages=messages,
+            stream=True
+        )
+        
+        content = ""
+        print("\n-------------------------------- 流式输出开始 --------------------------------")
+        for chunk in stream_response:
+            if chunk.choices[0].delta.reasoning_content:
+                print(chunk.choices[0].delta.reasoning_content, end="", flush=True)
+            if chunk.choices[0].delta.content:
+                chunk_content = chunk.choices[0].delta.content
+                content += chunk_content
+                print(chunk_content, end="", flush=True)
+        print("\n-------------------------------- 流式输出结束 --------------------------------\n")
+        
         if "<thought>" in content:
             thought = re.search(r"<thought>(.*?)</thought>", content, re.DOTALL)
             thought = thought.group(1)
@@ -323,8 +342,14 @@ def chat(task_message):
 
 
 # 写一个贪吃蛇游戏，使用 HTML、CSS、JavaScript 实现，代码分别放在不同的文件中
-while True:
-    task_message = input("请输入任务，输入 exit 退出: ")
-    if task_message == "exit":
-        break
-    chat(task_message)
+if __name__ == "__main__":
+    try:
+        while True:
+            task_message = input("请输入任务，输入 exit 退出: ")
+            if task_message == "exit":
+                break
+            chat(task_message)
+    except EOFError:
+        print("\n程序结束")
+    except KeyboardInterrupt:
+        print("\n程序被用户中断")
