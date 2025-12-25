@@ -215,6 +215,66 @@ class ListFilesTool(Tool):
             return f"目录{parameters['path']}不存在"
 
 
+class EditFileTool(Tool):
+    def __init__(self):
+        super().__init__()
+        name = self.__class__.__name__
+        description = "编辑文件内容（部分替换），只替换匹配的文本部分，保留文件其他内容不变。这是推荐的文件编辑方式，类似于 Cursor 的部分替换功能。"
+        parameters = {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "文件路径"},
+                "old_string": {"type": "string", "description": "要替换的原始文本（必须精确匹配，包括空格、换行等）"},
+                "new_string": {"type": "string", "description": "替换后的新文本"},
+                "replace_all": {"type": "boolean", "description": "是否替换所有匹配项（默认 false，只替换第一个匹配项）", "default": False},
+            },
+            "required": ["path", "old_string", "new_string"],
+        }
+        self.set_metadata(name, description, parameters)
+
+    def validate_parameters(self, parameters):
+        # 只能是 workspace 目录下的文件
+        if not parameters["path"].startswith(work_dir):
+            return False
+        return True
+
+    def run(self, parameters):
+        if not self.validate_parameters(parameters):
+            return f"文件{parameters['path']}路径错误"
+        
+        if not os.path.exists(parameters["path"]):
+            return f"文件{parameters['path']}不存在"
+        
+        try:
+            # 读取原文件内容
+            with open(parameters["path"], "r", encoding="utf-8") as file:
+                content = file.read()
+            
+            old_string = parameters["old_string"]
+            new_string = parameters["new_string"]
+            replace_all = parameters.get("replace_all", False)
+            
+            # 检查 old_string 是否存在于文件中
+            if old_string not in content:
+                return f"错误：文件中未找到要替换的文本。请确保 old_string 与文件中的内容完全匹配（包括空格、换行、缩进等）。"
+            
+            # 执行替换
+            if replace_all:
+                new_content = content.replace(old_string, new_string)
+                count = content.count(old_string)
+            else:
+                new_content = content.replace(old_string, new_string, 1)
+                count = 1
+            
+            # 写回文件
+            with open(parameters["path"], "w", encoding="utf-8") as file:
+                file.write(new_content)
+            
+            return f"文件{parameters['path']}编辑成功，已替换 {count} 处匹配的文本"
+        except Exception as e:
+            return f"编辑文件失败: {e}"
+
+
 tools = [
     ReadFileTool(),
     WriteFileTool(),
@@ -223,6 +283,7 @@ tools = [
     RenameFileTool(),
     ListFilesTool(),
     CreateFolderTool(),
+    EditFileTool(),
 ]
 
 
@@ -254,28 +315,15 @@ def get_system_prompt(tools_dict, operating_system, work_dir):
 
 例子 2（复杂任务，需要反思和总结）:
 
-<question>埃菲尔铁塔有多高？</question>
-<thought>我需要找到埃菲尔铁塔的高度。可以使用搜索工具。</thought>
-<action>GetHeightTool().run({{'query': '埃菲尔铁塔'}})</action>
-<observation>埃菲尔铁塔的高度约为330米（包含天线）。</observation>
-<thought>搜索结果显示了高度。我已经得到答案了。</thought>
-<final_answer>埃菲尔铁塔的高度约为330米。</final_answer>
-<reflection>这个任务比较简单直接，通过一次搜索就得到了准确答案。工具使用恰当，没有遇到困难。</reflection>
-
-⸻
-
-例子 3（复杂任务，需要反思和总结）:
-
-<question>帮我找一个简单的番茄炒蛋食谱，并看看家里的冰箱里有没有西红柿。</question>
-<thought>这个任务分两步。第一步，找到番茄炒蛋的食谱。第二步，检查冰箱里是否有西红柿。我先用 FindRecipeTool().run 工具找食谱。</thought>
-<action>FindRecipeTool().run({{'dish': '番茄炒蛋'}})</action>
-<observation>简单的番茄炒蛋食谱：将2个鸡蛋打散，2个番茄切块。热油，先炒鸡蛋，盛出。再热油，炒番茄至软烂，加入鸡蛋，放盐调味即可。</observation>
-<thought>好的，我已经有食谱了。食谱需要西红柿。现在我需要用 CheckFridgeTool().run 工具看看冰箱里有没有西红柿。</thought>
-<action>CheckFridgeTool().run({{'item': '西红柿'}})</action>
-<observation>冰箱检查结果：有3个西红柿。</observation>
-<thought>我找到了食谱，并且确认了冰箱里有西红柿。可以回答问题了。</thought>
-<final_answer>简单的番茄炒蛋食谱是：鸡蛋打散，番茄切块。先炒鸡蛋，再炒番茄，混合后加盐调味。冰箱里有3个西红柿。</final_answer>
-<reflection>任务顺利完成，分两步执行很合理。食谱查找和冰箱检查都成功完成，信息完整。</reflection>
+<question>将 script.js 中的函数名 hello 改为 greet</question>
+<thought>需要先读取文件查看内容，然后使用 EditFileTool 替换函数名。</thought>
+<action>ReadFileTool().run({{'path': '{work_dir}/script.js'}})</action>
+<observation>function hello() {{}}</observation>
+<thought>使用 EditFileTool 替换函数名。</thought>
+<action>EditFileTool().run({{'path': '{work_dir}/script.js', 'old_string': 'function hello()', 'new_string': 'function greet()'}})</action>
+<observation>文件{work_dir}/script.js编辑成功，已替换 1 处匹配的文本</observation>
+<final_answer>已成功将函数名从 hello 改为 greet。</final_answer>
+<reflection>先读取文件确认内容，再使用 EditFileTool 进行部分替换，避免了全文重写。</reflection>
 
 ⸻
 
@@ -291,9 +339,14 @@ action 规范：
 
 - 使用文件类型工具时，path 参数必须使用绝对路径
 - 使用文件类型工具时，path 的路径必须在当前工作目录下
-- 以下是一个好的例子：
+- **重要**：编辑现有文件时，优先使用 EditFileTool 进行部分替换，而不是 WriteFileTool 全文替换
+- EditFileTool 可以只替换文件中的特定部分，保留其他内容不变，类似于 Cursor 的部分替换功能
+- 使用 EditFileTool 时，old_string 必须与文件中的内容完全匹配（包括空格、换行、缩进等）
+- 以下是一些好的例子：
 
 <action>WriteFileTool().run({{'path': '{work_dir}/test.txt', 'content': 'xxx\\nxxx'}})</action>
+
+<action>EditFileTool().run({{'path': '{work_dir}/test.py', 'old_string': 'def hello():\\n    print(\\\"old\\\")', 'new_string': 'def hello():\\n    print(\\\"new\\\")'}})</action>
 
 ⸻
 
