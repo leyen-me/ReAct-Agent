@@ -1,0 +1,135 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #1a1a2e, #16213e);
+    color: #fff;
+    padding: 20px;
+}
+
+.game-container {
+    text-align: center;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    padding: 30px;
+    border-radius: 20px;
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5);
+    max-width: 500px;
+    width: 100%;
+}
+
+h1 {
+    margin-bottom: 20px;
+    color: #0fce7c;
+    font-size: 2.8rem;
+    text-shadow: 0 0 10px #0fce7c;
+}
+
+.score {
+    font-size: 1.5rem;
+    margin-bottom: 20px;
+    color: #ffdd40;
+}
+
+#gameCanvas {
+    border: 3px solid #0fce7c;
+    border-radius: 10px;
+    background-color: #000;
+    display: block;
+    margin: 0 auto 25px;
+    box-shadow: 0 0 20px rgba(15, 206, 124, 0.5);
+}
+
+.controls {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 25px;
+}
+
+button {
+    padding: 12px 25px;
+    font-size: 1.1rem;
+    border: none;
+    border-radius: 50px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+#startBtn {
+    background: #0fce7c;
+    color: #000;
+}
+
+#startBtn:hover {
+    background: #0ab369;
+    box-shadow: 0 0 15px #0fce7c;
+}
+
+#pauseBtn {
+    background: #ffaa00;
+    color: #000;
+}
+
+#pauseBtn:hover {
+    background: #e69500;
+    box-shadow: 0 0 15px #ffaa00;
+}
+
+#restartBtn {
+    background: #ff4757;
+    color: #000;
+}
+
+#restartBtn:hover {
+    background: #ff3742;
+    box-shadow: 0 0 15px #ff4757;
+}
+
+.instructions {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 20px;
+    border-radius: 10px;
+    text-align: left;
+    font-size: 1.1rem;
+    line-height: 1.6;
+}
+
+.instructions p {
+    margin-bottom: 10px;
+}
+
+.instructions strong {
+    color: #0fce7c;
+}
+
+@media (max-width: 480px) {
+    .game-container {
+        padding: 20px;
+    }
+    h1 {
+        font-size: 2.2rem;
+    }
+    #gameCanvas {
+        width: 95%;
+        height: auto;
+    }
+    .controls {
+        flex-direction: column;
+        align-items: center;
+    }
+    button {
+        width: 80%;
+    }
+}
