@@ -10,7 +10,8 @@ from openai.types.chat import ChatCompletionChunk
 # ======================== 基础配置 ========================
 # model = "deepseek-ai/deepseek-v3.1-terminus"
 # model = "Pro/deepseek-ai/DeepSeek-V3.2"
-model = "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B"
+# model = "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B"
+model = "Qwen/Qwen2.5-7B-Instruct"
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
     base_url="https://api.siliconflow.cn/v1",
@@ -197,41 +198,19 @@ class SummaryTool(Tool):
         parameters = {
             "type": "object",
             "properties": {
-                "task": {"type": "string", "description": "任务描述"},
-                "process": {"type": "string", "description": "执行过程"},
-                "result": {"type": "string", "description": "最终结果"},
-                "reflection": {"type": "string", "description": "反思内容"},
+                "content": {"type": "string", "description": "总结内容"},
             },
         }
         self.set_metadata(name, description, parameters)
 
     def run(self, parameters):
-        # 生成总结报告
-        summary_content = f"""# 任务总结报告
-
-## 任务描述
-{parameters['task']}
-
-## 执行过程
-{parameters['process']}
-
-## 最终结果
-{parameters['result']}
-
-## 反思与改进
-{parameters['reflection']}
-
-## 生成时间
-{os.path.basename(__file__)} 于 {os.path.dirname(__file__)}
-"""
-        
         # 生成文件名
-        timestamp = re.sub(r'[^a-zA-Z0-9]', '_', parameters['task'][:50])
+        timestamp = re.sub(r"[^a-zA-Z0-9]", "_", parameters["task"][:50])
         filename = f"summary_{timestamp}.md"
         filepath = os.path.join(work_dir, filename)
         with open(filepath, "w", encoding="utf-8") as file:
-            file.write(summary_content)
-        
+            file.write(parameters["content"])
+
         return f"总结报告已生成: {filepath}"
 
 
@@ -249,9 +228,11 @@ tools = [
 def get_system_prompt(tools_dict, operating_system, work_dir):
     return f"""你需要解决一个问题。为此，你需要将问题分解为多个步骤。对于每个步骤，首先使用 <thought> 思考要做什么，然后使用可用工具之一决定一个 <action>。接着，你将根据你的行动从环境/工具中收到一个 <observation>。持续这个思考和行动的过程，直到你有足够的信息来提供 <final_answer>。
 
-在提供最终答案后，你需要进行反思和总结：
+在提供最终答案后，对于复杂的任务（涉及文件操作、多步骤执行等），你需要进行反思和总结：
 1. 使用 <reflection> 标签进行任务反思
 2. 使用 <summary> 标签生成总结报告
+
+对于简单的问候或闲聊任务，不需要反思和总结。
 
 所有步骤请严格使用以下 XML 标签格式输出：
 - <question> 用户问题
@@ -264,11 +245,22 @@ def get_system_prompt(tools_dict, operating_system, work_dir):
 
 ⸻
 
-例子 1:
+例子 1（简单任务，不需要反思和总结）:
+
+<question>你好</question>
+<thought>这是一个简单的问候，不需要使用工具，直接回复即可。</thought>
+<final_answer>你好！有什么可以帮助你的吗？</final_answer>
+
+⸻
+
+例子 2（复杂任务，需要反思和总结）:
 
 <question>埃菲尔铁塔有多高？</question>
 <thought>我需要找到埃菲尔铁塔的高度。可以使用搜索工具。</thought>
-<action>GetHeightTool().run({{'query': '埃菲尔铁塔'}})</action>
+<action>
+_query_string = "埃菲尔铁塔"
+GetHeightTool().run({{'query': _query_string}})
+</action>
 <observation>埃菲尔铁塔的高度约为330米（包含天线）。</observation>
 <thought>搜索结果显示了高度。我已经得到答案了。</thought>
 <final_answer>埃菲尔铁塔的高度约为330米。</final_answer>
@@ -277,14 +269,20 @@ def get_system_prompt(tools_dict, operating_system, work_dir):
 
 ⸻
 
-例子 2:
+例子 3（复杂任务，需要反思和总结）:
 
 <question>帮我找一个简单的番茄炒蛋食谱，并看看家里的冰箱里有没有西红柿。</question>
 <thought>这个任务分两步。第一步，找到番茄炒蛋的食谱。第二步，检查冰箱里是否有西红柿。我先用 FindRecipeTool().run 工具找食谱。</thought>
-<action>FindRecipeTool().run({{'dish': '番茄炒蛋'}})</action>
+<action>
+_dish = "番茄炒蛋"
+FindRecipeTool().run({{'dish': _dish}})
+</action>
 <observation>简单的番茄炒蛋食谱：将2个鸡蛋打散，2个番茄切块。热油，先炒鸡蛋，盛出。再热油，炒番茄至软烂，加入鸡蛋，放盐调味即可。</observation>
 <thought>好的，我已经有食谱了。食谱需要西红柿。现在我需要用 CheckFridgeTool().run 工具看看冰箱里有没有西红柿。</thought>
-<action>CheckFridgeTool().run({{'item': '西红柿'}})</action>
+<action>
+_item = "西红柿"
+CheckFridgeTool().run({{'item': _item}})
+</action>
 <observation>冰箱检查结果：有3个西红柿。</observation>
 <thought>我找到了食谱，并且确认了冰箱里有西红柿。可以回答问题了。</thought>
 <final_answer>简单的番茄炒蛋食谱是：鸡蛋打散，番茄切块。先炒鸡蛋，再炒番茄，混合后加盐调味。冰箱里有3个西红柿。</final_answer>
@@ -296,9 +294,26 @@ def get_system_prompt(tools_dict, operating_system, work_dir):
 请严格遵守：
 - 你每次回答都必须包括两个标签，第一个是 <thought>，第二个是 <action> 或 <final_answer>
 - 输出 <action> 后立即停止生成，等待真实的 <observation>，擅自生成 <observation> 将导致错误
-- 多行参数请使用Python的三引号多行字符串来表示，如：<action>WriteFileTool().run({{'path': '{work_dir}/test.txt', 'content': \"\"\"xxx\"\"\"}})</action>
-- 使用文件类型工具时，path 参数必须使用绝对路径，如：<action>WriteFileTool().run({{'path': '{work_dir}/test.txt', 'content': 'xxx'}})</action>
-- 在 <final_answer> 后必须添加 <reflection> 和 <summary> 标签
+- 对于复杂任务，在 <final_answer> 后需要添加 <reflection> 和 <summary> 标签
+- 对于简单问候或闲聊任务，不需要反思和总结
+
+⸻
+
+action 规范：
+
+- 参数都提取为单独的变量
+- 使用文件类型工具时，path 参数必须使用绝对路径
+- 参数涉及到多行内容时，例如 html_content，请使用\n代替换行符，包裹的内容中如果存在单引号，请注意使用反斜杠转义
+- action 标签中的代码必须使用 Python 格式，严格符合PEP 8规范，确保代码可执行
+- 参数变量名必须以 _ 开头，避免与全局变量名冲突
+- 以下是一个好的例子：
+
+<action>
+_path = '{work_dir}/test.txt'
+_content = 'xxx\\nxxx'
+WriteFileTool().run({{'path': _path, 'content': _content}})
+</action>
+
 ⸻
 
 本次任务可用工具：
@@ -325,11 +340,7 @@ def chat(task_message):
     global messages
     global chat_count
     messages.append({"role": "user", "content": f"<question>{task_message}</question>"})
-    
-    # 记录任务执行过程
-    task_process = []
-    task_result = ""
-    
+
     while True:
         chat_count += 1
         if debug_mode:
@@ -337,16 +348,16 @@ def chat(task_message):
                 f"-------------------------------- {chat_count} --------------------------------"
             )
             print(json.dumps(messages, indent=4, ensure_ascii=False))
-        
+
         # 使用流式响应
         stream_response: Stream[ChatCompletionChunk] = client.chat.completions.create(
-            model=model, 
-            messages=messages,
-            stream=True
+            model=model, messages=messages, stream=True
         )
-        
+
         content = ""
-        print("\n-------------------------------- 流式输出开始 --------------------------------")
+        print(
+            "\n-------------------------------- 流式输出开始 --------------------------------"
+        )
         for chunk in stream_response:
             if chunk.choices[0].delta.reasoning_content:
                 print(chunk.choices[0].delta.reasoning_content, end="", flush=True)
@@ -354,8 +365,10 @@ def chat(task_message):
                 chunk_content = chunk.choices[0].delta.content
                 content += chunk_content
                 print(chunk_content, end="", flush=True)
-        print("\n-------------------------------- 流式输出结束 --------------------------------\n")
-        
+        print(
+            "\n-------------------------------- 流式输出结束 --------------------------------\n"
+        )
+
         # 解析各个标签
         if "<thought>" in content:
             thought = re.search(r"<thought>(.*?)</thought>", content, re.DOTALL)
@@ -368,8 +381,7 @@ def chat(task_message):
                 print(
                     "-------------------------------- thought --------------------------------"
                 )
-                task_process.append(f"思考: {thought}")
-                
+
         if "<final_answer>" in content:
             final_answer = re.search(
                 r"<final_answer>(.*?)</final_answer>", content, re.DOTALL
@@ -383,48 +395,48 @@ def chat(task_message):
                 print(
                     "-------------------------------- final_answer --------------------------------"
                 )
-                task_result = final_answer
-                messages.append({"role": "assistant", "content": content})
-                
+                messages.append({"role": "assistant", "content": f"<final_answer>{final_answer}</final_answer>"})
+
                 # 检查是否有反思和总结
                 reflection = ""
                 summary = ""
-                
+
                 if "<reflection>" in content:
-                    reflection_match = re.search(r"<reflection>(.*?)</reflection>", content, re.DOTALL)
+                    reflection_match = re.search(
+                        r"<reflection>(.*?)</reflection>", content, re.DOTALL
+                    )
                     if reflection_match:
                         reflection = reflection_match.group(1)
-                        print("-------------------------------- reflection --------------------------------")
+                        print(
+                            "-------------------------------- reflection --------------------------------"
+                        )
                         print(f"reflection: {reflection}")
-                        print("-------------------------------- reflection --------------------------------")
-                
+                        print(
+                            "-------------------------------- reflection --------------------------------"
+                        )
+
                 if "<summary>" in content:
-                    summary_match = re.search(r"<summary>(.*?)</summary>", content, re.DOTALL)
+                    summary_match = re.search(
+                        r"<summary>(.*?)</summary>", content, re.DOTALL
+                    )
                     if summary_match:
                         summary = summary_match.group(1)
-                        print("-------------------------------- summary --------------------------------")
+                        print(
+                            "-------------------------------- summary --------------------------------"
+                        )
                         print(f"summary: {summary}")
-                        print("-------------------------------- summary --------------------------------")
-                
-                # 如果没有反思和总结，让模型补充
-                if not reflection or not summary:
-                    print("检测到缺少反思和总结，正在补充...")
-                    messages.append({"role": "user", "content": "请补充 <reflection> 和 <summary> 标签"})
-                    continue
-                
-                # 生成总结报告
-                process_text = "\n".join(task_process)
-                summary_tool = SummaryTool()
-                summary_result = summary_tool.run({
-                    "task": task_message,
-                    "process": process_text,
-                    "result": task_result,
-                    "reflection": reflection
-                })
-                print(f"总结报告生成结果: {summary_result}")
-                
+                        print(
+                            "-------------------------------- summary --------------------------------"
+                        )
+
+                    summary_tool = SummaryTool()
+                    summary_result = summary_tool.run({"content": summary})
+                    print(f"总结报告生成结果: {summary_result}")
+                else:
+                    print("简单任务，跳过总结生成")
+
                 break
-                
+
         if "<action>" in content:
             action = re.search(r"<action>(.*?)</action>", content, re.DOTALL)
             if action:
@@ -432,13 +444,21 @@ def chat(task_message):
                 observation = None
                 try:
                     observation = eval(action)
-                    task_process.append(f"操作: {action}")
-                    task_process.append(f"结果: {observation}")
                 except Exception as e:
                     observation = f"执行工具失败: {e}"
-                messages.append({"role": "assistant", "content": content})
+                    print(
+                        "-------------------------------- action error --------------------------------"
+                    )
+                    print(action)
+                    print(
+                        "-------------------------------- action error --------------------------------"
+                    )
+                messages.append({"role": "assistant", "content": f"<action>{action}</action>"})
                 messages.append(
-                    {"role": "user", "content": f"<observation>{observation}</observation>"}
+                    {
+                        "role": "user",
+                        "content": f"<observation>{observation}</observation>",
+                    }
                 )
                 continue
         else:
