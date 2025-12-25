@@ -1,0 +1,146 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+    background: linear-gradient(135deg, #1a1a2e, #16213e);
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+
+.container {
+    text-align: center;
+    background-color: rgba(0, 0, 0, 0.7);
+    padding: 30px;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    max-width: 500px;
+    width: 100%;
+}
+
+h1 {
+    color: #0fcc45;
+    margin-bottom: 20px;
+    font-size: 2.8rem;
+    text-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+canvas {
+    border: 3px solid #0fcc45;
+    border-radius: 10px;
+    background-color: #111;
+    display: block;
+    margin: 0 auto 20px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+}
+
+.score {
+    font-size: 1.8rem;
+    margin-bottom: 20px;
+    color: #ffd700;
+}
+
+.score span {
+    font-weight: bold;
+    color: #0fcc45;
+}
+
+.controls {
+    margin-bottom: 25px;
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.controls button {
+    padding: 12px 25px;
+    font-size: 1.1rem;
+    font-weight: bold;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    min-width: 120px;
+}
+
+#startBtn {
+    background-color: #0fcc45;
+    color: #000;
+}
+
+#startBtn:hover {
+    background-color: #0daa3a;
+    transform: translateY(-3px);
+}
+
+#pauseBtn {
+    background-color: #ffa500;
+    color: #000;
+}
+
+#pauseBtn:hover {
+    background-color: #e69500;
+    transform: translateY(-3px);
+}
+
+#resetBtn {
+    background-color: #ff4444;
+    color: #fff;
+}
+
+#resetBtn:hover {
+    background-color: #dd3333;
+    transform: translateY(-3px);
+}
+
+.instructions {
+    background-color: rgba(255, 255, 255, 0.1);
+    padding: 15px;
+    border-radius: 10px;
+    text-align: left;
+    font-size: 1rem;
+    line-height: 1.6;
+}
+
+.instructions p {
+    margin-bottom: 8px;
+    color: #ccc;
+}
+
+.instructions p:last-child {
+    margin-bottom: 0;
+}
+
+/* Responsive design */
+@media (max-width: 480px) {
+    .container {
+        padding: 20px;
+    }
+    
+    h1 {
+        font-size: 2.2rem;
+    }
+    
+    canvas {
+        width: 95%;
+        height: auto;
+    }
+    
+    .controls {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .controls button {
+        width: 100%;
+        max-width: 200px;
+    }
+}
