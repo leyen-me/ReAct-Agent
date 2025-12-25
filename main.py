@@ -3,6 +3,10 @@
 import os
 import re
 import json
+import subprocess
+import shutil
+import glob
+import fnmatch
 
 from openai import OpenAI, Stream
 from openai.types.chat import ChatCompletionChunk
@@ -19,12 +23,12 @@ from datetime import datetime
 
 model = "Qwen/Qwen3-235B-A22B-Instruct-2507"
 client = OpenAI(
-    api_key=os.getenv("SILICONFLOW_API_KEY"),
+    api_key=os.getenv("OPENAI_API_KEY"),
     base_url="https://api.siliconflow.cn/v1",
 )
 
 operating_system = "macOS"
-work_dir = os.path.join(os.path.dirname(__file__), "workspace3")
+work_dir = os.path.join(os.path.dirname(__file__), "workspace2")
 work_dir = work_dir.replace('\\', '/') # 规范化路径，确保在 Windows 上使用正确的反斜杠
 debug_mode = True
 
@@ -171,12 +175,25 @@ class RenameFileTool(Tool):
     def run(self, parameters):
         if not self.validate_parameters(parameters):
             return f"文件{parameters['path']}路径错误"
-        os.rename(parameters["path"], parameters["new_name"])
+        
         if not os.path.exists(parameters["path"]):
             return f"文件{parameters['path']}不存在"
-        else:
-            os.rename(parameters["path"], parameters["new_name"])
-            return f"文件{parameters['path']}重命名成功"
+        
+        # new_name 应该是完整路径
+        new_path = parameters["new_name"]
+        if not new_path.startswith(work_dir):
+            # 如果 new_name 不是完整路径，则视为相对于原文件目录的新文件名
+            dir_name = os.path.dirname(parameters["path"])
+            new_path = os.path.join(dir_name, parameters["new_name"])
+        
+        if os.path.exists(new_path):
+            return f"目标文件{new_path}已存在"
+        
+        try:
+            os.rename(parameters["path"], new_path)
+            return f"文件{parameters['path']}重命名成功为{new_path}"
+        except Exception as e:
+            return f"重命名文件失败: {e}"
 
 class CreateFolderTool(Tool):
     def __init__(self):
@@ -275,6 +292,293 @@ class EditFileTool(Tool):
             return f"编辑文件失败: {e}"
 
 
+class RunCommandTool(Tool):
+    def __init__(self):
+        super().__init__()
+        name = self.__class__.__name__
+        description = "执行终端命令（如 npm install, python -m pytest, git status 等）。命令会在工作目录下执行。"
+        parameters = {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "description": "要执行的命令（如 'npm install' 或 'python -m pytest'）"},
+                "timeout": {"type": "integer", "description": "命令超时时间（秒），默认 300 秒", "default": 300},
+            },
+            "required": ["command"],
+        }
+        self.set_metadata(name, description, parameters)
+
+    def run(self, parameters):
+        command = parameters["command"]
+        timeout = parameters.get("timeout", 300)
+        
+        try:
+            # 切换到工作目录执行命令
+            result = subprocess.run(
+                command,
+                shell=True,
+                cwd=work_dir,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                encoding="utf-8",
+                errors="replace"
+            )
+            
+            output = {
+                "returncode": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            }
+            
+            if result.returncode == 0:
+                return f"命令执行成功:\n标准输出:\n{result.stdout}\n标准错误:\n{result.stderr}"
+            else:
+                return f"命令执行失败（返回码: {result.returncode}）:\n标准输出:\n{result.stdout}\n标准错误:\n{result.stderr}"
+        except subprocess.TimeoutExpired:
+            return f"命令执行超时（超过 {timeout} 秒）"
+        except Exception as e:
+            return f"执行命令失败: {e}"
+
+
+class SearchInFilesTool(Tool):
+    def __init__(self):
+        super().__init__()
+        name = self.__class__.__name__
+        description = "在文件中搜索文本内容（支持正则表达式）。可以在指定目录下的所有文件中搜索，或仅在特定文件中搜索。"
+        parameters = {
+            "type": "object",
+            "properties": {
+                "search_text": {"type": "string", "description": "要搜索的文本（支持正则表达式）"},
+                "directory": {"type": "string", "description": "要搜索的目录路径（默认工作目录）", "default": work_dir},
+                "file_pattern": {"type": "string", "description": "文件匹配模式（如 '*.py', '*.js'），默认搜索所有文件"},
+                "case_sensitive": {"type": "boolean", "description": "是否区分大小写（默认 false）", "default": False},
+                "use_regex": {"type": "boolean", "description": "是否使用正则表达式（默认 false）", "default": False},
+            },
+            "required": ["search_text"],
+        }
+        self.set_metadata(name, description, parameters)
+
+    def run(self, parameters):
+        search_text = parameters["search_text"]
+        directory = parameters.get("directory", work_dir)
+        file_pattern = parameters.get("file_pattern", "*")
+        case_sensitive = parameters.get("case_sensitive", False)
+        use_regex = parameters.get("use_regex", False)
+        
+        if not os.path.exists(directory):
+            return f"目录{directory}不存在"
+        
+        results = []
+        
+        try:
+            # 遍历目录下的所有文件
+            for root, dirs, files in os.walk(directory):
+                for file in files:
+                    if fnmatch.fnmatch(file, file_pattern):
+                        file_path = os.path.join(root, file)
+                        try:
+                            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                                lines = f.readlines()
+                                for line_num, line in enumerate(lines, 1):
+                                    matched = False
+                                    if use_regex:
+                                        flags = 0 if case_sensitive else re.IGNORECASE
+                                        if re.search(search_text, line, flags):
+                                            matched = True
+                                    else:
+                                        if case_sensitive:
+                                            matched = search_text in line
+                                        else:
+                                            matched = search_text.lower() in line.lower()
+                                    
+                                    if matched:
+                                        results.append({
+                                            "file": file_path,
+                                            "line": line_num,
+                                            "content": line.strip()
+                                        })
+                        except Exception:
+                            continue
+            
+            if results:
+                result_str = f"找到 {len(results)} 处匹配:\n"
+                for r in results[:50]:  # 限制返回前50个结果
+                    result_str += f"{r['file']}:{r['line']}: {r['content']}\n"
+                if len(results) > 50:
+                    result_str += f"... 还有 {len(results) - 50} 处匹配未显示"
+                return result_str
+            else:
+                return f"未找到匹配 '{search_text}' 的内容"
+        except Exception as e:
+            return f"搜索失败: {e}"
+
+
+class FindFilesTool(Tool):
+    def __init__(self):
+        super().__init__()
+        name = self.__class__.__name__
+        description = "按文件名模式搜索文件（支持通配符，如 '*.py', 'test*.js'）。"
+        parameters = {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string", "description": "文件名匹配模式（如 '*.py', 'test*.js', '**/config.json'）"},
+                "directory": {"type": "string", "description": "要搜索的目录路径（默认工作目录）", "default": work_dir},
+                "recursive": {"type": "boolean", "description": "是否递归搜索子目录（默认 true）", "default": True},
+            },
+            "required": ["pattern"],
+        }
+        self.set_metadata(name, description, parameters)
+
+    def run(self, parameters):
+        pattern = parameters["pattern"]
+        directory = parameters.get("directory", work_dir)
+        recursive = parameters.get("recursive", True)
+        
+        if not os.path.exists(directory):
+            return f"目录{directory}不存在"
+        
+        try:
+            files = []
+            if recursive:
+                # 递归搜索
+                for root, dirs, filenames in os.walk(directory):
+                    for filename in filenames:
+                        if fnmatch.fnmatch(filename, pattern):
+                            files.append(os.path.join(root, filename))
+            else:
+                # 仅在当前目录搜索
+                for filename in os.listdir(directory):
+                    file_path = os.path.join(directory, filename)
+                    if os.path.isfile(file_path) and fnmatch.fnmatch(filename, pattern):
+                        files.append(file_path)
+            
+            if files:
+                result_str = f"找到 {len(files)} 个匹配的文件:\n"
+                for f in files[:100]:  # 限制返回前100个文件
+                    result_str += f"{f}\n"
+                if len(files) > 100:
+                    result_str += f"... 还有 {len(files) - 100} 个文件未显示"
+                return result_str
+            else:
+                return f"未找到匹配模式 '{pattern}' 的文件"
+        except Exception as e:
+            return f"搜索文件失败: {e}"
+
+
+class DeleteFolderTool(Tool):
+    def __init__(self):
+        super().__init__()
+        name = self.__class__.__name__
+        description = "删除文件夹及其所有内容（递归删除）"
+        parameters = {
+            "type": "object",
+            "properties": {"path": {"type": "string", "description": "文件夹路径"}},
+        }
+        self.set_metadata(name, description, parameters)
+
+    def validate_parameters(self, parameters):
+        # 只能是 workspace 目录下的文件夹
+        if not parameters["path"].startswith(work_dir):
+            return False
+        return True
+
+    def run(self, parameters):
+        if not self.validate_parameters(parameters):
+            return f"文件夹{parameters['path']}路径错误"
+        
+        folder_path = parameters["path"]
+        if not os.path.exists(folder_path):
+            return f"文件夹{folder_path}不存在"
+        
+        if not os.path.isdir(folder_path):
+            return f"{folder_path}不是文件夹"
+        
+        try:
+            shutil.rmtree(folder_path)
+            return f"文件夹{folder_path}删除成功"
+        except Exception as e:
+            return f"删除文件夹失败: {e}"
+
+
+class MoveFileTool(Tool):
+    def __init__(self):
+        super().__init__()
+        name = self.__class__.__name__
+        description = "移动文件或文件夹到新位置"
+        parameters = {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "源文件或文件夹路径"},
+                "destination": {"type": "string", "description": "目标路径"},
+            },
+            "required": ["source", "destination"],
+        }
+        self.set_metadata(name, description, parameters)
+
+    def validate_parameters(self, parameters):
+        # 源和目标都必须在 workspace 目录下
+        if not parameters["source"].startswith(work_dir) or not parameters["destination"].startswith(work_dir):
+            return False
+        return True
+
+    def run(self, parameters):
+        if not self.validate_parameters(parameters):
+            return f"路径错误：源和目标都必须在工作目录下"
+        
+        source = parameters["source"]
+        destination = parameters["destination"]
+        
+        if not os.path.exists(source):
+            return f"源路径{source}不存在"
+        
+        try:
+            shutil.move(source, destination)
+            return f"成功将{source}移动到{destination}"
+        except Exception as e:
+            return f"移动文件失败: {e}"
+
+
+class CopyFileTool(Tool):
+    def __init__(self):
+        super().__init__()
+        name = self.__class__.__name__
+        description = "复制文件或文件夹到新位置"
+        parameters = {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "源文件或文件夹路径"},
+                "destination": {"type": "string", "description": "目标路径"},
+            },
+            "required": ["source", "destination"],
+        }
+        self.set_metadata(name, description, parameters)
+
+    def validate_parameters(self, parameters):
+        # 源和目标都必须在 workspace 目录下
+        if not parameters["source"].startswith(work_dir) or not parameters["destination"].startswith(work_dir):
+            return False
+        return True
+
+    def run(self, parameters):
+        if not self.validate_parameters(parameters):
+            return f"路径错误：源和目标都必须在工作目录下"
+        
+        source = parameters["source"]
+        destination = parameters["destination"]
+        
+        if not os.path.exists(source):
+            return f"源路径{source}不存在"
+        
+        try:
+            if os.path.isdir(source):
+                shutil.copytree(source, destination, dirs_exist_ok=True)
+            else:
+                shutil.copy2(source, destination)
+            return f"成功将{source}复制到{destination}"
+        except Exception as e:
+            return f"复制文件失败: {e}"
+
+
 tools = [
     ReadFileTool(),
     WriteFileTool(),
@@ -284,6 +588,12 @@ tools = [
     ListFilesTool(),
     CreateFolderTool(),
     EditFileTool(),
+    RunCommandTool(),
+    SearchInFilesTool(),
+    FindFilesTool(),
+    DeleteFolderTool(),
+    MoveFileTool(),
+    CopyFileTool(),
 ]
 
 
