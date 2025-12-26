@@ -11,17 +11,14 @@ class Config:
     
     def __init__(self):
         # 模型配置
-        # self.model: str = os.getenv("MODEL", "Qwen/Qwen3-235B-A22B-Instruct-2507")
-        self.model: str = os.getenv("MODEL", "Qwen/Qwen3-Next-80B-A3B-Instruct")
+        self.model: str = os.getenv("MODEL", "Qwen/Qwen3-Next-80B-A3B-Instruct") # or Qwen/Qwen3-235B-A22B-Instruct-2507
         self.api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
         self.base_url: str = os.getenv("OPENAI_BASE_URL", "https://api.siliconflow.cn/v1")
         
         # 系统配置
         self.operating_system: str = os.getenv("OS", "macOS")
-        # self.work_dir: Path = Path(__file__).parent / "workspace"
-        # self.work_dir = self.work_dir.resolve()  # 规范化路径
-        
-        self.work_dir: Path = Path("/Users/apple/Desktop/project/agent-test")
+        self.work_dir: Path = Path(__file__).parent / "workspace" # 或者写死 Path("/Users/apple/Desktop/project/agent-test")
+        self.work_dir = self.work_dir.resolve()  # 规范化路径
         
         # 调试配置
         self.debug_mode: bool = os.getenv("DEBUG", "False").lower() == "true"

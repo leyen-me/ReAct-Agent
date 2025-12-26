@@ -1,6 +1,6 @@
 # ReAct Agent
 
-一个基于 ReAct（Reasoning and Acting）模式的智能代理实现，通过大语言模型进行推理和行动，能够自主完成复杂的文件操作任务。
+一个基于 ReAct（Reasoning and Acting）模式的智能代理实现，通过大语言模型进行推理和行动，能够自主完成复杂的文件操作、代码编辑和 Git 管理等任务。
 
 ## 📖 项目简介
 
@@ -14,23 +14,53 @@ ReAct Agent 是一个研究项目，旨在实现和探索 ReAct（推理与行�
 ## ✨ 功能特性
 
 - 🤔 **智能推理**：基于大语言模型进行任务分解和规划
-- 🛠️ **工具调用**：支持多种文件操作工具（读取、写入、创建、删除等）
+- 🛠️ **丰富的工具集**：支持文件操作、代码搜索、命令执行、Git 管理等 18+ 种工具
 - 🔄 **流式响应**：实时显示模型推理和输出过程
 - 💬 **对话式交互**：支持多轮对话，持续完成任务
 - 🔒 **安全机制**：路径验证，防止越权文件操作
-- 📝 **详细日志**：调试模式可查看完整的对话历史
+- 📊 **上下文管理**：智能管理对话上下文，自动处理 token 限制
+- 📝 **详细日志**：调试模式可查看完整的对话历史和 token 使用情况
 
 ## 🛠️ 可用工具
+
+### 文件操作工具
 
 | 工具名称 | 功能描述 |
 |---------|---------|
 | `ReadFileTool` | 读取文件内容 |
-| `WriteFileTool` | 写入文件内容 |
+| `WriteFileTool` | 写入文件内容（全文替换） |
+| `EditFileTool` | 编辑文件内容（部分替换，推荐使用） |
 | `CreateFileTool` | 创建新文件 |
 | `DeleteFileTool` | 删除文件 |
 | `RenameFileTool` | 重命名文件 |
-| `CreateFolderTool` | 创建文件夹 |
+| `MoveFileTool` | 移动文件 |
+| `CopyFileTool` | 复制文件 |
 | `ListFilesTool` | 列出目录文件列表 |
+| `CreateFolderTool` | 创建文件夹 |
+| `DeleteFolderTool` | 删除文件夹 |
+
+### 代码搜索工具
+
+| 工具名称 | 功能描述 |
+|---------|---------|
+| `SearchInFilesTool` | 在文件中搜索文本内容 |
+| `FindFilesTool` | 根据文件名模式查找文件 |
+
+### 命令执行工具
+
+| 工具名称 | 功能描述 |
+|---------|---------|
+| `RunCommandTool` | 执行系统命令（带超时保护） |
+
+### Git 管理工具
+
+| 工具名称 | 功能描述 |
+|---------|---------|
+| `GitStatusTool` | 查看 Git 仓库状态 |
+| `GitDiffTool` | 查看文件差异 |
+| `GitCommitTool` | 提交更改 |
+| `GitBranchTool` | 管理 Git 分支 |
+| `GitLogTool` | 查看提交历史 |
 
 ## 📋 环境要求
 
@@ -42,21 +72,50 @@ ReAct Agent 是一个研究项目，旨在实现和探索 ReAct（推理与行�
 1. **克隆项目**
 ```bash
 git clone <repository-url>
-cd ReAct-Agent
+cd agent
 ```
 
 2. **安装依赖**
 ```bash
-pip install openai
+pip install -r requirements.txt
 ```
 
-3. **配置 API Key**
+3. **配置环境变量**
+
+必需的环境变量：
 ```bash
 # Windows
-set SILICONFLOW_API_KEY=your_api_key_here
+set OPENAI_API_KEY=your_api_key_here
 
 # Linux/macOS
-export SILICONFLOW_API_KEY=your_api_key_here
+export OPENAI_API_KEY=your_api_key_here
+```
+
+可选的环境变量：
+```bash
+# 模型名称（默认：Qwen/Qwen3-Next-80B-A3B-Instruct）
+export MODEL=Qwen/Qwen3-Next-80B-A3B-Instruct
+
+# API 基础 URL（默认：https://api.siliconflow.cn/v1）
+export OPENAI_BASE_URL=https://api.siliconflow.cn/v1
+
+# 操作系统（默认：macOS）
+export OS=macOS
+
+# 调试模式（默认：False）
+export DEBUG=True
+
+# 命令执行超时时间，单位：秒（默认：300）
+export COMMAND_TIMEOUT=300
+
+# 最大上下文 token 数（默认：根据模型自动设置）
+export MAX_CONTEXT_TOKENS=128000
+
+# 最大搜索结果数（默认：50）
+export MAX_SEARCH_RESULTS=50
+
+# 最大查找文件数（默认：100）
+export MAX_FIND_FILES=100
 ```
 
 ## 💻 使用方法
@@ -79,6 +138,7 @@ python main.py
 - 工具返回的观察结果（`<observation>`）
 - 最终答案（`<final_answer>`）
 - 任务反思（`<reflection>`）
+- 上下文使用情况（token 使用百分比和剩余数量）
 
 4. **退出程序**
 输入 `exit` 或使用 `Ctrl+C` 退出
@@ -86,35 +146,45 @@ python main.py
 ## 📁 项目结构
 
 ```
-ReAct-Agent/
-├── main.py              # 主程序文件
-├── README.md            # 项目说明文档
-├── workspace/           # 工作目录（示例）
-└── workspace3/          # 主要工作目录
-    └── snake-game/      # 示例项目目录
-        ├── index.html
-        ├── script.js
-        └── style.css
+agent/
+├── __init__.py           # 包初始化文件
+├── __main__.py           # 模块入口文件
+├── main.py               # 主程序入口
+├── run.py                # 运行脚本
+├── agent.py              # ReAct Agent 核心逻辑
+├── config.py             # 配置管理模块
+├── logger_config.py      # 日志配置模块
+├── tool_executor.py      # 工具执行器
+├── utils.py              # 工具函数
+├── README.md             # 项目说明文档
+├── requirements.txt      # 依赖包列表
+├── target.md             # 目标文档（可选）
+├── workspace/            # 工作目录（自动创建）
+└── tools/                # 工具模块目录
+    ├── __init__.py       # 工具模块导出
+    ├── base.py           # 工具基类
+    ├── file_tools.py     # 文件操作工具
+    ├── command_tools.py  # 命令执行工具
+    ├── search_tools.py   # 代码搜索工具
+    └── git_tools.py      # Git 管理工具
 ```
 
 ## 🔧 配置说明
 
-在 `main.py` 中可以修改以下配置：
+项目使用 `config.py` 进行统一配置管理，支持通过环境变量进行配置：
 
-```python
-# 模型配置
-model = "Qwen/Qwen3-235B-A22B-Instruct-2507"
+### 核心配置
 
-# API 配置（通过环境变量）
-api_key = os.getenv("SILICONFLOW_API_KEY")
-base_url = "https://api.siliconflow.cn/v1"
+- **模型配置**：通过 `MODEL` 环境变量设置，默认使用 `Qwen/Qwen3-Next-80B-A3B-Instruct`
+- **API 配置**：通过 `OPENAI_API_KEY` 和 `OPENAI_BASE_URL` 环境变量设置
+- **工作目录**：默认使用项目根目录下的 `workspace` 文件夹，所有文件操作都限制在此目录内
+- **调试模式**：通过 `DEBUG` 环境变量控制，启用后会显示详细的日志信息
 
-# 工作目录
-work_dir = os.path.join(os.path.dirname(__file__), "workspace3")
+### 高级配置
 
-# 调试模式
-debug_mode = True  # 设置为 False 可关闭详细日志
-```
+- **上下文管理**：自动根据模型设置最大上下文 token 数，支持通过 `MAX_CONTEXT_TOKENS` 手动设置
+- **命令超时**：通过 `COMMAND_TIMEOUT` 设置命令执行超时时间（默认 300 秒）
+- **搜索限制**：通过 `MAX_SEARCH_RESULTS` 和 `MAX_FIND_FILES` 限制搜索结果数量
 
 ## 🧠 工作原理
 
@@ -139,37 +209,50 @@ debug_mode = True  # 设置为 False 可关闭详细日志
 - `<final_answer>`：最终答案
 - `<reflection>`：任务反思
 
+### 上下文管理
+
+- 自动跟踪 token 使用情况
+- 当接近上下文限制时，自动删除最旧的消息（保留系统消息）
+- 实时显示上下文使用百分比和剩余 token 数
+
 ## ⚠️ 注意事项
 
-1. **API Key 安全**：请妥善保管你的 API Key，不要提交到代码仓库
-2. **工作目录限制**：所有文件操作都限制在 `workspace3` 目录下，确保安全性
+1. **API Key 安全**：请妥善保管你的 API Key，不要提交到代码仓库。建议使用 `.env` 文件或系统环境变量管理
+2. **工作目录限制**：所有文件操作都限制在 `workspace` 目录下，确保安全性
 3. **路径格式**：文件路径必须使用绝对路径，且必须在工作目录内
 4. **错误处理**：如果工具执行失败，程序会显示错误信息并继续执行
+5. **命令执行**：命令执行工具有超时保护，避免长时间阻塞
+6. **文件编辑**：优先使用 `EditFileTool` 进行部分替换，而不是 `WriteFileTool` 全文替换，以保留文件的其他内容
 
 ## 🔍 示例输出
 
 ```
--------------------------------- thought --------------------------------
-thought: 用户要求创建一个贪吃蛇游戏，需要分别创建 HTML、CSS、JavaScript 文件。我应该先创建目录结构，然后依次创建这三个文件。
--------------------------------- thought --------------------------------
+=== 流式输出开始 ===
+<thought>
+用户要求创建一个贪吃蛇游戏，需要分别创建 HTML、CSS、JavaScript 文件。
+我应该先创建目录结构，然后依次创建这三个文件。
+</thought>
 
--------------------------------- action --------------------------------
-CreateFolderTool().run({'path': 'workspace3/snake-game'})
--------------------------------- action --------------------------------
+<action>CreateFolderTool().run({'path': '/path/to/workspace/snake-game'})</action>
+=== 流式输出结束 ===
 
--------------------------------- observation --------------------------------
-文件夹workspace3/snake-game创建成功
--------------------------------- observation --------------------------------
+=== Action ===
+CreateFolderTool().run({'path': '/path/to/workspace/snake-game'})
+
+=== Observation ===
+文件夹 /path/to/workspace/snake-game 创建成功
 
 ...
 
--------------------------------- final_answer --------------------------------
-final_answer: 我已经成功创建了贪吃蛇游戏的所有文件...
--------------------------------- final_answer --------------------------------
+=== Final Answer ===
+我已经成功创建了贪吃蛇游戏的所有文件...
 
--------------------------------- reflection --------------------------------
-reflection: 任务顺利完成，按照计划创建了三个文件...
--------------------------------- reflection --------------------------------
+=== Reflection ===
+任务顺利完成，按照计划创建了三个文件...
+
+============================================================
+[上下文使用: 15.3% (19,584/128,000 tokens) | 剩余: 108,416 tokens]
+============================================================
 ```
 
 ## 📚 相关资源
@@ -189,4 +272,3 @@ reflection: 任务顺利完成，按照计划创建了三个文件...
 ---
 
 **注意**：本项目主要用于研究 ReAct Agent 的实现原理和应用场景。在生产环境中使用前，请确保充分测试和评估安全性。
-
