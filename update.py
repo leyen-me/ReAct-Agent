@@ -285,9 +285,9 @@ class Updater:
             print(f"请手动下载: {download_url}")
             return False, "开发环境不支持自动更新"
         
-        # 下载到临时文件
-        temp_dir = Path(tempfile.gettempdir())
-        temp_file = temp_dir / f"ask-{latest_version}.tmp"
+        # 下载到当前二进制文件所在目录
+        download_dir = current_binary.parent
+        temp_file = download_dir / f"ask-{latest_version}.tmp"
         
         if not self.download_file(download_url, temp_file):
             return False, "下载失败"
