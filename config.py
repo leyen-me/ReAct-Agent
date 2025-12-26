@@ -18,8 +18,10 @@ class Config:
         
         # 系统配置
         self.operating_system: str = os.getenv("OS", "macOS")
-        self.work_dir: Path = Path(__file__).parent / "workspace"
-        self.work_dir = self.work_dir.resolve()  # 规范化路径
+        # self.work_dir: Path = Path(__file__).parent / "workspace"
+        # self.work_dir = self.work_dir.resolve()  # 规范化路径
+        
+        self.work_dir: Path = Path("/Users/apple/Desktop/project/agent-test")
         
         # 调试配置
         self.debug_mode: bool = os.getenv("DEBUG", "False").lower() == "true"

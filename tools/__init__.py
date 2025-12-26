@@ -17,6 +17,13 @@ from tools.file_tools import (
 )
 from tools.command_tools import RunCommandTool
 from tools.search_tools import SearchInFilesTool, FindFilesTool
+from tools.git_tools import (
+    GitStatusTool,
+    GitDiffTool,
+    GitCommitTool,
+    GitBranchTool,
+    GitLogTool,
+)
 
 __all__ = [
     "Tool",
@@ -34,5 +41,10 @@ __all__ = [
     "RunCommandTool",
     "SearchInFilesTool",
     "FindFilesTool",
+    "GitStatusTool",
+    "GitDiffTool",
+    "GitCommitTool",
+    "GitBranchTool",
+    "GitLogTool",
 ]
 
