@@ -263,6 +263,24 @@ action 规范：
             if match:
                 result["reflection"] = match.group(1).strip()
         
+        # 容错处理：如果有 reflection 但没有 final_answer，尝试提取 reflection 之前的内容作为 final_answer
+        if result["reflection"] and not result["final_answer"]:
+            # 找到 reflection 标签之前的内容
+            reflection_match = re.search(r"<reflection>", content, re.DOTALL)
+            if reflection_match:
+                before_reflection = content[:reflection_match.start()].strip()
+                # 移除可能存在的 thought 和 action 标签内容
+                before_reflection = re.sub(r"<thought>.*?</thought>", "", before_reflection, flags=re.DOTALL).strip()
+                before_reflection = re.sub(r"<action>.*?</action>", "", before_reflection, flags=re.DOTALL).strip()
+                if before_reflection:
+                    result["final_answer"] = before_reflection
+        
+        # 容错处理：如果没有任何标签，但内容看起来像最终回答（没有 action），尝试识别
+        if not result["action"] and not result["final_answer"] and not result["reflection"]:
+            # 如果内容不包含任何 XML 标签，且不是空的，可能是直接的回答
+            if content.strip() and not re.search(r"<[^>]+>", content):
+                result["final_answer"] = content.strip()
+        
         return result
     
     def chat(self, task_message: str) -> None:
@@ -355,7 +373,24 @@ action 规范：
                 self.message_manager.add_observation(observation)
                 continue
             
-            # 如果没有 action 也没有 final_answer，报错
-            logger.error(f"模型未输出 <action> 或 <final_answer>\n内容: {content}")
-            raise RuntimeError("模型未输出 <action> 或 <final_answer>")
+            # 如果没有 action 也没有 final_answer，尝试最后一次容错
+            if not parsed["action"] and not parsed["final_answer"]:
+                # 如果内容中有 reflection，说明任务可能已完成，只是格式不对
+                if parsed["reflection"]:
+                    # 尝试将整个内容（除了 reflection）作为 final_answer
+                    content_without_reflection = re.sub(r"<reflection>.*?</reflection>", "", content, flags=re.DOTALL).strip()
+                    content_without_reflection = re.sub(r"<thought>.*?</thought>", "", content_without_reflection, flags=re.DOTALL).strip()
+                    content_without_reflection = re.sub(r"<action>.*?</action>", "", content_without_reflection, flags=re.DOTALL).strip()
+                    if content_without_reflection:
+                        logger.warning(f"模型输出格式不规范，但检测到 reflection，尝试自动修复")
+                        parsed["final_answer"] = content_without_reflection
+                        logger.info(f"=== Final Answer (自动修复) ===\n{parsed['final_answer']}\n")
+                        self.message_manager.add_final_answer(parsed["final_answer"])
+                        if parsed["reflection"]:
+                            logger.info(f"=== Reflection ===\n{parsed['reflection']}\n")
+                        break
+                
+                # 如果还是无法解析，报错
+                logger.error(f"模型未输出 <action> 或 <final_answer>\n内容: {content}")
+                raise RuntimeError("模型未输出 <action> 或 <final_answer>")
 
