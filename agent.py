@@ -1,0 +1,282 @@
+# -*- coding: utf-8 -*-
+"""ReAct Agent 主逻辑"""
+
+import re
+import json
+import logging
+from datetime import datetime
+from typing import List, Dict, Any, Optional
+from pathlib import Path
+
+from openai import OpenAI, Stream
+from openai.types.chat import ChatCompletionChunk
+
+from .config import config
+from .tools import (
+    Tool,
+    ReadFileTool, WriteFileTool, DeleteFileTool, CreateFileTool,
+    RenameFileTool, ListFilesTool, EditFileTool, CreateFolderTool,
+    DeleteFolderTool, MoveFileTool, CopyFileTool, RunCommandTool,
+    SearchInFilesTool, FindFilesTool,
+)
+from .tool_executor import create_tool_executor
+
+logger = logging.getLogger(__name__)
+
+
+class MessageManager:
+    """消息管理器"""
+    
+    def __init__(self, system_prompt: str):
+        """
+        初始化消息管理器
+        
+        Args:
+            system_prompt: 系统提示词
+        """
+        self.messages: List[Dict[str, str]] = [
+            {"role": "system", "content": system_prompt}
+        ]
+    
+    def add_user_message(self, content: str) -> None:
+        """添加用户消息"""
+        self.messages.append({"role": "user", "content": f"<question>{content}</question>"})
+    
+    def add_assistant_action(self, action: str) -> None:
+        """添加助手 action"""
+        self.messages.append({"role": "assistant", "content": f"<action>{action}</action>"})
+    
+    def add_observation(self, observation: str) -> None:
+        """添加观察结果"""
+        self.messages.append({"role": "user", "content": f"<observation>{observation}</observation>"})
+    
+    def add_final_answer(self, answer: str) -> None:
+        """添加最终答案"""
+        self.messages.append({"role": "assistant", "content": f"<final_answer>{answer}</final_answer>"})
+    
+    def get_messages(self) -> List[Dict[str, str]]:
+        """获取所有消息"""
+        return self.messages.copy()
+
+
+class ReActAgent:
+    """ReAct Agent"""
+    
+    def __init__(self):
+        """初始化 Agent"""
+        self.client = OpenAI(
+            api_key=config.api_key,
+            base_url=config.base_url,
+        )
+        self.tools = self._create_tools()
+        self.tool_executor = create_tool_executor(self.tools)
+        self.message_manager = MessageManager(self._get_system_prompt())
+        self.chat_count = 0
+    
+    def _create_tools(self) -> List[Tool]:
+        """创建工具列表"""
+        return [
+            ReadFileTool(config.work_dir),
+            WriteFileTool(config.work_dir),
+            DeleteFileTool(config.work_dir),
+            CreateFileTool(config.work_dir),
+            RenameFileTool(config.work_dir),
+            ListFilesTool(config.work_dir),
+            CreateFolderTool(config.work_dir),
+            EditFileTool(config.work_dir),
+            RunCommandTool(config.work_dir, config.command_timeout),
+            SearchInFilesTool(config.work_dir, config.max_search_results),
+            FindFilesTool(config.work_dir, config.max_find_files),
+            DeleteFolderTool(config.work_dir),
+            MoveFileTool(config.work_dir),
+            CopyFileTool(config.work_dir),
+        ]
+    
+    def _get_system_prompt(self) -> str:
+        """生成系统提示词"""
+        tools_dict = [tool.to_dict() for tool in self.tools]
+        
+        return f"""
+你是专业的任务执行助手，你的任务是解决用户的问题。现在是北京时间 {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}。
+
+你需要解决一个问题。为此，你需要将问题分解为多个步骤。对于每个步骤，首先使用 <thought> 思考要做什么，然后使用可用工具之一决定一个 <action>。接着，你将根据你的行动从环境/工具中收到一个 <observation>。持续这个思考和行动的过程，直到你有足够的信息来提供 <final_answer>。
+
+在提供最终答案后，对于复杂的任务（涉及文件操作、多步骤执行等），你需要进行反思、检查、和总结。在反思、检查、和总结时，请使用 <reflection> 标签，对于简单的问候或闲聊任务，不需要反思、检查和总结。
+
+所有步骤请严格使用以下 XML 标签格式输出：
+- <question> 用户问题
+- <thought> 思考
+- <action> 采取的工具操作
+- <observation> 工具或环境返回的结果
+- <final_answer> 最终答案
+- <reflection> 任务反思
+
+⸻
+
+例子 1（简单任务，不需要反思和总结）:
+
+<question>你好</question>
+<thought>这是一个简单的问候，不需要使用工具，直接回复即可。</thought>
+<final_answer>你好！有什么可以帮助你的吗？</final_answer>
+
+⸻
+
+例子 2（复杂任务，需要反思和总结）:
+
+<question>将 script.js 中的函数名 hello 改为 greet</question>
+<thought>需要先读取文件查看内容，然后使用 EditFileTool 替换函数名。</thought>
+<action>EditFileTool().run({{'path': '{config.work_dir}/script.js', 'old_string': 'function hello()', 'new_string': 'function greet()'}})</action>
+<observation>文件{config.work_dir}/script.js编辑成功，已替换 1 处匹配的文本</observation>
+<final_answer>已成功将函数名从 hello 改为 greet。</final_answer>
+<reflection>先读取文件确认内容，再使用 EditFileTool 进行部分替换，避免了全文重写。</reflection>
+
+⸻
+
+请严格遵守：
+- 你每次回答都必须包括两个标签，第一个是 <thought>，第二个是 <action> 或 <final_answer>
+- 输出 <action> 后立即停止生成，等待真实的 <observation>，擅自生成 <observation> 将导致错误
+- 对于复杂任务，在 <final_answer> 后需要添加 <reflection> 标签
+- 对于简单问候或闲聊任务，不需要反思和检查
+
+⸻
+
+action 规范：
+
+- 使用文件类型工具时，path 参数必须使用绝对路径
+- 使用文件类型工具时，path 的路径必须在当前工作目录下
+- **重要**：编辑现有文件时，优先使用 EditFileTool 进行部分替换，而不是 WriteFileTool 全文替换
+- EditFileTool 可以只替换文件中的特定部分，保留其他内容不变，类似于 Cursor 的部分替换功能
+- 使用 EditFileTool 时，old_string 必须与文件中的内容完全匹配（包括空格、换行、缩进等）
+- 以下是一些好的例子：
+
+<action>WriteFileTool().run({{'path': '{config.work_dir}/test.txt', 'content': 'xxx\\nxxx'}})</action>
+
+<action>EditFileTool().run({{'path': '{config.work_dir}/test.py', 'old_string': 'def hello():\\n    print(\\\"old\\\")', 'new_string': 'def hello():\\n    print(\\\"new\\\")'}})</action>
+
+⸻
+
+本次任务可用工具：
+{json.dumps(tools_dict, indent=4, ensure_ascii=False)}
+
+⸻
+
+环境信息：
+
+操作系统：{config.operating_system}
+工作目录：{config.work_dir}
+"""
+    
+    def _parse_content(self, content: str) -> Dict[str, Optional[str]]:
+        """
+        解析模型返回的内容
+        
+        Returns:
+            包含 thought, action, final_answer, reflection 的字典
+        """
+        result = {
+            "thought": None,
+            "action": None,
+            "final_answer": None,
+            "reflection": None,
+        }
+        
+        # 解析 thought
+        if "<thought>" in content:
+            match = re.search(r"<thought>(.*?)</thought>", content, re.DOTALL)
+            if match:
+                result["thought"] = match.group(1).strip()
+        
+        # 解析 action
+        if "<action>" in content:
+            match = re.search(r"<action>(.*?)</action>", content, re.DOTALL)
+            if match:
+                result["action"] = match.group(1).strip()
+        
+        # 解析 final_answer
+        if "<final_answer>" in content:
+            match = re.search(r"<final_answer>(.*?)</final_answer>", content, re.DOTALL)
+            if match:
+                result["final_answer"] = match.group(1).strip()
+        
+        # 解析 reflection
+        if "<reflection>" in content:
+            match = re.search(r"<reflection>(.*?)</reflection>", content, re.DOTALL)
+            if match:
+                result["reflection"] = match.group(1).strip()
+        
+        return result
+    
+    def chat(self, task_message: str) -> None:
+        """
+        处理用户任务
+        
+        Args:
+            task_message: 用户任务消息
+        """
+        self.message_manager.add_user_message(task_message)
+        
+        while True:
+            self.chat_count += 1
+            
+            if config.debug_mode:
+                logger.debug(f"=== Chat Round {self.chat_count} ===")
+                logger.debug(f"Messages: {json.dumps(self.message_manager.get_messages(), indent=2, ensure_ascii=False)}")
+            
+            # 调用 API
+            try:
+                stream_response: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
+                    model=config.model,
+                    messages=self.message_manager.get_messages(),
+                    stream=True
+                )
+            except Exception as e:
+                logger.error(f"API 调用失败: {e}")
+                raise
+            
+            # 处理流式响应
+            content = ""
+            print("\n=== 流式输出开始 ===")
+            for chunk in stream_response:
+                if chunk.choices[0].delta.reasoning_content:
+                    print(chunk.choices[0].delta.reasoning_content, end="", flush=True)
+                
+                if chunk.choices[0].delta.content:
+                    chunk_content = chunk.choices[0].delta.content
+                    content += chunk_content
+                    print(chunk_content, end="", flush=True)
+            
+            print("\n=== 流式输出结束 ===\n")
+            
+            # 解析内容
+            parsed = self._parse_content(content)
+            
+            # 处理 thought
+            if parsed["thought"]:
+                logger.info(f"=== Thought ===\n{parsed['thought']}\n")
+            
+            # 处理 final_answer
+            if parsed["final_answer"]:
+                logger.info(f"=== Final Answer ===\n{parsed['final_answer']}\n")
+                self.message_manager.add_final_answer(parsed["final_answer"])
+                
+                # 处理 reflection
+                if parsed["reflection"]:
+                    logger.info(f"=== Reflection ===\n{parsed['reflection']}\n")
+                
+                break
+            
+            # 处理 action
+            if parsed["action"]:
+                logger.info(f"=== Action ===\n{parsed['action']}\n")
+                self.message_manager.add_assistant_action(parsed["action"])
+                
+                # 执行工具
+                observation = self.tool_executor.execute(parsed["action"])
+                logger.info(f"=== Observation ===\n{observation}\n")
+                self.message_manager.add_observation(observation)
+                continue
+            
+            # 如果没有 action 也没有 final_answer，报错
+            logger.error(f"模型未输出 <action> 或 <final_answer>\n内容: {content}")
+            raise RuntimeError("模型未输出 <action> 或 <final_answer>")
+

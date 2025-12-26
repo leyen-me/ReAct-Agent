@@ -1,0 +1,46 @@
+# -*- coding: utf-8 -*-
+"""配置管理模块"""
+
+import os
+from pathlib import Path
+from typing import Optional
+
+
+class Config:
+    """应用配置类"""
+    
+    def __init__(self):
+        # 模型配置
+        self.model: str = os.getenv("MODEL", "Qwen/Qwen3-235B-A22B-Instruct-2507")
+        self.api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
+        self.base_url: str = os.getenv("OPENAI_BASE_URL", "https://api.siliconflow.cn/v1")
+        
+        # 系统配置
+        self.operating_system: str = os.getenv("OS", "macOS")
+        self.work_dir: Path = Path(__file__).parent / "workspace"
+        self.work_dir = self.work_dir.resolve()  # 规范化路径
+        
+        # 调试配置
+        self.debug_mode: bool = os.getenv("DEBUG", "True").lower() == "true"
+        
+        # 命令执行配置
+        self.command_timeout: int = int(os.getenv("COMMAND_TIMEOUT", "300"))
+        
+        # 搜索配置
+        self.max_search_results: int = int(os.getenv("MAX_SEARCH_RESULTS", "50"))
+        self.max_find_files: int = int(os.getenv("MAX_FIND_FILES", "100"))
+        
+        # 确保工作目录存在
+        self.work_dir.mkdir(parents=True, exist_ok=True)
+    
+    def validate(self) -> None:
+        """验证配置"""
+        if not self.api_key:
+            raise ValueError("OPENAI_API_KEY 环境变量未设置")
+        if not self.work_dir.exists():
+            raise ValueError(f"工作目录不存在: {self.work_dir}")
+
+
+# 全局配置实例
+config = Config()
+
