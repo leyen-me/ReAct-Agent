@@ -4,13 +4,26 @@ PyInstaller 配置文件
 用于将 ReAct Agent 打包成独立的可执行文件
 """
 
+import os
+import sys
+from PyInstaller.utils.hooks import collect_submodules
+
 block_cipher = None
+
+# 获取当前脚本所在目录（spec 文件所在目录）
+# 如果 SPEC 变量存在则使用它，否则使用当前工作目录
+try:
+    current_dir = os.path.dirname(os.path.abspath(SPEC))
+except NameError:
+    # 如果 SPEC 变量不存在，使用当前工作目录
+    current_dir = os.getcwd()
 
 # 收集所有需要的数据文件
 datas = []
 
 # 收集隐藏导入（PyInstaller 可能无法自动检测的模块）
 hiddenimports = [
+    # OpenAI 相关模块
     'openai',
     'openai.types',
     'openai.types.chat',
@@ -18,11 +31,29 @@ hiddenimports = [
     'openai.resources.chat',
     'openai._client',
     'openai._streaming',
+    # 本地模块
+    'config',
+    'logger_config',
+    'agent',
+    'update',
+    '__init__',
+    'tool_executor',
+    'utils',
+    # tools 模块及其子模块
+    'tools',
+    'tools.base',
+    'tools.file_tools',
+    'tools.command_tools',
+    'tools.search_tools',
+    'tools.git_tools',
 ]
+
+# 收集所有 tools 子模块
+hiddenimports += collect_submodules('tools')
 
 a = Analysis(
     ['main.py'],
-    pathex=[],
+    pathex=[current_dir],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,

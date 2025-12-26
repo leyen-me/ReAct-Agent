@@ -111,9 +111,9 @@ jobs:
           ## ReAct Agent v${{ steps.get_version.outputs.version }}
           
           ### 下载
-          - **Linux**: [ask-linux-${{ steps.get_version.outputs.version }}](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/ask-linux-${{ steps.get_version.outputs.version }})
-          - **Windows**: [ask-windows-${{ steps.get_version.outputs.version }}.exe](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/ask-windows-${{ steps.get_version.outputs.version }}.exe)
-          - **macOS**: [ask-macos-${{ steps.get_version.outputs.version }}](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/ask-macos-${{ steps.get_version.outputs.version }})
+          - **Linux**: [ask-linux-${{ steps.get_version.outputs.version }}](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/ask-${{ steps.get_version.outputs.version }})
+          - **Windows**: [ask-windows-${{ steps.get_version.outputs.version }}.exe](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/ask-${{ steps.get_version.outputs.version }}.exe)
+          - **macOS**: [ask-macos-${{ steps.get_version.outputs.version }}](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/ask-${{ steps.get_version.outputs.version }})
           
           ### 使用方法
           1. 下载对应平台的可执行文件
