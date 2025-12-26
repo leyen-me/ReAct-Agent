@@ -143,8 +143,14 @@ class Updater:
                     if f"ask-{version}" in name or f"ask-{version}.exe" in name:
                         # 排除其他平台的文件
                         if self.platform == "windows":
-                            if name.endswith(".exe") and "windows" in name.lower():
-                                return asset.get("browser_download_url")
+                            # Windows: 匹配 .exe 文件，优先包含 windows 关键词的，但如果没有也接受
+                            if name.endswith(".exe"):
+                                # 如果文件名就是 ask-{version}.exe 格式，直接匹配
+                                if name == f"ask-{version}.exe":
+                                    return asset.get("browser_download_url")
+                                # 或者包含 windows 关键词
+                                elif "windows" in name.lower() or "win" in name.lower():
+                                    return asset.get("browser_download_url")
                         else:
                             if not name.endswith(".exe"):
                                 if self.platform == "macos" and ("macos" in name.lower() or "mac" in name.lower()):
@@ -152,10 +158,31 @@ class Updater:
                                 elif self.platform == "linux" and "linux" in name.lower():
                                     return asset.get("browser_download_url")
                 
-                # 最后尝试：如果只有一个文件匹配版本号，就使用它
+                # 最后尝试：根据平台选择合适的文件
                 matching_assets = [a for a in assets if f"ask-{version}" in a.get("name", "")]
                 if len(matching_assets) == 1:
                     return matching_assets[0].get("browser_download_url")
+                elif len(matching_assets) > 1:
+                    # 如果有多个文件，根据平台选择
+                    if self.platform == "windows":
+                        # 优先选择 .exe 文件
+                        exe_assets = [a for a in matching_assets if a.get("name", "").endswith(".exe")]
+                        if exe_assets:
+                            # 优先选择包含 windows 关键词的，否则选择第一个
+                            windows_asset = next((a for a in exe_assets if "windows" in a.get("name", "").lower() or "win" in a.get("name", "").lower()), None)
+                            if windows_asset:
+                                return windows_asset.get("browser_download_url")
+                            # 如果文件名就是 ask-{version}.exe，也使用它
+                            exact_match = next((a for a in exe_assets if a.get("name", "") == f"ask-{version}.exe"), None)
+                            if exact_match:
+                                return exact_match.get("browser_download_url")
+                            # 否则使用第一个 .exe 文件
+                            return exe_assets[0].get("browser_download_url")
+                    else:
+                        # 非 Windows 平台，排除 .exe 文件
+                        non_exe_assets = [a for a in matching_assets if not a.get("name", "").endswith(".exe")]
+                        if non_exe_assets:
+                            return non_exe_assets[0].get("browser_download_url")
                     
         except urllib.error.URLError as e:
             print(f"网络错误: {e}")
@@ -290,6 +317,45 @@ class Updater:
             return True, f"已更新到版本 {latest_version}"
         except PermissionError:
             return False, "权限不足，请使用管理员/root权限运行更新命令"
+        except OSError as e:
+            # 检查是否是文件被占用错误
+            error_msg = str(e).lower()
+            if "被另一个进程使用" in str(e) or "being used by another process" in error_msg or "cannot access" in error_msg:
+                # 文件被占用，将文件保存到临时目录并提示用户
+                # 重命名为最终文件名（但保留在临时目录）
+                final_name = f"ask-{latest_version}.exe" if self.platform == "windows" else f"ask-{latest_version}"
+                downloaded_file = temp_dir / final_name
+                
+                # 如果文件已存在，先删除
+                if downloaded_file.exists():
+                    downloaded_file.unlink()
+                
+                # 移动临时文件到最终名称
+                shutil.move(temp_file, downloaded_file)
+                
+                print(f"\n⚠️  检测到文件被占用，无法自动替换")
+                print(f"✅ 新版本已下载完成！")
+                print(f"\n📥 下载位置: {downloaded_file}")
+                print(f"📁 当前 ask.exe 位置: {current_binary}")
+                print(f"\n📝 请按以下步骤手动更新:")
+                print(f"   1. 关闭所有正在运行的 ask.exe 程序")
+                print(f"   2. 将下载的文件重命名为: ask.exe")
+                if self.platform == "windows":
+                    print(f"   3. 替换 {current_binary} 文件")
+                else:
+                    print(f"   3. 替换 {current_binary} 文件并设置执行权限: chmod +x ask")
+                print(f"\n💡 提示: 也可以直接复制下载的文件到 {current_binary.parent} 目录并重命名为 ask.exe")
+                
+                return True, f"新版本已下载到 {downloaded_file}，请手动替换"
+            else:
+                # 其他错误，恢复备份
+                try:
+                    if backup_path.exists() and not current_binary.exists():
+                        shutil.move(backup_path, current_binary)
+                        print("已恢复备份文件")
+                except:
+                    pass
+                return False, f"更新失败: {e}"
         except Exception as e:
             # 恢复备份
             try:
