@@ -13,6 +13,10 @@ on:
 
 jobs:
   build:
+    permissions:
+      contents: write  # 需要写入权限来创建 Release
+      id-token: write  # 用于 OIDC（如果需要）
+    
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -97,7 +101,7 @@ jobs:
 
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         files: |
           dist/ask-${{ steps.get_version.outputs.version }}*
