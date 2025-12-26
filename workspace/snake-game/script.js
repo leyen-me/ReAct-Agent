@@ -32,7 +32,7 @@ function startGame() {
     dx = 0;
     dy = 0;
     
-    gameInterval = setInterval(updateGame, 100);
+    gameInterval = setInterval(updateGame, 150);
 }
 
 // 生成食物
