@@ -316,26 +316,28 @@ class Updater:
             print(f"   备份文件: {backup_path}")
             return True, f"已更新到版本 {latest_version}"
         except PermissionError:
-            return False, "权限不足，请使用管理员/root权限运行更新命令"
+            # 权限不足，保留临时文件让用户手动处理
+            print(f"\n⚠️  权限不足，无法自动替换")
+            print(f"✅ 新版本已下载完成！")
+            print(f"\n📥 下载位置: {temp_file}")
+            print(f"📁 当前 ask.exe 位置: {current_binary}")
+            print(f"\n📝 请按以下步骤手动更新:")
+            print(f"   1. 以管理员身份运行 PowerShell 或 CMD")
+            print(f"   2. 将下载的文件重命名为: ask.exe")
+            if self.platform == "windows":
+                print(f"   3. 替换 {current_binary} 文件")
+            else:
+                print(f"   3. 替换 {current_binary} 文件并设置执行权限: chmod +x ask")
+            print(f"\n💡 提示: 也可以直接复制下载的文件到 {current_binary.parent} 目录并重命名为 ask.exe")
+            return True, f"新版本已下载到 {temp_file}，请手动替换"
         except OSError as e:
             # 检查是否是文件被占用错误
             error_msg = str(e).lower()
             if "被另一个进程使用" in str(e) or "being used by another process" in error_msg or "cannot access" in error_msg:
-                # 文件被占用，将文件保存到临时目录并提示用户
-                # 重命名为最终文件名（但保留在临时目录）
-                final_name = f"ask-{latest_version}.exe" if self.platform == "windows" else f"ask-{latest_version}"
-                downloaded_file = temp_dir / final_name
-                
-                # 如果文件已存在，先删除
-                if downloaded_file.exists():
-                    downloaded_file.unlink()
-                
-                # 移动临时文件到最终名称
-                shutil.move(temp_file, downloaded_file)
-                
+                # 文件被占用，保留临时文件让用户手动处理
                 print(f"\n⚠️  检测到文件被占用，无法自动替换")
                 print(f"✅ 新版本已下载完成！")
-                print(f"\n📥 下载位置: {downloaded_file}")
+                print(f"\n📥 下载位置: {temp_file}")
                 print(f"📁 当前 ask.exe 位置: {current_binary}")
                 print(f"\n📝 请按以下步骤手动更新:")
                 print(f"   1. 关闭所有正在运行的 ask.exe 程序")
@@ -346,7 +348,7 @@ class Updater:
                     print(f"   3. 替换 {current_binary} 文件并设置执行权限: chmod +x ask")
                 print(f"\n💡 提示: 也可以直接复制下载的文件到 {current_binary.parent} 目录并重命名为 ask.exe")
                 
-                return True, f"新版本已下载到 {downloaded_file}，请手动替换"
+                return True, f"新版本已下载到 {temp_file}，请手动替换"
             else:
                 # 其他错误，恢复备份
                 try:
