@@ -11,7 +11,8 @@ class Config:
     
     def __init__(self):
         # 模型配置
-        self.model: str = os.getenv("MODEL", "Qwen/Qwen3-235B-A22B-Instruct-2507")
+        # self.model: str = os.getenv("MODEL", "Qwen/Qwen3-235B-A22B-Instruct-2507")
+        self.model: str = os.getenv("MODEL", "Qwen/Qwen3-Next-80B-A3B-Instruct")
         self.api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
         self.base_url: str = os.getenv("OPENAI_BASE_URL", "https://api.siliconflow.cn/v1")
         
