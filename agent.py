@@ -27,16 +27,43 @@ logger = logging.getLogger(__name__)
 class MessageManager:
     """消息管理器"""
     
-    def __init__(self, system_prompt: str):
+    def __init__(self, system_prompt: str, max_context_tokens: int):
         """
         初始化消息管理器
         
         Args:
             system_prompt: 系统提示词
+            max_context_tokens: 最大上下文 token 数
         """
+        self.max_context_tokens = max_context_tokens
         self.messages: List[Dict[str, str]] = [
             {"role": "system", "content": system_prompt}
         ]
+        # 当前实际使用的 token 数（从 API 响应获取）
+        self.current_tokens: int = 0
+    
+    def update_token_usage(self, prompt_tokens: int) -> None:
+        """
+        更新 token 使用量（从 API 响应获取）
+        
+        Args:
+            prompt_tokens: API 返回的 prompt_tokens
+        """
+        self.current_tokens = prompt_tokens
+        self._manage_context()
+    
+    def _manage_context(self) -> None:
+        """管理上下文，当超过限制时删除旧消息（保留系统消息）"""
+        # 如果超过限制，删除最旧的非系统消息
+        while self.current_tokens > self.max_context_tokens and len(self.messages) > 1:
+            # 保留系统消息，删除第一个非系统消息
+            removed_message = self.messages.pop(1)
+            
+            if config.debug_mode:
+                logger.debug(f"上下文已满，删除旧消息，当前使用: {self.current_tokens}/{self.max_context_tokens}")
+            
+            # 注意：删除消息后，下次 API 调用时会重新计算 token 数
+            # 这里我们暂时保持 current_tokens 不变，等待下次 API 响应更新
     
     def add_user_message(self, content: str) -> None:
         """添加用户消息"""
@@ -57,6 +84,24 @@ class MessageManager:
     def get_messages(self) -> List[Dict[str, str]]:
         """获取所有消息"""
         return self.messages.copy()
+    
+    def get_token_usage_percent(self) -> float:
+        """
+        获取当前 token 使用百分比
+        
+        Returns:
+            使用百分比（0-100）
+        """
+        return (self.current_tokens / self.max_context_tokens) * 100
+    
+    def get_remaining_tokens(self) -> int:
+        """
+        获取剩余可用 token 数
+        
+        Returns:
+            剩余 token 数
+        """
+        return max(0, self.max_context_tokens - self.current_tokens)
 
 
 class ReActAgent:
@@ -70,7 +115,10 @@ class ReActAgent:
         )
         self.tools = self._create_tools()
         self.tool_executor = create_tool_executor(self.tools)
-        self.message_manager = MessageManager(self._get_system_prompt())
+        self.message_manager = MessageManager(
+            self._get_system_prompt(),
+            config.max_context_tokens
+        )
         self.chat_count = 0
     
     def _create_tools(self) -> List[Tool]:
@@ -235,17 +283,37 @@ action 规范：
             
             # 处理流式响应
             content = ""
+            usage = None
             print("\n=== 流式输出开始 ===")
             for chunk in stream_response:
-                if chunk.choices[0].delta.reasoning_content:
-                    print(chunk.choices[0].delta.reasoning_content, end="", flush=True)
+                # 获取 usage 信息（通常在最后一个 chunk 中）
+                if hasattr(chunk, 'usage') and chunk.usage is not None:
+                    usage = chunk.usage
                 
-                if chunk.choices[0].delta.content:
-                    chunk_content = chunk.choices[0].delta.content
-                    content += chunk_content
-                    print(chunk_content, end="", flush=True)
+                if chunk.choices and len(chunk.choices) > 0:
+                    if hasattr(chunk.choices[0].delta, 'reasoning_content') and chunk.choices[0].delta.reasoning_content:
+                        print(chunk.choices[0].delta.reasoning_content, end="", flush=True)
+                    
+                    if hasattr(chunk.choices[0].delta, 'content') and chunk.choices[0].delta.content:
+                        chunk_content = chunk.choices[0].delta.content
+                        content += chunk_content
+                        print(chunk_content, end="", flush=True)
             
             print("\n=== 流式输出结束 ===\n")
+            
+            # 更新 token 使用量（从 API 响应获取）
+            if usage:
+                prompt_tokens = getattr(usage, 'prompt_tokens', None)
+                if prompt_tokens is not None:
+                    self.message_manager.update_token_usage(prompt_tokens)
+                    if config.debug_mode:
+                        completion_tokens = getattr(usage, 'completion_tokens', 0)
+                        total_tokens = getattr(usage, 'total_tokens', 0)
+                        logger.debug(f"Token 使用: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}")
+                else:
+                    logger.warning("API 响应中未找到 prompt_tokens")
+            else:
+                logger.warning("流式响应中未找到 usage 信息")
             
             # 解析内容
             parsed = self._parse_content(content)

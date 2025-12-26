@@ -24,11 +24,20 @@ def main():
     # 主循环
     try:
         while True:
-            task_message = input("请输入任务，输入 exit 退出: ")
+            task_message = input("\n请输入任务，输入 exit 退出: ")
             if task_message == "exit":
                 break
             if task_message.strip():
                 agent.chat(task_message)
+                
+                # 每轮对话结束后显示上下文使用情况
+                usage_percent = agent.message_manager.get_token_usage_percent()
+                remaining_tokens = agent.message_manager.get_remaining_tokens()
+                used_tokens = agent.message_manager.max_context_tokens - remaining_tokens
+                max_tokens = agent.message_manager.max_context_tokens
+                print(f"\n{'='*60}")
+                print(f"[上下文使用: {usage_percent:.1f}% ({used_tokens:,}/{max_tokens:,} tokens) | 剩余: {remaining_tokens:,} tokens]")
+                print(f"{'='*60}")
     except EOFError:
         print("\n程序结束")
     except KeyboardInterrupt:

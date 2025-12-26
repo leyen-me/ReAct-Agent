@@ -21,7 +21,7 @@ class Config:
         self.work_dir = self.work_dir.resolve()  # 规范化路径
         
         # 调试配置
-        self.debug_mode: bool = os.getenv("DEBUG", "True").lower() == "true"
+        self.debug_mode: bool = os.getenv("DEBUG", "False").lower() == "true"
         
         # 命令执行配置
         self.command_timeout: int = int(os.getenv("COMMAND_TIMEOUT", "300"))
@@ -29,6 +29,12 @@ class Config:
         # 搜索配置
         self.max_search_results: int = int(os.getenv("MAX_SEARCH_RESULTS", "50"))
         self.max_find_files: int = int(os.getenv("MAX_FIND_FILES", "100"))
+        
+        # 上下文配置
+        # 根据模型设置默认最大上下文 token 数
+        # Qwen/Qwen3-235B-A22B-Instruct-2507 是 256K
+        default_max_tokens = 256000 if "Qwen3-235B" in self.model else 128000
+        self.max_context_tokens: int = int(os.getenv("MAX_CONTEXT_TOKENS", str(default_max_tokens)))
         
         # 确保工作目录存在
         self.work_dir.mkdir(parents=True, exist_ok=True)
