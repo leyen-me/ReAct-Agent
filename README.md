@@ -116,6 +116,38 @@ set OPENAI_API_KEY=your_api_key_here
 ask-1.0.0.exe
 ```
 
+#### 自动更新
+
+程序支持自动更新功能，可以通过以下命令管理更新：
+
+**检查更新：**
+```bash
+ask --check-update
+```
+
+**执行更新：**
+```bash
+ask --update
+```
+
+**查看版本：**
+```bash
+ask --version
+```
+
+**帮助信息：**
+```bash
+ask --help
+```
+
+程序启动时会自动检查更新，如果有新版本会提示你。更新功能会自动：
+- 从 GitHub Releases 获取最新版本
+- 下载对应平台的二进制文件
+- 备份当前版本
+- 替换为最新版本
+
+> **注意**：更新需要写入权限，可能需要管理员/root权限。更新前会自动备份当前版本到 `.backup` 文件。
+
 ### 本地打包（开发测试）
 
 如果需要本地测试打包：
@@ -186,6 +218,22 @@ export MAX_FIND_FILES=100
 1. **运行程序**
 ```bash
 python main.py
+```
+
+或者使用命令行参数：
+
+```bash
+# 查看版本
+python main.py --version
+
+# 检查更新
+python main.py --check-update
+
+# 执行更新（仅二进制版本支持）
+python main.py --update
+
+# 查看帮助
+python main.py --help
 ```
 
 2. **输入任务**

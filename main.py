@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """ReAct Agent 主程序入口"""
 
+import sys
 from config import config
 from logger_config import setup_logging
 from agent import ReActAgent
@@ -8,6 +9,47 @@ from agent import ReActAgent
 
 def main():
     """主函数"""
+    # 处理命令行参数
+    if len(sys.argv) > 1:
+        arg = sys.argv[1].lower()
+        
+        if arg in ["--update", "update", "-u"]:
+            from update import Updater
+            updater = Updater()
+            success, message = updater.update()
+            print(message)
+            sys.exit(0 if success else 1)
+        
+        elif arg in ["--version", "-v", "version"]:
+            from __init__ import __version__
+            print(f"ask version {__version__}")
+            sys.exit(0)
+        
+        elif arg in ["--check-update", "check-update"]:
+            from update import Updater
+            updater = Updater()
+            latest = updater.get_latest_version()
+            if latest:
+                comparison = updater.compare_versions(updater.current_version, latest)
+                if comparison < 0:
+                    print(f"发现新版本: {latest} (当前: {updater.current_version})")
+                    print(f"运行 'ask --update' 进行更新")
+                else:
+                    print(f"当前已是最新版本: {updater.current_version}")
+            else:
+                print("无法检查更新，请检查网络连接")
+            sys.exit(0)
+        
+        elif arg in ["--help", "-h", "help"]:
+            print("ReAct Agent - 智能代理工具")
+            print("\n用法:")
+            print("  ask                   启动交互式会话")
+            print("  ask --version         显示版本号")
+            print("  ask --update          更新到最新版本")
+            print("  ask --check-update    检查是否有新版本")
+            print("  ask --help            显示帮助信息")
+            sys.exit(0)
+    
     # 验证配置
     try:
         config.validate()
@@ -17,6 +59,13 @@ def main():
     
     # 设置日志
     setup_logging(debug_mode=config.debug_mode)
+    
+    # 启动时检查更新（后台，不阻塞）
+    try:
+        from update import check_update
+        check_update()
+    except:
+        pass  # 更新检查失败不影响主程序运行
     
     # 创建 Agent
     agent = ReActAgent()
