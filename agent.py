@@ -19,7 +19,6 @@ from tools import (
     DeleteFolderTool, MoveFileTool, CopyFileTool, RunCommandTool,
     SearchInFilesTool, FindFilesTool,
     GitStatusTool, GitDiffTool, GitCommitTool, GitBranchTool, GitLogTool,
-    FormatCodeTool, RefactorTool, ExtractFunctionTool, RenameSymbolTool,
 )
 from tool_executor import create_tool_executor
 
@@ -145,10 +144,6 @@ class ReActAgent:
             GitCommitTool(config.work_dir),
             GitBranchTool(config.work_dir),
             GitLogTool(config.work_dir),
-            FormatCodeTool(config.work_dir),
-            RefactorTool(config.work_dir),
-            ExtractFunctionTool(config.work_dir),
-            RenameSymbolTool(config.work_dir),
         ]
     
     def _get_system_prompt(self) -> str:
