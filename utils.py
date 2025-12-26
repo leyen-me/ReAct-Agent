@@ -3,6 +3,7 @@
 
 import os
 import re
+import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -98,15 +99,24 @@ def parse_action(action_str: str) -> Tuple[str, Dict[str, Any]]:
     params_str = _extract_dict_string(action_str, start_pos)
     
     # 安全地解析参数字典
+    # 先尝试 JSON 格式（LLM 经常生成 JSON 格式的 true/false/null）
+    # 如果失败，再尝试 Python 格式（True/False/None）
     try:
-        # 使用 ast.literal_eval 而不是 eval，更安全
-        import ast
-        params = ast.literal_eval(params_str)
+        # 尝试 JSON 解析
+        params = json.loads(params_str)
         if not isinstance(params, dict):
             raise ValueError("参数必须是字典类型")
         return tool_name, params
-    except Exception as e:
-        raise ValueError(f"解析参数失败: {e}")
+    except (json.JSONDecodeError, ValueError):
+        # JSON 解析失败，尝试 Python 格式
+        try:
+            import ast
+            params = ast.literal_eval(params_str)
+            if not isinstance(params, dict):
+                raise ValueError("参数必须是字典类型")
+            return tool_name, params
+        except Exception as e:
+            raise ValueError(f"解析参数失败: {e}")
 
 
 def _extract_dict_string(text: str, start_pos: int) -> str:
