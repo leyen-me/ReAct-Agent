@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Any
 
-from .base import Tool
+from tools.base import Tool
 
 
 class RunCommandTool(Tool):
@@ -19,8 +19,8 @@ class RunCommandTool(Tool):
             work_dir: 工作目录
             timeout: 默认超时时间（秒）
         """
-        super().__init__(work_dir)
         self.default_timeout = timeout
+        super().__init__(work_dir)
     
     def _get_description(self) -> str:
         return "执行终端命令（如 npm install, python -m pytest, git status 等）。命令会在工作目录下执行。"

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from abc import ABC, abstractmethod
 
-from ..utils import validate_path
+from utils import validate_path
 
 
 class Tool(ABC):

@@ -7,8 +7,8 @@ import fnmatch
 from pathlib import Path
 from typing import Dict, Any, List
 
-from .base import Tool
-from ..utils import format_search_results, format_file_list
+from tools.base import Tool
+from utils import format_search_results, format_file_list
 
 
 class SearchInFilesTool(Tool):

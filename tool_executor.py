@@ -5,8 +5,8 @@ import logging
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 
-from .tools import Tool
-from .utils import parse_action
+from tools import Tool
+from utils import parse_action
 
 logger = logging.getLogger(__name__)
 

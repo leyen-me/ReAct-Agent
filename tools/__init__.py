@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """工具模块"""
 
-from .base import Tool
-from .file_tools import (
+from tools.base import Tool
+from tools.file_tools import (
     ReadFileTool,
     WriteFileTool,
     DeleteFileTool,
@@ -15,8 +15,8 @@ from .file_tools import (
     MoveFileTool,
     CopyFileTool,
 )
-from .command_tools import RunCommandTool
-from .search_tools import SearchInFilesTool, FindFilesTool
+from tools.command_tools import RunCommandTool
+from tools.search_tools import SearchInFilesTool, FindFilesTool
 
 __all__ = [
     "Tool",

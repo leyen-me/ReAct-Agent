@@ -11,15 +11,15 @@ from pathlib import Path
 from openai import OpenAI, Stream
 from openai.types.chat import ChatCompletionChunk
 
-from .config import config
-from .tools import (
+from config import config
+from tools import (
     Tool,
     ReadFileTool, WriteFileTool, DeleteFileTool, CreateFileTool,
     RenameFileTool, ListFilesTool, EditFileTool, CreateFolderTool,
     DeleteFolderTool, MoveFileTool, CopyFileTool, RunCommandTool,
     SearchInFilesTool, FindFilesTool,
 )
-from .tool_executor import create_tool_executor
+from tool_executor import create_tool_executor
 
 logger = logging.getLogger(__name__)
 

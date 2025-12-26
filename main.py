@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """ReAct Agent 主程序入口"""
 
-from .config import config
-from .logger_config import setup_logging
-from .agent import ReActAgent
+from config import config
+from logger_config import setup_logging
+from agent import ReActAgent
 
 
 def main():
