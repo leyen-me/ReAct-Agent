@@ -1,20 +1,3 @@
-### 2. Git 版本控制集成
-当前：无 Git 操作
-差距：
-- 无法查看提交历史、diff
-- 无法创建分支、提交代码
-- 无法理解代码变更上下文
-
-建议：
-```python
-# 需要添加的工具
-- GitStatusTool
-- GitDiffTool
-- GitCommitTool
-- GitBranchTool
-- GitLogTool
-```
-
 ### 3. 代码智能补全和重构
 当前：只能读写文件
 差距：
