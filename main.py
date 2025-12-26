@@ -5,22 +5,25 @@ import re
 import json
 import subprocess
 import shutil
-import glob
 import fnmatch
 
 from openai import OpenAI, Stream
 from openai.types.chat import ChatCompletionChunk
 from datetime import datetime
 
+# ========================= 目标 =========================
 # ReAct
 # Reasoning And Acting
 
-# ========================= 任务描述 =========================
+# ========================= 任务描述，输入以下任务，以测试代码是否正常运行 =========================
 # 1. 写一个贪吃蛇游戏，使用 HTML、CSS、JavaScript 实现，代码分别放在不同的文件中
 
 
 # ======================== 基础配置 ========================
 
+# 既然我们有自己的 thought，那么模型本身的 reasoning 能力可以不用了，只用它的回答能力
+# 既然我们有自己的 tool 和 action，那么也应该放弃模型本身的 tool 和 action 能力，我们自己的 tool 和 action 能力更强大，更灵活，更可靠
+# 小模型智能能力堪忧，还是采用 Qwen/Qwen3-235B-A22B-Instruct-2507 这个模型，这个模型是 Qwen 系列中最大的模型，性能最强，智能能力最强
 model = "Qwen/Qwen3-235B-A22B-Instruct-2507"
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
