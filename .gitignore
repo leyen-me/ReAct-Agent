@@ -13,7 +13,8 @@ dist/
 
 # PyInstaller
 *.manifest
-*.spec
+# 注意：react_agent.spec 需要提交，所以不忽略所有 .spec 文件
+# 只忽略构建过程中生成的临时 spec 文件（如果有的话）
 
 # 虚拟环境
 venv/
