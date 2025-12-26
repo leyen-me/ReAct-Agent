@@ -24,7 +24,13 @@ class Config:
         
         # 系统配置
         self.operating_system: str = os.getenv("OS", "macOS")
-        self.work_dir: Path = Path(__file__).parent / "workspace" # 或者写死 Path("/Users/apple/Desktop/project/agent-test")
+        # 工作目录：优先使用环境变量，否则使用当前工作目录
+        work_dir_env = os.getenv("WORK_DIR")
+        if work_dir_env:
+            self.work_dir: Path = Path(work_dir_env)
+        else:
+            # 使用当前工作目录（程序运行的目录），而不是项目目录
+            self.work_dir: Path = Path.cwd()
         self.work_dir = self.work_dir.resolve()  # 规范化路径
         
         # 调试配置
