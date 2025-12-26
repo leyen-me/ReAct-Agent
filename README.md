@@ -67,7 +67,70 @@ ReAct Agent 是一个研究项目，旨在实现和探索 ReAct（推理与行�
 - Python 3.7+
 - OpenAI Python SDK（兼容 SiliconFlow API）
 
-## 🚀 安装步骤
+## 📦 分发方式
+
+### 使用 GitHub Actions 自动打包（推荐）
+
+项目配置了 GitHub Actions 工作流，可以自动为 Windows、macOS、Linux 三个平台打包二进制文件。
+
+#### 触发打包
+
+**方式一：推送版本标签（推荐）**
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+**方式二：手动触发**
+1. 在 GitHub 仓库页面，点击 "Actions" 标签
+2. 选择 "Build Binaries" 工作流
+3. 点击 "Run workflow"
+4. 输入版本号（如 `1.0.0`），点击运行
+
+#### 下载打包结果
+
+打包完成后，有两种方式获取二进制文件：
+
+1. **从 Artifacts 下载**：
+   - 在 Actions 页面找到对应的运行记录
+   - 点击进入详情页，在 Artifacts 部分下载对应平台的文件
+
+2. **从 Releases 下载**（如果使用标签触发）：
+   - 在 Releases 页面会自动创建 Release
+   - 直接下载对应平台的可执行文件
+
+#### 使用打包好的二进制文件
+
+下载后，用户无需安装 Python 环境，直接运行：
+
+**Linux/macOS:**
+```bash
+chmod +x react-agent-1.0.0
+export OPENAI_API_KEY=your_api_key_here
+./react-agent-1.0.0
+```
+
+**Windows:**
+```cmd
+set OPENAI_API_KEY=your_api_key_here
+react-agent-1.0.0.exe
+```
+
+### 本地打包（开发测试）
+
+如果需要本地测试打包：
+
+```bash
+# 安装打包工具
+pip install pyinstaller
+
+# 打包
+pyinstaller react_agent.spec --clean --noconfirm
+
+# 二进制文件在 dist/ 目录
+```
+
+## 🚀 安装步骤（源码方式）
 
 1. **克隆项目**
 ```bash
@@ -156,10 +219,14 @@ agent/
 ├── logger_config.py      # 日志配置模块
 ├── tool_executor.py      # 工具执行器
 ├── utils.py              # 工具函数
+├── react_agent.spec      # PyInstaller 打包配置
 ├── README.md             # 项目说明文档
 ├── requirements.txt      # 依赖包列表
 ├── target.md             # 目标文档（可选）
 ├── workspace/            # 工作目录（自动创建）
+├── .github/               # GitHub 配置目录
+│   └── workflows/        # GitHub Actions 工作流
+│       └── build.yml     # 自动打包工作流
 └── tools/                # 工具模块目录
     ├── __init__.py       # 工具模块导出
     ├── base.py           # 工具基类
