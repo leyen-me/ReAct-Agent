@@ -35,9 +35,9 @@ git push origin v1.0.0
 1. 在 Actions 页面找到对应的运行记录
 2. 点击进入详情页
 3. 滚动到底部，在 "Artifacts" 部分下载：
-   - `react-agent-linux-1.0.0` - Linux 版本
-   - `react-agent-windows-1.0.0` - Windows 版本
-   - `react-agent-macos-1.0.0` - macOS 版本
+   - `ask-linux-1.0.0` - Linux 版本
+   - `ask-windows-1.0.0` - Windows 版本
+   - `ask-macos-1.0.0` - macOS 版本
 
 ### 从 Releases 下载（使用标签触发时）
 

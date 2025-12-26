@@ -18,14 +18,14 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
-            artifact_name: react-agent-linux
-            binary_name: react-agent
+            artifact_name: ask-linux
+            binary_name: ask
           - os: windows-latest
-            artifact_name: react-agent-windows
-            binary_name: react-agent.exe
+            artifact_name: ask-windows
+            binary_name: ask.exe
           - os: macos-latest
-            artifact_name: react-agent-macos
-            binary_name: react-agent
+            artifact_name: ask-macos
+            binary_name: ask
 
     runs-on: ${{ matrix.os }}
     
@@ -59,45 +59,64 @@ jobs:
         fi
       shell: bash
 
-    - name: Rename binary with version
+    - name: Rename binary with version (Linux/macOS)
+      if: matrix.os != 'windows-latest'
       run: |
         cd dist
-        if [ "${{ matrix.os }}" == "windows-latest" ]; then
-          mv react-agent.exe react-agent-${{ steps.get_version.outputs.version }}.exe
-        else
-          mv react-agent react-agent-${{ steps.get_version.outputs.version }}
-          chmod +x react-agent-${{ steps.get_version.outputs.version }}
-        fi
+        mv ask ask-${{ steps.get_version.outputs.version }}
+        chmod +x ask-${{ steps.get_version.outputs.version }}
+      shell: bash
+
+    - name: Rename binary with version (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        cd dist
+        Rename-Item -Path "ask.exe" -NewName "ask-${{ steps.get_version.outputs.version }}.exe"
+      shell: pwsh
+
+    - name: List dist files (debug)
+      if: matrix.os == 'windows-latest'
+      run: |
+        Get-ChildItem dist
+      shell: pwsh
+
+    - name: List dist files (debug)
+      if: matrix.os != 'windows-latest'
+      run: |
+        ls -la dist
       shell: bash
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.artifact_name }}-${{ steps.get_version.outputs.version }}
-        path: dist/${{ matrix.binary_name }}*
+        path: |
+          dist/ask-${{ steps.get_version.outputs.version }}*
+        if-no-files-found: error
         retention-days: 30
 
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
-        files: dist/${{ matrix.binary_name }}*
+        files: |
+          dist/ask-${{ steps.get_version.outputs.version }}*
         tag_name: v${{ steps.get_version.outputs.version }}
         name: Release v${{ steps.get_version.outputs.version }}
         body: |
           ## ReAct Agent v${{ steps.get_version.outputs.version }}
           
           ### 下载
-          - **Linux**: [react-agent-linux-${{ steps.get_version.outputs.version }}](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/react-agent-linux-${{ steps.get_version.outputs.version }})
-          - **Windows**: [react-agent-windows-${{ steps.get_version.outputs.version }}.exe](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/react-agent-windows-${{ steps.get_version.outputs.version }}.exe)
-          - **macOS**: [react-agent-macos-${{ steps.get_version.outputs.version }}](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/react-agent-macos-${{ steps.get_version.outputs.version }})
+          - **Linux**: [ask-linux-${{ steps.get_version.outputs.version }}](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/ask-linux-${{ steps.get_version.outputs.version }})
+          - **Windows**: [ask-windows-${{ steps.get_version.outputs.version }}.exe](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/ask-windows-${{ steps.get_version.outputs.version }}.exe)
+          - **macOS**: [ask-macos-${{ steps.get_version.outputs.version }}](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/ask-macos-${{ steps.get_version.outputs.version }})
           
           ### 使用方法
           1. 下载对应平台的可执行文件
           2. 设置环境变量：`export OPENAI_API_KEY=your_key` (Linux/macOS) 或 `set OPENAI_API_KEY=your_key` (Windows)
           3. 运行程序：
-             - Linux/macOS: `chmod +x react-agent-* && ./react-agent-*`
-             - Windows: `react-agent-*.exe`
+             - Linux/macOS: `chmod +x ask-* && ./ask-*`
+             - Windows: `ask-*.exe`
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

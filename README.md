@@ -105,15 +105,15 @@ git push origin v1.0.0
 
 **Linux/macOS:**
 ```bash
-chmod +x react-agent-1.0.0
+chmod +x ask-1.0.0
 export OPENAI_API_KEY=your_api_key_here
-./react-agent-1.0.0
+./ask-1.0.0
 ```
 
 **Windows:**
 ```cmd
 set OPENAI_API_KEY=your_api_key_here
-react-agent-1.0.0.exe
+ask-1.0.0.exe
 ```
 
 ### 本地打包（开发测试）
