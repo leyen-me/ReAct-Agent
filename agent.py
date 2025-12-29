@@ -157,67 +157,71 @@ class ReActAgent:
         tools_dict = [tool.to_dict() for tool in self.tools]
         
         return f"""
-你是专业的任务执行助手，你的任务是解决用户的问题。现在是北京时间 {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}。
+你是专业的任务执行助手，你的任务是解决用户的问题。
 
-你需要解决一个问题。为此，你需要将问题分解为多个步骤。对于每个步骤，首先使用 <thought> 思考要做什么，然后使用可用工具之一决定一个 <action>。接着，你将根据你的行动从环境/工具中收到一个 <observation>。持续这个思考和行动的过程，直到你有足够的信息来提供 <final_answer>。
+你需要解决一个问题。为此，你需要将问题分解为多个步骤。对于每个步骤，首先使用 <think> 思考要做什么，然后使用可用工具之一决定一个 <action>。接着，你将根据你的行动从环境/工具中收到一个 <observation>。持续这个思考和行动的过程，直到你有足够的信息来提供 <final_answer>。
 
-所有步骤请严格使用以下 XML 标签格式输出：
-- <question> 用户问题
-- <thought> 思考
+⸻
+
+响应格式（所有步骤请严格使用以下 XML 标签格式输出）：
+
+- <think> 思考
 - <action> 采取的工具操作
 - <observation> 工具或环境返回的结果
 - <final_answer> 最终答案
 
 ⸻
 
-例子 1:
-
-<question>你好</question>
-<thought>这是一个简单的问候，不需要使用工具，直接回复即可。</thought>
-<final_answer>你好！有什么可以帮助你的吗？</final_answer>
+系统规范（请严格遵守）：
+- 你每次回答都必须至少包括两个标签，第一个是 <think>，第二个是 <action> 或 <final_answer>
+- 输出 </action> 后立即停止生成，等待工具返回的 <observation>，擅自生成 <observation> 将导致错误
 
 ⸻
 
-例子 2:
+工具规范（action）：
 
-<question>将 script.js 中的函数名 hello 改为 greet</question>
-<thought>需要先读取文件查看内容，然后使用 EditFileTool 替换函数名。</thought>
-<action>EditFileTool().run({{'path': '{config.work_dir}/script.js', 'old_string': 'function hello()', 'new_string': 'function greet()'}})</action>
-<observation>文件{config.work_dir}/script.js编辑成功，已替换 1 处匹配的文本</observation>
-<final_answer>已成功将函数名从 hello 改为 greet。</final_answer>
+- 在涉及到 path 等路径参数时，必须使用绝对路径，例如：{config.work_dir}/script.js
+- 禁止操作非工作目录下的文件
+- 如果需要编辑现有文件，优先使用 EditFileTool 进行部分替换，而不是 WriteFileTool 全文替换
 
 ⸻
 
-请严格遵守：
-- 你每次回答都必须包括两个标签，第一个是 <thought>，第二个是 <action> 或 <final_answer>
-- 输出 <action> 后立即停止生成，等待真实的 <observation>，擅自生成 <observation> 将导致错误
+Good Example 01:
+
+user: <question>你好</question>
+assistant: <think>这是一个简单的问候，不需要使用工具，直接回复即可。</think> <final_answer>你好！有什么可以帮助你的吗？</final_answer>
 
 ⸻
 
-action 规范：
+Good Example 02:
 
-- 使用文件类型工具时，path 参数必须使用绝对路径
-- 使用文件类型工具时，path 的路径必须在当前工作目录下
-- **重要**：编辑现有文件时，优先使用 EditFileTool 进行部分替换，而不是 WriteFileTool 全文替换
-- EditFileTool 可以只替换文件中的特定部分，保留其他内容不变，类似于 Cursor 的部分替换功能
-- 使用 EditFileTool 时，old_string 必须与文件中的内容完全匹配（包括空格、换行、缩进等）
-- 以下是一些好的例子：
-
-<action>WriteFileTool().run({{'path': '{config.work_dir}/test.txt', 'content': 'xxx\\nxxx'}})</action>
-
-<action>EditFileTool().run({{'path': '{config.work_dir}/test.py', 'old_string': 'def hello():\\n    print(\\\"old\\\")', 'new_string': 'def hello():\\n    print(\\\"new\\\")'}})</action>
+user: <question>将 script.js 中的函数名 hello 改为 greet</question>
+assistant: <think>需要先读取文件查看内容，然后使用 EditFileTool 替换函数名。</think> <action> ReadFileTool().run({{'path': 'example/absolute/path/script.js'}}</action>
+tool(user): <observation>function hello() {{ console.log('hello'); }}</observation>
+assistant: <think>需要使用 EditFileTool 替换函数名。</think> <action>EditFileTool().run({{'path': 'example/absolute/path/script.js', 'old_string': 'function hello()', 'new_string': 'function greet()'}})</action>
+tool(user): <observation>文件 example/absolute/path/script.js 编辑成功，已替换 1 处匹配的文本</observation>
+assistant: <think> 任务顺利完成，可以回复用户了。</think> <final_answer>已成功将函数名从 hello 改为 greet。</final_answer>
 
 ⸻
 
-本次任务可用工具：
+Bad Example 01:
+
+- 回复时采用闭合标签，例如：<final_answer /> 而不是 <final_answer>...</final_answer>
+- 回复时缺少 <think> 标签，例如：<final_answer>...</final_answer>
+
+⸻
+
+工具列表（本次任务可用工具）：
+
 {json.dumps(tools_dict, indent=4, ensure_ascii=False)}
 
 ⸻
 
-环境信息：
+环境信息（请注意）：
 
-操作系统：{config.operating_system}
-工作目录：{config.work_dir}
+- 操作系统：{config.operating_system}
+- 工作目录：{config.work_dir}
+- 北京时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 """
     
     def _parse_content(self, content: str) -> Dict[str, Optional[str]]:
@@ -225,19 +229,19 @@ action 规范：
         解析模型返回的内容
         
         Returns:
-            包含 thought, action, final_answer 的字典
+            包含 think, action, final_answer 的字典
         """
         result = {
-            "thought": None,
+            "think": None,
             "action": None,
             "final_answer": None,
         }
         
-        # 解析 thought
-        if "<thought>" in content:
-            match = re.search(r"<thought>(.*?)</thought>", content, re.DOTALL)
+        # 解析 think
+        if "<think>" in content:
+            match = re.search(r"<think>(.*?)</think>", content, re.DOTALL)
             if match:
-                result["thought"] = match.group(1).strip()
+                result["think"] = match.group(1).strip()
         
         # 解析 action
         if "<action>" in content:
@@ -284,7 +288,8 @@ action 规范：
                     stream_response: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
                         model=config.model,
                         messages=self.message_manager.get_messages(),
-                        stream=True
+                        stream=True,
+                        temperature=0.3
                     )
                     break  # 成功则跳出重试循环
                 except Exception as e:
@@ -353,9 +358,9 @@ action 规范：
             # 解析内容
             parsed = self._parse_content(content)
             
-            # 处理 thought
-            if parsed["thought"]:
-                logger.info(f"=== Thought ===\n{parsed['thought']}\n")
+            # 处理 think
+            if parsed["think"]:
+                logger.info(f"=== think ===\n{parsed['think']}\n")
             
             # 处理 final_answer
             if parsed["final_answer"]:

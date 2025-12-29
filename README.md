@@ -6,7 +6,7 @@
 
 ReAct Agent 是一个研究项目，旨在实现和探索 ReAct（推理与行动）模式。该模式结合了推理（Reasoning）和行动（Acting）两个关键组件，使 AI 代理能够：
 
-- **思考（Thought）**：分析任务，制定计划
+- **思考（think）**：分析任务，制定计划
 - **行动（Action）**：调用工具执行具体操作
 - **观察（Observation）**：获取行动结果，调整策略
 
@@ -254,7 +254,7 @@ python main.py --help
 
 3. **观察执行过程**
 程序会实时显示：
-- 模型的思考过程（`<thought>`）
+- 模型的思考过程（`<think>`）
 - 执行的行动（`<action>`）
 - 工具返回的观察结果（`<observation>`）
 - 最终答案（`<final_answer>`）
@@ -356,7 +356,7 @@ ask "显示任务进度统计"
 程序使用 XML 标签来结构化输出：
 
 - `<question>`：用户问题
-- `<thought>`：思考过程
+- `<think>`：思考过程
 - `<action>`：工具调用
 - `<observation>`：工具返回结果
 - `<final_answer>`：最终答案
@@ -380,10 +380,10 @@ ask "显示任务进度统计"
 
 ```
 === 流式输出开始 ===
-<thought>
+<think>
 用户要求创建一个贪吃蛇游戏，需要分别创建 HTML、CSS、JavaScript 文件。
 我应该先创建目录结构，然后依次创建这三个文件。
-</thought>
+</think>
 
 <action>CreateFolderTool().run({'path': '/path/to/workspace/snake-game'})</action>
 === 流式输出结束 ===
