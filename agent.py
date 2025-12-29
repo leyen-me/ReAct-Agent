@@ -19,6 +19,7 @@ from tools import (
     DeleteFolderTool, MoveFileTool, CopyFileTool, RunCommandTool,
     SearchInFilesTool, FindFilesTool,
     GitStatusTool, GitDiffTool, GitCommitTool, GitBranchTool, GitLogTool,
+    AddTodoTool, ListTodosTool, UpdateTodoStatusTool, DeleteTodoTool, GetTodoStatsTool,
 )
 from tool_executor import create_tool_executor
 
@@ -144,6 +145,11 @@ class ReActAgent:
             GitCommitTool(config.work_dir),
             GitBranchTool(config.work_dir),
             GitLogTool(config.work_dir),
+            AddTodoTool(config.work_dir),
+            ListTodosTool(config.work_dir),
+            UpdateTodoStatusTool(config.work_dir),
+            DeleteTodoTool(config.work_dir),
+            GetTodoStatsTool(config.work_dir),
         ]
     
     def _get_system_prompt(self) -> str:
@@ -155,19 +161,16 @@ class ReActAgent:
 
 你需要解决一个问题。为此，你需要将问题分解为多个步骤。对于每个步骤，首先使用 <thought> 思考要做什么，然后使用可用工具之一决定一个 <action>。接着，你将根据你的行动从环境/工具中收到一个 <observation>。持续这个思考和行动的过程，直到你有足够的信息来提供 <final_answer>。
 
-在提供最终答案后，对于复杂的任务（涉及文件操作、多步骤执行等），你需要进行反思、检查、和总结。在反思、检查、和总结时，请使用 <reflection> 标签，对于简单的问候或闲聊任务，不需要反思、检查和总结。
-
 所有步骤请严格使用以下 XML 标签格式输出：
 - <question> 用户问题
 - <thought> 思考
 - <action> 采取的工具操作
 - <observation> 工具或环境返回的结果
 - <final_answer> 最终答案
-- <reflection> 任务反思
 
 ⸻
 
-例子 1（简单任务，不需要反思和总结）:
+例子 1:
 
 <question>你好</question>
 <thought>这是一个简单的问候，不需要使用工具，直接回复即可。</thought>
@@ -175,22 +178,19 @@ class ReActAgent:
 
 ⸻
 
-例子 2（复杂任务，需要反思和总结）:
+例子 2:
 
 <question>将 script.js 中的函数名 hello 改为 greet</question>
 <thought>需要先读取文件查看内容，然后使用 EditFileTool 替换函数名。</thought>
 <action>EditFileTool().run({{'path': '{config.work_dir}/script.js', 'old_string': 'function hello()', 'new_string': 'function greet()'}})</action>
 <observation>文件{config.work_dir}/script.js编辑成功，已替换 1 处匹配的文本</observation>
 <final_answer>已成功将函数名从 hello 改为 greet。</final_answer>
-<reflection>先读取文件确认内容，再使用 EditFileTool 进行部分替换，避免了全文重写。</reflection>
 
 ⸻
 
 请严格遵守：
 - 你每次回答都必须包括两个标签，第一个是 <thought>，第二个是 <action> 或 <final_answer>
 - 输出 <action> 后立即停止生成，等待真实的 <observation>，擅自生成 <observation> 将导致错误
-- 对于复杂任务，在 <final_answer> 后需要添加 <reflection> 标签
-- 对于简单问候或闲聊任务，不需要反思和检查
 
 ⸻
 
@@ -225,13 +225,12 @@ action 规范：
         解析模型返回的内容
         
         Returns:
-            包含 thought, action, final_answer, reflection 的字典
+            包含 thought, action, final_answer 的字典
         """
         result = {
             "thought": None,
             "action": None,
             "final_answer": None,
-            "reflection": None,
         }
         
         # 解析 thought
@@ -252,26 +251,8 @@ action 规范：
             if match:
                 result["final_answer"] = match.group(1).strip()
         
-        # 解析 reflection
-        if "<reflection>" in content:
-            match = re.search(r"<reflection>(.*?)</reflection>", content, re.DOTALL)
-            if match:
-                result["reflection"] = match.group(1).strip()
-        
-        # 容错处理：如果有 reflection 但没有 final_answer，尝试提取 reflection 之前的内容作为 final_answer
-        if result["reflection"] and not result["final_answer"]:
-            # 找到 reflection 标签之前的内容
-            reflection_match = re.search(r"<reflection>", content, re.DOTALL)
-            if reflection_match:
-                before_reflection = content[:reflection_match.start()].strip()
-                # 移除可能存在的 thought 和 action 标签内容
-                before_reflection = re.sub(r"<thought>.*?</thought>", "", before_reflection, flags=re.DOTALL).strip()
-                before_reflection = re.sub(r"<action>.*?</action>", "", before_reflection, flags=re.DOTALL).strip()
-                if before_reflection:
-                    result["final_answer"] = before_reflection
-        
         # 容错处理：如果没有任何标签，但内容看起来像最终回答（没有 action），尝试识别
-        if not result["action"] and not result["final_answer"] and not result["reflection"]:
+        if not result["action"] and not result["final_answer"]:
             # 如果内容不包含任何 XML 标签，且不是空的，可能是直接的回答
             if content.strip() and not re.search(r"<[^>]+>", content):
                 result["final_answer"] = content.strip()
@@ -350,11 +331,6 @@ action 规范：
             if parsed["final_answer"]:
                 logger.info(f"=== Final Answer ===\n{parsed['final_answer']}\n")
                 self.message_manager.add_final_answer(parsed["final_answer"])
-                
-                # 处理 reflection
-                if parsed["reflection"]:
-                    logger.info(f"=== Reflection ===\n{parsed['reflection']}\n")
-                
                 break
             
             # 处理 action
@@ -370,21 +346,6 @@ action 规范：
             
             # 如果没有 action 也没有 final_answer，尝试最后一次容错
             if not parsed["action"] and not parsed["final_answer"]:
-                # 如果内容中有 reflection，说明任务可能已完成，只是格式不对
-                if parsed["reflection"]:
-                    # 尝试将整个内容（除了 reflection）作为 final_answer
-                    content_without_reflection = re.sub(r"<reflection>.*?</reflection>", "", content, flags=re.DOTALL).strip()
-                    content_without_reflection = re.sub(r"<thought>.*?</thought>", "", content_without_reflection, flags=re.DOTALL).strip()
-                    content_without_reflection = re.sub(r"<action>.*?</action>", "", content_without_reflection, flags=re.DOTALL).strip()
-                    if content_without_reflection:
-                        logger.warning(f"模型输出格式不规范，但检测到 reflection，尝试自动修复")
-                        parsed["final_answer"] = content_without_reflection
-                        logger.info(f"=== Final Answer (自动修复) ===\n{parsed['final_answer']}\n")
-                        self.message_manager.add_final_answer(parsed["final_answer"])
-                        if parsed["reflection"]:
-                            logger.info(f"=== Reflection ===\n{parsed['reflection']}\n")
-                        break
-                
                 # 如果还是无法解析，报错
                 logger.error(f"模型未输出 <action> 或 <final_answer>\n内容: {content}")
                 raise RuntimeError("模型未输出 <action> 或 <final_answer>")

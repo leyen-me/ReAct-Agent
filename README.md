@@ -9,17 +9,17 @@ ReAct Agent 是一个研究项目，旨在实现和探索 ReAct（推理与行�
 - **思考（Thought）**：分析任务，制定计划
 - **行动（Action）**：调用工具执行具体操作
 - **观察（Observation）**：获取行动结果，调整策略
-- **反思（Reflection）**：完成任务后进行总结和反思
 
 ## ✨ 功能特性
 
 - 🤔 **智能推理**：基于大语言模型进行任务分解和规划
-- 🛠️ **丰富的工具集**：支持文件操作、代码搜索、命令执行、Git 管理等 18+ 种工具
+- 🛠️ **丰富的工具集**：支持文件操作、代码搜索、命令执行、Git 管理、Todo List 管理等 24+ 种工具
 - 🔄 **流式响应**：实时显示模型推理和输出过程
 - 💬 **对话式交互**：支持多轮对话，持续完成任务
 - 🔒 **安全机制**：路径验证，防止越权文件操作
 - 📊 **上下文管理**：智能管理对话上下文，自动处理 token 限制
 - 📝 **详细日志**：调试模式可查看完整的对话历史和 token 使用情况
+- ✅ **任务管理**：内置类似 Cursor 的 todo-list 功能，支持任务跟踪和统计
 
 ## 🛠️ 可用工具
 
@@ -61,6 +61,16 @@ ReAct Agent 是一个研究项目，旨在实现和探索 ReAct（推理与行�
 | `GitCommitTool` | 提交更改 |
 | `GitBranchTool` | 管理 Git 分支 |
 | `GitLogTool` | 查看提交历史 |
+
+### Todo List 管理工具
+
+| 工具名称 | 功能描述 |
+|---------|---------|
+| `AddTodoTool` | 添加新的 todo 项目 |
+| `ListTodosTool` | 列出 todo 项目（支持状态筛选） |
+| `UpdateTodoStatusTool` | 更新 todo 项目状态 |
+| `DeleteTodoTool` | 删除 todo 项目 |
+| `GetTodoStatsTool` | 获取 todo list 统计信息 |
 
 ## 📋 环境要求
 
@@ -248,7 +258,6 @@ python main.py --help
 - 执行的行动（`<action>`）
 - 工具返回的观察结果（`<observation>`）
 - 最终答案（`<final_answer>`）
-- 任务反思（`<reflection>`）
 - 上下文使用情况（token 使用百分比和剩余数量）
 
 4. **退出程序**
@@ -283,6 +292,35 @@ agent/
     ├── search_tools.py   # 代码搜索工具
     └── git_tools.py      # Git 管理工具
 ```
+
+## ✅ Todo List 功能
+
+项目现在集成了类似 Cursor 的 todo-list 功能，可以管理任务列表。所有 todo 数据保存在工作目录的 `todos.json` 文件中。
+
+### 主要特性
+
+- **任务管理**：添加、查看、更新、删除 todo 项目
+- **状态跟踪**：支持 pending、in_progress、completed、cancelled 四种状态
+- **统计功能**：实时查看任务进度统计
+- **持久化存储**：数据自动保存到 JSON 文件
+
+### 使用示例
+
+```bash
+# 添加任务
+ask "添加一个任务：实现用户认证功能"
+
+# 查看所有任务
+ask "列出所有待处理的任务"
+
+# 更新任务状态
+ask "将任务1标记为已完成"
+
+# 查看统计信息
+ask "显示任务进度统计"
+```
+
+详细使用说明请参考 [TODO_USAGE.md](TODO_USAGE.md)
 
 ## 🔧 配置说明
 
@@ -322,7 +360,6 @@ agent/
 - `<action>`：工具调用
 - `<observation>`：工具返回结果
 - `<final_answer>`：最终答案
-- `<reflection>`：任务反思
 
 ### 上下文管理
 
@@ -361,9 +398,6 @@ CreateFolderTool().run({'path': '/path/to/workspace/snake-game'})
 
 === Final Answer ===
 我已经成功创建了贪吃蛇游戏的所有文件...
-
-=== Reflection ===
-任务顺利完成，按照计划创建了三个文件...
 
 ============================================================
 [上下文使用: 15.3% (19,584/128,000 tokens) | 剩余: 108,416 tokens]

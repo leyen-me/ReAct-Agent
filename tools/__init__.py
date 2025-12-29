@@ -24,6 +24,13 @@ from tools.git_tools import (
     GitBranchTool,
     GitLogTool,
 )
+from tools.todo_tools import (
+    AddTodoTool,
+    ListTodosTool,
+    UpdateTodoStatusTool,
+    DeleteTodoTool,
+    GetTodoStatsTool,
+)
 
 __all__ = [
     "Tool",
@@ -45,6 +52,11 @@ __all__ = [
     "GitDiffTool",
     "GitCommitTool",
     "GitBranchTool",
-    "GitLogTool"
+    "GitLogTool",
+    "AddTodoTool",
+    "ListTodosTool",
+    "UpdateTodoStatusTool",
+    "DeleteTodoTool",
+    "GetTodoStatsTool"
 ]
 

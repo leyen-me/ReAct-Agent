@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>贪吃蛇游戏</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="game-container">
+        <h1>贪吃蛇</h1>
+        <div id="score">得分: 0</div>
+        <canvas id="gameCanvas" width="400" height="400"></canvas>
+        <div class="controls">
+            <p>使用方向键控制蛇的移动</p>
+            <label>难度: 
+                <select id="difficulty">
+                    <option value="slow">慢速</option>
+                    <option value="normal" selected>中速</option>
+                    <option value="fast">快速</option>
+                </select>
+            </label>
+            <button id="startBtn">开始游戏</button>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
