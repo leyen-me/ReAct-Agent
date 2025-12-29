@@ -53,6 +53,11 @@ class Config:
         
         # 确保工作目录存在
         self.work_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 用户语言偏好
+        self.user_language_preference: str = os.getenv("USER_LANGUAGE_PREFERENCE", "中文")
+        if self.user_language_preference not in ["中文", "English"]:
+            raise ValueError("USER_LANGUAGE_PREFERENCE 环境变量必须为 中文 或 English")
     
     def validate(self) -> None:
         """验证配置"""
