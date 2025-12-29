@@ -275,16 +275,46 @@ action 规范：
                 logger.debug(f"=== Chat Round {self.chat_count} ===")
                 logger.debug(f"Messages: {json.dumps(self.message_manager.get_messages(), indent=2, ensure_ascii=False)}")
             
-            # 调用 API
-            try:
-                stream_response: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
-                    model=config.model,
-                    messages=self.message_manager.get_messages(),
-                    stream=True
-                )
-            except Exception as e:
-                logger.error(f"API 调用失败: {e}")
-                raise
+            # 调用 API（带重试机制）
+            max_retries = 3
+            retry_count = 0
+            
+            while retry_count < max_retries:
+                try:
+                    stream_response: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
+                        model=config.model,
+                        messages=self.message_manager.get_messages(),
+                        stream=True
+                    )
+                    break  # 成功则跳出重试循环
+                except Exception as e:
+                    retry_count += 1
+                    error_msg = str(e)
+                    
+                    # 检查是否是速率限制错误
+                    if "429" in error_msg or "rate limit" in error_msg.lower() or "TPM" in error_msg:
+                        if retry_count < max_retries:
+                            logger.warning(f"API 速率限制，第 {retry_count} 次重试...")
+                            import time
+                            time.sleep(2 ** retry_count)  # 指数退避
+                        else:
+                            logger.error("API 调用失败: 已达到最大重试次数")
+                            print("\n=== 错误信息 ===")
+                            print("抱歉，当前使用的 token 每分钟有限制，请稍后再试。")
+                            print("错误详情:", error_msg)
+                            print("=== 错误信息结束 ===\n")
+                            return  # 优雅退出，不抛出异常
+                    else:
+                        # 其他错误，直接抛出
+                        logger.error(f"API 调用失败: {e}")
+                        raise
+            else:
+                # 重试次数用尽
+                logger.error("API 调用失败: 已达到最大重试次数")
+                print("\n=== 错误信息 ===")
+                print("抱歉，当前使用的 token 每分钟有限制，请稍后再试。")
+                print("=== 错误信息结束 ===\n")
+                return  # 优雅退出，不抛出异常
             
             # 处理流式响应
             content = ""
