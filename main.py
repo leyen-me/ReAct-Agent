@@ -47,10 +47,7 @@ def initialize_application() -> Tuple[ReActAgent, CommandProcessor, MergedComple
     agent = ReActAgent()
     
     # 初始化文件列表缓存（启动时自动扫描）
-    print("正在扫描工作目录...")
-    file_count = refresh_file_list(config.work_dir)
-    print(f"已扫描 {file_count} 个文件")
-    print("提示: 文件列表会在每轮对话前自动刷新")
+    refresh_file_list(config.work_dir)
     
     # 创建指令处理器
     command_processor = CommandProcessor(agent)
