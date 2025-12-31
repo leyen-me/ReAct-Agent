@@ -2,12 +2,33 @@
 """配置管理模块"""
 
 import os
+import platform
+import sys
 from pathlib import Path
 from typing import Optional
 
 
 class Config:
     """应用配置类"""
+    
+    @staticmethod
+    def detect_operating_system() -> str:
+        """自动检测操作系统
+        
+        Returns:
+            str: 操作系统名称 (Windows, macOS, Linux)
+        """
+        system = platform.system()
+        
+        if system == "Darwin":
+            return "macOS"
+        elif system == "Windows":
+            return "Windows"
+        elif system == "Linux":
+            return "Linux"
+        else:
+            # 对于其他未知系统，返回平台名称
+            return system
     
     def __init__(self):
         
@@ -17,7 +38,8 @@ class Config:
         self.base_url: str = os.getenv("OPENAI_BASE_URL", "https://integrate.api.nvidia.com/v1")
         
         # 系统配置
-        self.operating_system: str = os.getenv("OS", "macOS")
+        self.operating_system: str = os.getenv("OS", self.detect_operating_system())
+        
         # 工作目录：优先使用环境变量，否则使用当前工作目录
         work_dir_env = os.getenv("WORK_DIR")
         if work_dir_env:
