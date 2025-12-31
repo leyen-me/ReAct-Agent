@@ -7,6 +7,52 @@ from logger_config import setup_logging
 from agent import ReActAgent
 
 
+class CommandProcessor:
+    """指令处理器"""
+    
+    def __init__(self, agent):
+        self.agent = agent
+        self.commands = {
+            "help": self._help_command,
+            "exit": self._exit_command,
+        }
+    
+    def process_command(self, command_str):
+        """处理指令"""
+        if not command_str.startswith("/"):
+            return False
+        
+        # 提取指令名和参数
+        parts = command_str[1:].strip().split()
+        if not parts:
+            return False
+        
+        command_name = parts[0].lower()
+        args = parts[1:] if len(parts) > 1 else []
+        
+        # 执行指令
+        if command_name in self.commands:
+            self.commands[command_name](args)
+            return True
+        else:
+            print(f"未知指令: /{command_name}")
+            print("使用 /help 查看可用指令")
+            return True
+    
+    def _help_command(self, args):
+        """帮助指令"""
+        print("\n可用指令:")
+        print("  /help     - 显示此帮助信息")
+        print("  /exit     - 退出程序")
+        print("\n聊天模式:")
+        print("  直接输入文本进行对话，无需使用 / 前缀")
+    
+    def _exit_command(self, args):
+        """退出指令"""
+        print("\n感谢使用，再见！")
+        sys.exit(0)
+
+
 def main():
     """主函数"""
     # 处理命令行参数
@@ -70,12 +116,24 @@ def main():
     # 创建 Agent
     agent = ReActAgent()
     
+    # 创建指令处理器
+    command_processor = CommandProcessor(agent)
+    
+    # 显示欢迎信息
+    print("\n" + "="*60)
+    print("ReAct Agent - 智能代理工具")
+    print("="*60)
+    
     # 主循环
     try:
         while True:
-            task_message = input("\n请输入任务，输入 exit 退出: ")
-            if task_message == "exit":
-                break
+            task_message = input("")
+            
+            # 处理指令
+            if command_processor.process_command(task_message):
+                continue
+            
+            # 处理聊天
             if task_message.strip():
                 agent.chat(task_message)
                 

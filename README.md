@@ -270,7 +270,6 @@ agent/
 ├── __init__.py           # 包初始化文件
 ├── __main__.py           # 模块入口文件
 ├── main.py               # 主程序入口
-├── run.py                # 运行脚本
 ├── agent.py              # ReAct Agent 核心逻辑
 ├── config.py             # 配置管理模块
 ├── logger_config.py      # 日志配置模块
