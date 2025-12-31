@@ -18,6 +18,7 @@ class CommandProcessor:
         self.commands = {
             "help": self._help_command,
             "exit": self._exit_command,
+            "status": self._status_command,
         }
         
     def get_command_names(self):
@@ -58,6 +59,7 @@ class CommandProcessor:
         """帮助指令"""
         print("\n可用指令:")
         print("  /help     - 显示此帮助信息")
+        print("  /status   - 显示系统状态和上下文使用情况")
         print("  /exit     - 退出程序")
         print("\n聊天模式:")
         print("  直接输入文本进行对话，无需使用 / 前缀")
@@ -66,6 +68,22 @@ class CommandProcessor:
         """退出指令"""
         print("\n感谢使用，再见！")
         sys.exit(0)
+    
+    def _status_command(self, args):
+        """状态指令"""
+        if not hasattr(self.agent, 'message_manager'):
+            print("\n状态信息不可用")
+            return
+        
+        usage_percent = self.agent.message_manager.get_token_usage_percent()
+        remaining_tokens = self.agent.message_manager.get_remaining_tokens()
+        used_tokens = self.agent.message_manager.max_context_tokens - remaining_tokens
+        max_tokens = self.agent.message_manager.max_context_tokens
+        
+        print(f"{'='*60}")
+        print(f"上下文使用: {usage_percent:.1f}% ({used_tokens:,}/{max_tokens:,} tokens)")
+        print(f"剩余 tokens: {remaining_tokens:,}")
+        print(f"{'='*60}")
 
 
 def main():
@@ -136,7 +154,12 @@ def main():
     
     # 创建 Prompt Toolkit 会话
     command_names = command_processor.get_command_names()
-    completer = WordCompleter(command_names, ignore_case=True)
+    completer = WordCompleter(
+        command_names, 
+        ignore_case=True,
+        match_middle=True,  # 允许中间匹配
+        sentence=True       # 允许部分匹配
+    )
     
     session = PromptSession(
         completer=completer,
@@ -161,15 +184,6 @@ def main():
             # 处理聊天
             if task_message.strip():
                 agent.chat(task_message)
-                
-                # 每轮对话结束后显示上下文使用情况
-                usage_percent = agent.message_manager.get_token_usage_percent()
-                remaining_tokens = agent.message_manager.get_remaining_tokens()
-                used_tokens = agent.message_manager.max_context_tokens - remaining_tokens
-                max_tokens = agent.message_manager.max_context_tokens
-                print(f"\n{'='*60}")
-                print(f"[上下文使用: {usage_percent:.1f}% ({used_tokens:,}/{max_tokens:,} tokens) | 剩余: {remaining_tokens:,} tokens]")
-                print(f"{'='*60}")
     except EOFError:
         print("\n程序结束")
     except KeyboardInterrupt:
