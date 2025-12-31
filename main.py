@@ -6,7 +6,7 @@ from config import config
 from logger_config import setup_logging
 from agent import ReActAgent
 from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.completion import WordCompleter, Completion
 from prompt_toolkit.shortcuts import CompleteStyle
 from prompt_toolkit.styles import Style
 from prompt_toolkit.formatted_text import HTML
@@ -209,6 +209,7 @@ def main():
 
     # 创建 Prompt Toolkit 会话
     command_names = command_processor.get_command_names()
+    
     completer = WordCompleter(
         command_names,
         ignore_case=True,
@@ -216,15 +217,28 @@ def main():
         sentence=True,  # 允许部分匹配
     )
 
+    # 定义完整的样式字典（列表风格）
+    custom_style = Style.from_dict({
+        # 输入区域样式
+        "ansicyan": "#00ffcc",
+        "ansigray": "#888888",
+        
+        # 补全菜单样式（列表风格）
+        "completion-menu": "bg:#1a1a1a #ffffff",  # 菜单背景：深灰色，文字：白色
+        "completion-menu.completion": "bg:#2a2a2a #cccccc",  # 补全项背景：中灰色
+        "completion-menu.completion.current": "bg:#00ffcc #ffffff bold",  # 当前选中项：青色背景，白色粗体
+        "completion-menu.completion.selected": "bg:#00ffcc #ffffff bold",  # 选中项：绿色背景，黄色粗体
+        
+        # 滚动条样式
+        "scrollbar.background": "bg:#333333",
+        "scrollbar.button": "bg:#00ffcc",
+        "scrollbar.arrow": "#ffffff",
+    })
+
     session = PromptSession(
         completer=completer,
-        complete_style=CompleteStyle.MULTI_COLUMN,
-        style=Style.from_dict(
-            {
-                "ansicyan": "#00ffcc",
-                "ansigray": "#888888",
-            }
-        ),
+        complete_style=CompleteStyle.COLUMN,  # 改为单列列表风格
+        style=custom_style,
         placeholder=HTML("<ansigray>Plan, @ for context, / for commands</ansigray>"),
     )
 
