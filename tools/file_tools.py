@@ -195,13 +195,24 @@ class ListFilesTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "文件夹路径"}
+                "path": {"type": "string", "description": "文件夹路径"},
+                "ignore_patterns": {"type": "array", "items": {"type": "string"}, "description": "忽略的文件/目录模式（如 ['node_modules', '*.pyc']）", "default": []}
             },
             "required": ["path"],
         }
     
+    def _should_ignore(self, path: str, ignore_patterns: list) -> bool:
+        """检查路径是否应该被忽略"""
+        import fnmatch
+        
+        for pattern in ignore_patterns:
+            if fnmatch.fnmatch(os.path.basename(path), pattern):
+                return True
+        return False
+    
     def run(self, parameters: Dict[str, Any]) -> str:
         path = parameters["path"]
+        ignore_patterns = parameters.get("ignore_patterns", [])
         
         if not os.path.exists(path):
             return f"目录 {path} 不存在"
@@ -210,10 +221,100 @@ class ListFilesTool(Tool):
             return f"{path} 不是目录"
         
         try:
-            files = [os.path.join(path, f) for f in os.listdir(path)]
+            files = []
+            for f in os.listdir(path):
+                full_path = os.path.join(path, f)
+                if not self._should_ignore(full_path, ignore_patterns):
+                    files.append(full_path)
+            
             return "\n".join(files) if files else "目录为空"
         except Exception as e:
             return f"列出文件失败: {e}"
+
+
+class TreeFilesTool(Tool):
+    """显示目录树结构"""
+    
+    def _get_description(self) -> str:
+        return "显示目录树结构"
+    
+    def _get_parameters(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "文件夹路径"},
+                "max_depth": {"type": "number", "description": "最大深度（默认：3）", "default": 3},
+                "ignore_patterns": {"type": "array", "items": {"type": "string"}, "description": "忽略的文件/目录模式（如 ['node_modules', '*.pyc']）", "default": []}
+            },
+            "required": ["path"],
+        }
+    
+    def _should_ignore(self, path: str, ignore_patterns: list) -> bool:
+        """检查路径是否应该被忽略"""
+        import fnmatch
+        
+        for pattern in ignore_patterns:
+            if fnmatch.fnmatch(os.path.basename(path), pattern):
+                return True
+        return False
+    
+    def _build_tree(self, path: str, prefix: str = "", depth: int = 0, max_depth: int = 3, ignore_patterns: list = None) -> str:
+        """构建目录树结构"""
+        if ignore_patterns is None:
+            ignore_patterns = []
+        
+        if depth >= max_depth:
+            return ""
+        
+        if not os.path.exists(path) or not os.path.isdir(path):
+            return ""
+        
+        try:
+            items = []
+            for item in sorted(os.listdir(path)):
+                full_path = os.path.join(path, item)
+                if self._should_ignore(full_path, ignore_patterns):
+                    continue
+                
+                items.append(item)
+            
+            tree_lines = []
+            for i, item in enumerate(items):
+                full_path = os.path.join(path, item)
+                is_last = i == len(items) - 1
+                
+                connector = "└── " if is_last else "├── "
+                tree_lines.append(f"{prefix}{connector}{item}")
+                
+                if os.path.isdir(full_path):
+                    new_prefix = prefix + ("    " if is_last else "│   ")
+                    subtree = self._build_tree(full_path, new_prefix, depth + 1, max_depth, ignore_patterns)
+                    if subtree:
+                        tree_lines.append(subtree)
+            
+            return "\n".join(tree_lines)
+        except Exception:
+            return ""
+    
+    def run(self, parameters: Dict[str, Any]) -> str:
+        path = parameters["path"]
+        max_depth = parameters.get("max_depth", 3)
+        ignore_patterns = parameters.get("ignore_patterns", [])
+        
+        if not os.path.exists(path):
+            return f"目录 {path} 不存在"
+        
+        if not os.path.isdir(path):
+            return f"{path} 不是目录"
+        
+        try:
+            tree = self._build_tree(path, max_depth=max_depth, ignore_patterns=ignore_patterns)
+            if not tree:
+                return "目录为空或所有内容都被忽略"
+            
+            return f"{path}\n{tree}"
+        except Exception as e:
+            return f"显示目录树失败: {e}"
 
 
 class EditFileTool(Tool):
