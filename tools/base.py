@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """工具基类"""
 
+import re
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from abc import ABC, abstractmethod
@@ -19,7 +20,14 @@ class Tool(ABC):
             work_dir: 工作目录路径
         """
         self.work_dir = work_dir
-        self.name = self.__class__.__name__
+        # 将类名从大驼峰转换为小写下划线命名
+        class_name = self.__class__.__name__
+        # 移除末尾的 "Tool"（如果存在）
+        if class_name.endswith("Tool"):
+            class_name = class_name[:-4]
+        # 将大驼峰转换为小写下划线
+        name = re.sub(r'(?<!^)(?=[A-Z])', '_', class_name).lower()
+        self.name = name
         self._init_metadata()
     
     def _init_metadata(self) -> None:
