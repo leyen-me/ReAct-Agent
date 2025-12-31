@@ -5,6 +5,9 @@ import sys
 from config import config
 from logger_config import setup_logging
 from agent import ReActAgent
+from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.shortcuts import CompleteStyle
 
 
 class CommandProcessor:
@@ -16,11 +19,23 @@ class CommandProcessor:
             "help": self._help_command,
             "exit": self._exit_command,
         }
+        
+    def get_command_names(self):
+        """获取所有指令名称（带/前缀）"""
+        return [f"/{cmd}" for cmd in self.commands.keys()]
     
     def process_command(self, command_str):
         """处理指令"""
         if not command_str.startswith("/"):
             return False
+        
+        # 如果只有 /，显示指令帮助
+        if command_str.strip() == "/":
+            print("\n💡 可用指令:")
+            for cmd_name in self.commands.keys():
+                print(f"  /{cmd_name}")
+            print("\n💡 提示: 输入 / 后按 Tab 键自动补全")
+            return True
         
         # 提取指令名和参数
         parts = command_str[1:].strip().split()
@@ -119,6 +134,16 @@ def main():
     # 创建指令处理器
     command_processor = CommandProcessor(agent)
     
+    # 创建 Prompt Toolkit 会话
+    command_names = command_processor.get_command_names()
+    completer = WordCompleter(command_names, ignore_case=True)
+    
+    session = PromptSession(
+        completer=completer,
+        complete_style=CompleteStyle.MULTI_COLUMN,
+        message="请输入任务或指令: ",
+    )
+    
     # 显示欢迎信息
     print("\n" + "="*60)
     print("ReAct Agent - 智能代理工具")
@@ -127,7 +152,7 @@ def main():
     # 主循环
     try:
         while True:
-            task_message = input("")
+            task_message = session.prompt()
             
             # 处理指令
             if command_processor.process_command(task_message):
