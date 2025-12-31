@@ -2,14 +2,195 @@
 """ReAct Agent 主程序入口"""
 
 import sys
+import os
+from pathlib import Path
+from typing import List, Iterable, Optional
 from config import config
 from logger_config import setup_logging
 from agent import ReActAgent
 from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import WordCompleter, Completion
+from prompt_toolkit.completion import WordCompleter, Completion, Completer
 from prompt_toolkit.shortcuts import CompleteStyle
 from prompt_toolkit.styles import Style
 from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.document import Document
+
+
+class FileListManager:
+    """文件列表管理器，负责管理文件列表的缓存和更新"""
+    
+    def __init__(self, work_dir: Path):
+        """
+        初始化文件列表管理器
+        
+        Args:
+            work_dir: 工作目录路径
+        """
+        self.work_dir = work_dir
+        self.file_list: List[str] = []
+        self._refresh()
+    
+    def _refresh(self) -> None:
+        """刷新文件列表"""
+        self.file_list = scan_workspace_files(self.work_dir)
+    
+    def refresh(self) -> int:
+        """
+        刷新文件列表
+        
+        Returns:
+            文件数量
+        """
+        self._refresh()
+        return len(self.file_list)
+    
+    def get_file_list(self) -> List[str]:
+        """
+        获取文件列表
+        
+        Returns:
+            文件列表
+        """
+        return self.file_list
+    
+    def get_file_count(self) -> int:
+        """获取当前文件数量"""
+        return len(self.file_list)
+
+
+def scan_workspace_files(work_dir: Path, ignore_patterns: List[str] = None) -> List[str]:
+    """
+    扫描工作目录，生成文件列表并排序
+    
+    Args:
+        work_dir: 工作目录路径
+        ignore_patterns: 忽略的文件/目录模式列表
+        
+    Returns:
+        排序后的文件路径列表（相对于工作目录）
+    """
+    if ignore_patterns is None:
+        ignore_patterns = ['__pycache__', '.git', 'node_modules', '.venv', 'venv', '.env']
+    
+    file_list = []
+    
+    def should_ignore(path: Path) -> bool:
+        """检查路径是否应该被忽略"""
+        import fnmatch
+        path_str = str(path)
+        name = path.name
+        
+        # 检查是否匹配忽略模式
+        for pattern in ignore_patterns:
+            if fnmatch.fnmatch(name, pattern) or pattern in path_str:
+                return True
+        return False
+    
+    def scan_directory(directory: Path, relative_prefix: str = ""):
+        """递归扫描目录"""
+        try:
+            if not directory.exists() or not directory.is_dir():
+                return
+            
+            items = sorted(directory.iterdir(), key=lambda x: (x.is_file(), x.name.lower()))
+            
+            for item in items:
+                if should_ignore(item):
+                    continue
+                
+                relative_path = os.path.join(relative_prefix, item.name) if relative_prefix else item.name
+                
+                if item.is_file():
+                    file_list.append(relative_path)
+                elif item.is_dir():
+                    scan_directory(item, relative_path)
+        except PermissionError:
+            pass  # 忽略权限错误
+    
+    scan_directory(work_dir)
+    return sorted(file_list, key=str.lower)
+
+
+class FileCompleter(Completer):
+    """文件补全器，处理@符号后的文件补全"""
+    
+    def __init__(self, file_list_manager: FileListManager):
+        """
+        初始化文件补全器
+        
+        Args:
+            file_list_manager: 文件列表管理器
+        """
+        self.file_list_manager = file_list_manager
+    
+    def get_completions(self, document: Document, complete_event) -> Iterable[Completion]:
+        """获取补全项"""
+        text = document.text_before_cursor
+        
+        # 检查是否在@符号后
+        if '@' not in text:
+            return
+        
+        # 找到最后一个@符号的位置
+        last_at_index = text.rfind('@')
+        if last_at_index == -1:
+            return
+        
+        # 获取文件列表（如果需要会自动刷新）
+        file_list = self.file_list_manager.get_file_list()
+        
+        # 获取@符号后的文本（查询字符串）
+        query = text[last_at_index + 1:]
+        
+        # 如果查询字符串为空，显示前20个文件；否则过滤匹配的文件
+        if query.strip() == '':
+            matching_files = file_list[:20]  # 默认只显示前20个
+        else:
+            matching_files = [
+                f for f in file_list
+                if query.lower() in f.lower()
+            ]
+        
+        # 限制结果数量
+        matching_files = matching_files[:50]
+        
+        # 生成补全项
+        for file_path in matching_files:
+            # 计算需要替换的文本长度（从@后到光标位置）
+            replace_length = len(text) - last_at_index - 1
+            
+            yield Completion(
+                file_path,
+                start_position=-replace_length,
+                display=file_path,
+                style="fg:#00ffcc",
+            )
+
+
+class MergedCompleter(Completer):
+    """合并补全器，同时处理命令和文件补全"""
+    
+    def __init__(self, command_completer: WordCompleter, file_completer: FileCompleter):
+        """
+        初始化合并补全器
+        
+        Args:
+            command_completer: 命令补全器
+            file_completer: 文件补全器
+        """
+        self.command_completer = command_completer
+        self.file_completer = file_completer
+    
+    def get_completions(self, document: Document, complete_event) -> Iterable[Completion]:
+        """获取补全项"""
+        text = document.text_before_cursor
+        
+        # 如果以/开头，使用命令补全器
+        if text.startswith('/'):
+            yield from self.command_completer.get_completions(document, complete_event)
+        # 如果包含@符号，使用文件补全器
+        elif '@' in text:
+            yield from self.file_completer.get_completions(document, complete_event)
 
 
 class CommandProcessor:
@@ -67,6 +248,8 @@ class CommandProcessor:
         print("  /exit         - 退出程序")
         print("\n聊天模式:")
         print("  直接输入文本进行对话，无需使用 / 前缀")
+        print("  输入 @ 后按 Tab 键可以补全文件路径")
+        print("  文件列表会在每轮对话前自动刷新")
 
     def _exit_command(self, args):
         """退出指令"""
@@ -204,18 +387,29 @@ def main():
     # 创建 Agent
     agent = ReActAgent()
 
+    # 创建文件列表管理器（启动时自动扫描）
+    print("正在扫描工作目录...")
+    file_list_manager = FileListManager(config.work_dir)
+    print(f"已扫描 {file_list_manager.get_file_count()} 个文件")
+    print(f"提示: 文件列表会在每轮对话前自动刷新")
+
     # 创建指令处理器
     command_processor = CommandProcessor(agent)
-
-    # 创建 Prompt Toolkit 会话
-    command_names = command_processor.get_command_names()
     
-    completer = WordCompleter(
+    # 创建命令补全器
+    command_names = command_processor.get_command_names()
+    command_completer = WordCompleter(
         command_names,
         ignore_case=True,
         match_middle=True,  # 允许中间匹配
         sentence=True,  # 允许部分匹配
     )
+    
+    # 创建文件补全器
+    file_completer = FileCompleter(file_list_manager)
+    
+    # 创建合并补全器
+    completer = MergedCompleter(command_completer, file_completer)
 
     # 定义完整的样式字典（列表风格）
     custom_style = Style.from_dict({
@@ -261,6 +455,8 @@ def main():
 
             # 处理聊天
             if task_message.strip():
+                # 在每轮对话前自动刷新文件列表
+                file_list_manager.refresh()
                 agent.chat(task_message)
     except EOFError:
         print("\n程序结束")
