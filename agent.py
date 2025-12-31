@@ -286,13 +286,13 @@ class ReActAgent:
 
                     if hasattr(delta, "reasoning_content") and delta.reasoning_content:
                         if not start_reasoning_content:
-                            print("\n=== 模型思考 ===")
+                            print(f"\n{'='*config.log_separator_length} 模型思考 {'='*config.log_separator_length}")
                             start_reasoning_content = True
                         print(delta.reasoning_content, end="", flush=True)
 
                     if hasattr(delta, "content") and delta.content:
                         if not start_content:
-                            print("\n=== 最终回复 ===")
+                            print(f"\n{'='*config.log_separator_length} 最终回复 {'='*config.log_separator_length}")
                             start_content = True
                         chunk_content = delta.content
                         content += chunk_content
@@ -300,7 +300,7 @@ class ReActAgent:
 
                     if hasattr(delta, "tool_calls") and delta.tool_calls:
                         if not start_tool_call:
-                            print("\n=== 工具调用 ===")
+                            print(f"\n{'='*config.log_separator_length} 工具调用 {'='*config.log_separator_length}")
                             start_tool_call = True
                         for tc in delta.tool_calls:
                             tc_id = tc.id or last_tool_call_id

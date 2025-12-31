@@ -71,6 +71,9 @@ class Config:
         self.user_language_preference: str = os.getenv("USER_LANGUAGE_PREFERENCE", "中文")
         if self.user_language_preference not in ["中文", "English"]:
             raise ValueError("USER_LANGUAGE_PREFERENCE 环境变量必须为 中文 或 English")
+        
+        # 日志分隔符长度
+        self.log_separator_length: int = int(os.getenv("LOG_SEPARATOR_LENGTH", "20"))
     
     def validate(self) -> None:
         """验证配置"""
