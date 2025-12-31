@@ -8,7 +8,7 @@ from prompt_toolkit.completion import WordCompleter
 from config import config
 from logger_config import setup_logging
 from agent import ReActAgent
-from file_manager import FileListManager
+from utils import refresh_file_list, get_file_count
 from cli import (
     ArgumentHandler,
     CommandProcessor,
@@ -19,7 +19,7 @@ from cli import (
 )
 
 
-def initialize_application() -> Tuple[ReActAgent, FileListManager, CommandProcessor, MergedCompleter]:
+def initialize_application() -> Tuple[ReActAgent, CommandProcessor, MergedCompleter]:
     """
     初始化应用程序组件
     
@@ -46,10 +46,10 @@ def initialize_application() -> Tuple[ReActAgent, FileListManager, CommandProces
     # 创建 Agent
     agent = ReActAgent()
     
-    # 创建文件列表管理器（启动时自动扫描）
+    # 初始化文件列表缓存（启动时自动扫描）
     print("正在扫描工作目录...")
-    file_list_manager = FileListManager(config.work_dir)
-    print(f"已扫描 {file_list_manager.get_file_count()} 个文件")
+    file_count = refresh_file_list(config.work_dir)
+    print(f"已扫描 {file_count} 个文件")
     print("提示: 文件列表会在每轮对话前自动刷新")
     
     # 创建指令处理器
@@ -64,18 +64,17 @@ def initialize_application() -> Tuple[ReActAgent, FileListManager, CommandProces
         sentence=True,
     )
     
-    # 创建文件补全器
-    file_completer = FileCompleter(file_list_manager)
+    # 创建文件补全器（传入工作目录）
+    file_completer = FileCompleter(config.work_dir)
     
     # 创建合并补全器
     completer = MergedCompleter(command_completer, file_completer)
     
-    return agent, file_list_manager, command_processor, completer
+    return agent, command_processor, completer
 
 
 def run_interactive_session(
     agent: ReActAgent,
-    file_list_manager: FileListManager,
     command_processor: CommandProcessor,
     completer: MergedCompleter,
 ) -> None:
@@ -84,7 +83,6 @@ def run_interactive_session(
     
     Args:
         agent: ReActAgent 实例
-        file_list_manager: 文件列表管理器
         command_processor: 命令处理器
         completer: 补全器
     """
@@ -108,7 +106,7 @@ def run_interactive_session(
             # 处理聊天
             if task_message.strip():
                 # 在每轮对话前自动刷新文件列表
-                file_list_manager.refresh()
+                refresh_file_list(config.work_dir)
                 agent.chat(task_message)
     
     except EOFError:
@@ -132,10 +130,10 @@ def main():
         return
     
     # 初始化应用程序
-    agent, file_list_manager, command_processor, completer = initialize_application()
+    agent, command_processor, completer = initialize_application()
     
     # 运行交互式会话
-    run_interactive_session(agent, file_list_manager, command_processor, completer)
+    run_interactive_session(agent, command_processor, completer)
 
 
 if __name__ == "__main__":

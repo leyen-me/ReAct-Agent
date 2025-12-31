@@ -2,11 +2,12 @@
 """命令行补全器模块"""
 
 from typing import Iterable, Tuple
+from pathlib import Path
 from prompt_toolkit.completion import Completion, Completer
 from prompt_toolkit.document import Document
 from prompt_toolkit.completion import WordCompleter
 
-from file_manager import FileListManager
+from utils import get_file_list, search_files
 
 
 class FileCompleter(Completer):
@@ -17,14 +18,14 @@ class FileCompleter(Completer):
     # 最大补全结果数
     MAX_COMPLETIONS = 50
     
-    def __init__(self, file_list_manager: FileListManager):
+    def __init__(self, work_dir: Path):
         """
         初始化文件补全器
         
         Args:
-            file_list_manager: 文件列表管理器实例
+            work_dir: 工作目录路径
         """
-        self.file_list_manager = file_list_manager
+        self.work_dir = work_dir
     
     def _extract_query(self, text: str) -> Tuple[str, int]:
         """
@@ -70,9 +71,9 @@ class FileCompleter(Completer):
         
         # 获取匹配的文件列表
         if query.strip() == '':
-            matching_files = self.file_list_manager.get_file_list()[:self.DEFAULT_DISPLAY_COUNT]
+            matching_files = get_file_list(self.work_dir)[:self.DEFAULT_DISPLAY_COUNT]
         else:
-            matching_files = self.file_list_manager.search_files(query, limit=self.MAX_COMPLETIONS)
+            matching_files = search_files(self.work_dir, query, limit=self.MAX_COMPLETIONS)
         
         # 生成补全项
         replace_length = len(text) - at_index - 1
