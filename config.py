@@ -11,19 +11,10 @@ class Config:
     
     def __init__(self):
         
-        # 更加智能
-        # Qwen/Qwen3-235B-A22B-Instruct-2507
-        
-        # 更加快
-        # Qwen/Qwen3-Next-80B-A3B-Instruct
-        
-        # 快且智能
-        # Pro/deepseek-ai/DeepSeek-V3.2
-        
         # 模型配置
-        self.model: str = os.getenv("MODEL", "Pro/deepseek-ai/DeepSeek-V3.2")
+        self.model: str = os.getenv("MODEL", "openai/gpt-oss-120b")
         self.api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
-        self.base_url: str = os.getenv("OPENAI_BASE_URL", "https://api.siliconflow.cn/v1")
+        self.base_url: str = os.getenv("OPENAI_BASE_URL", "https://integrate.api.nvidia.com/v1")
         
         # 系统配置
         self.operating_system: str = os.getenv("OS", "macOS")
@@ -48,7 +39,7 @@ class Config:
         
         # 上下文配置
         # 根据模型设置默认最大上下文 token 数
-        default_max_tokens = 160000
+        default_max_tokens = 180000
         self.max_context_tokens: int = int(os.getenv("MAX_CONTEXT_TOKENS", str(default_max_tokens)))
         
         # 确保工作目录存在

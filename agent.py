@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 """ReAct Agent 主逻辑"""
 
-import re
 import json
 import logging
 from datetime import datetime
-from typing import List, Dict, Any, Optional
-from pathlib import Path
+from typing import List, Dict, Any
 
 from openai import OpenAI, Stream
 from openai.types.chat import ChatCompletionChunk
@@ -14,12 +12,30 @@ from openai.types.chat import ChatCompletionChunk
 from config import config
 from tools import (
     Tool,
-    ReadFileTool, WriteFileTool, DeleteFileTool, CreateFileTool,
-    RenameFileTool, ListFilesTool, EditFileTool, CreateFolderTool,
-    DeleteFolderTool, MoveFileTool, CopyFileTool, RunCommandTool,
-    SearchInFilesTool, FindFilesTool,
-    GitStatusTool, GitDiffTool, GitCommitTool, GitBranchTool, GitLogTool,
-    AddTodoTool, ListTodosTool, UpdateTodoStatusTool, DeleteTodoTool, GetTodoStatsTool,
+    ReadFileTool,
+    WriteFileTool,
+    DeleteFileTool,
+    CreateFileTool,
+    RenameFileTool,
+    ListFilesTool,
+    EditFileTool,
+    CreateFolderTool,
+    DeleteFolderTool,
+    MoveFileTool,
+    CopyFileTool,
+    RunCommandTool,
+    SearchInFilesTool,
+    FindFilesTool,
+    GitStatusTool,
+    GitDiffTool,
+    GitCommitTool,
+    GitBranchTool,
+    GitLogTool,
+    AddTodoTool,
+    ListTodosTool,
+    UpdateTodoStatusTool,
+    DeleteTodoTool,
+    GetTodoStatsTool,
 )
 from tool_executor import create_tool_executor
 
@@ -28,11 +44,11 @@ logger = logging.getLogger(__name__)
 
 class MessageManager:
     """消息管理器"""
-    
+
     def __init__(self, system_prompt: str, max_context_tokens: int):
         """
         初始化消息管理器
-        
+
         Args:
             system_prompt: 系统提示词
             max_context_tokens: 最大上下文 token 数
@@ -43,63 +59,80 @@ class MessageManager:
         ]
         # 当前实际使用的 token 数（从 API 响应获取）
         self.current_tokens: int = 0
-    
+
     def update_token_usage(self, prompt_tokens: int) -> None:
         """
         更新 token 使用量（从 API 响应获取）
-        
+
         Args:
             prompt_tokens: API 返回的 prompt_tokens
         """
         self.current_tokens = prompt_tokens
         self._manage_context()
-    
+
     def _manage_context(self) -> None:
         """管理上下文，当超过限制时删除旧消息（保留系统消息）"""
         # 如果超过限制，删除最旧的非系统消息
         while self.current_tokens > self.max_context_tokens and len(self.messages) > 1:
             # 保留系统消息，删除第一个非系统消息
             removed_message = self.messages.pop(1)
-            
-            if config.debug_mode:
-                logger.debug(f"上下文已满，删除旧消息，当前使用: {self.current_tokens}/{self.max_context_tokens}")
-            
+            logger.debug(
+                f"上下文已满，删除旧消息，当前使用: {self.current_tokens}/{self.max_context_tokens}"
+            )
             # 注意：删除消息后，下次 API 调用时会重新计算 token 数
             # 这里我们暂时保持 current_tokens 不变，等待下次 API 响应更新
-    
+
     def add_user_message(self, content: str) -> None:
         """添加用户消息"""
-        self.messages.append({"role": "user", "content": f"<question>{content}</question>"})
-    
-    def add_assistant_action(self, action: str) -> None:
-        """添加助手 action"""
-        self.messages.append({"role": "assistant", "content": f"<action>{action}</action>"})
-    
-    def add_observation(self, observation: str) -> None:
-        """添加观察结果"""
-        self.messages.append({"role": "user", "content": f"<observation>{observation}</observation>"})
-    
-    def add_final_answer(self, answer: str) -> None:
-        """添加最终答案"""
-        self.messages.append({"role": "assistant", "content": f"<final_answer>{answer}</final_answer>"})
-    
+        self.messages.append({"role": "user", "content": f"{content}"})
+
+    def add_assistant_content(self, content: str) -> None:
+        """添加助手内容"""
+        self.messages.append({"role": "assistant", "content": f"{content}"})
+
+    def add_assistant_tool_call_result(self, tool_call_id: str, content: str) -> None:
+        """添加助手工具调用结果"""
+        self.messages.append(
+            {"role": "tool", "tool_call_id": tool_call_id, "content": f"{content}"}
+        )
+
+    def add_assistant_tool_call(
+        self, tool_call_id: str, name: str, arguments: str = ""
+    ) -> None:
+        """添加助手工具调用"""
+        self.messages.append(
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": tool_call_id,
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": arguments,
+                        },
+                    }
+                ],
+            }
+        )
+
     def get_messages(self) -> List[Dict[str, str]]:
         """获取所有消息"""
         return self.messages.copy()
-    
+
     def get_token_usage_percent(self) -> float:
         """
         获取当前 token 使用百分比
-        
+
         Returns:
             使用百分比（0-100）
         """
         return (self.current_tokens / self.max_context_tokens) * 100
-    
+
     def get_remaining_tokens(self) -> int:
         """
         获取剩余可用 token 数
-        
+
         Returns:
             剩余 token 数
         """
@@ -108,7 +141,7 @@ class MessageManager:
 
 class ReActAgent:
     """ReAct Agent"""
-    
+
     def __init__(self):
         """初始化 Agent"""
         self.client = OpenAI(
@@ -118,11 +151,10 @@ class ReActAgent:
         self.tools = self._create_tools()
         self.tool_executor = create_tool_executor(self.tools)
         self.message_manager = MessageManager(
-            self._get_system_prompt(),
-            config.max_context_tokens
+            self._get_system_prompt(), config.max_context_tokens
         )
         self.chat_count = 0
-    
+
     def _create_tools(self) -> List[Tool]:
         """创建工具列表"""
         return [
@@ -151,149 +183,11 @@ class ReActAgent:
             DeleteTodoTool(config.work_dir),
             GetTodoStatsTool(config.work_dir),
         ]
-    
+
     def _get_system_prompt(self) -> str:
-        """Generate system prompt"""
-        tools_dict = [tool.to_dict() for tool in self.tools]
-            
-        return f"""
-    You are a professional task execution assistant. Your task is to solve the user's problem.
-
-    You need to solve a problem. To do so, you must decompose the problem into multiple steps. For each step, first use <think> to reason about what needs to be done, then decide on an <action> using one of the available tools. After that, you will receive an <observation> from the environment/tool based on your action. Continue this cycle of thinking and acting until you have sufficient information to provide a <final_answer>.
-
-    ⸻
-
-    Response Format (all steps must strictly use the following XML tags):
-
-    - <think> Thought process
-    - <action> Tool operation to take
-    - <observation> Result returned by the tool or environment
-    - <final_answer> Final answer
-
-    ⸻
-
-    System Rules (must be strictly followed):
-    - Each response must include at least two tags. The first must be <think>, and the second must be either <action> or <final_answer>.
-    - After outputting </action>, you must immediately stop generating and wait for the tool to return an <observation>. Generating an <observation> on your own will result in an error.
-
-    ⸻
-
-    Tool Usage Rules (action):
-
-    - When path-related parameters are involved, you must use absolute paths, for example: {config.work_dir}/script.js
-    - Operations on files outside the working directory are strictly forbidden.
-    - If you need to edit an existing file, prefer using EditFileTool for partial replacement instead of using WriteFileTool for full-file replacement.
-
-    ⸻
-
-    Good Example 01:
-
-    user: <question>Hello</question>  
-    assistant: <think>This is a simple greeting and does not require any tools. I can respond directly.</think>  
-    <final_answer>Hello! How can I help you?</final_answer>
-
-    ⸻
-
-    Good Example 02:
-
-    user: <question>Rename the function hello to greet in script.js</question>  
-    assistant: <think>I need to read the file first to inspect its contents, then use EditFileTool to replace the function name.</think>  
-    <action>ReadFileTool().run({{'path': 'example/absolute/path/script.js'}})</action>  
-    tool(user): <observation>function hello() {{ console.log('hello'); }}</observation>  
-
-    assistant: <think>I should now use EditFileTool to replace the function name.</think>  
-    <action>EditFileTool().run({{'path': 'example/absolute/path/script.js', 'old_string': 'function hello()', 'new_string': 'function greet()'}})</action>  
-    tool(user): <observation>The file example/absolute/path/script.js was edited successfully. 1 match was replaced.</observation>  
-
-    assistant: <think>The task has been successfully completed. I can now respond to the user.</think>  
-    <final_answer>The function name has been successfully changed from hello to greet.</final_answer>
-
-    ⸻
-
-    Bad Example 01:
-
-    - Using self-closing tags in responses, e.g. <final_answer /> instead of <final_answer>...</final_answer>
-    - Missing the <think> tag in responses, e.g. only outputting <final_answer>...</final_answer>
-
-    ⸻
-
-    Tool List (available tools for this task):
-
-    {json.dumps(tools_dict, indent=4, ensure_ascii=False)}
-
-    ⸻
-
-    Environment Information (important):
-
-    - Operating System: {config.operating_system}
-    - Working Directory: {config.work_dir}
-    - Beijing Time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-    - User Language Preference: {config.user_language_preference}
-    """
-
-    
-    def _get_system_prompt_by_cn(self) -> str:
         """生成系统提示词"""
-        tools_dict = [tool.to_dict() for tool in self.tools]
-        
         return f"""
 你是专业的任务执行助手，你的任务是解决用户的问题。
-
-你需要解决一个问题。为此，你需要将问题分解为多个步骤。对于每个步骤，首先使用 <think> 思考要做什么，然后使用可用工具之一决定一个 <action>。接着，你将根据你的行动从环境/工具中收到一个 <observation>。持续这个思考和行动的过程，直到你有足够的信息来提供 <final_answer>。
-
-⸻
-
-响应格式（所有步骤请严格使用以下 XML 标签格式输出）：
-
-- <think> 思考
-- <action> 采取的工具操作
-- <observation> 工具或环境返回的结果
-- <final_answer> 最终答案
-
-⸻
-
-系统规范（请严格遵守）：
-- 你每次回答都必须至少包括两个标签，第一个是 <think>，第二个是 <action> 或 <final_answer>
-- 输出 </action> 后立即停止生成，等待工具返回的 <observation>，擅自生成 <observation> 将导致错误
-
-⸻
-
-工具规范（action）：
-
-- 在涉及到 path 等路径参数时，必须使用绝对路径，例如：{config.work_dir}/script.js
-- 禁止操作非工作目录下的文件
-- 如果需要编辑现有文件，优先使用 EditFileTool 进行部分替换，而不是 WriteFileTool 全文替换
-
-⸻
-
-Good Example 01:
-
-user: <question>你好</question>
-assistant: <think>这是一个简单的问候，不需要使用工具，直接回复即可。</think> <final_answer>你好！有什么可以帮助你的吗？</final_answer>
-
-⸻
-
-Good Example 02:
-
-user: <question>将 script.js 中的函数名 hello 改为 greet</question>
-assistant: <think>需要先读取文件查看内容，然后使用 EditFileTool 替换函数名。</think> <action> ReadFileTool().run({{'path': 'example/absolute/path/script.js'}}</action>
-tool(user): <observation>function hello() {{ console.log('hello'); }}</observation>
-assistant: <think>需要使用 EditFileTool 替换函数名。</think> <action>EditFileTool().run({{'path': 'example/absolute/path/script.js', 'old_string': 'function hello()', 'new_string': 'function greet()'}})</action>
-tool(user): <observation>文件 example/absolute/path/script.js 编辑成功，已替换 1 处匹配的文本</observation>
-assistant: <think> 任务顺利完成，可以回复用户了。</think> <final_answer>已成功将函数名从 hello 改为 greet。</final_answer>
-
-⸻
-
-Bad Example 01:
-
-- 回复时采用闭合标签，例如：<final_answer /> 而不是 <final_answer>...</final_answer>
-- 回复时缺少 <think> 标签，例如：<final_answer>...</final_answer>
-
-⸻
-
-工具列表（本次任务可用工具）：
-
-{json.dumps(tools_dict, indent=4, ensure_ascii=False)}
 
 ⸻
 
@@ -304,165 +198,141 @@ Bad Example 01:
 - 北京时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 - 用户语言偏好：{config.user_language_preference}
 """
-    
-    def _parse_content(self, content: str) -> Dict[str, Optional[str]]:
-        """
-        解析模型返回的内容
-        
-        Returns:
-            包含 think, action, final_answer 的字典
-        """
-        result = {
-            "think": None,
-            "action": None,
-            "final_answer": None,
-        }
-        
-        # 解析 think
-        if "<think>" in content:
-            match = re.search(r"<think>(.*?)</think>", content, re.DOTALL)
-            if match:
-                result["think"] = match.group(1).strip()
-        
-        # 解析 action
-        if "<action>" in content:
-            match = re.search(r"<action>(.*?)</action>", content, re.DOTALL)
-            if match:
-                result["action"] = match.group(1).strip()
-        
-        # 解析 final_answer
-        if "<final_answer>" in content:
-            match = re.search(r"<final_answer>(.*?)</final_answer>", content, re.DOTALL)
-            if match:
-                result["final_answer"] = match.group(1).strip()
-        
-        # 容错处理：如果没有任何标签，但内容看起来像最终回答（没有 action），尝试识别
-        if not result["action"] and not result["final_answer"]:
-            # 如果内容不包含任何 XML 标签，且不是空的，可能是直接的回答
-            if content.strip() and not re.search(r"<[^>]+>", content):
-                result["final_answer"] = content.strip()
-        
-        return result
-    
+
+    def _get_tools(self) -> List[Dict[str, Any]]:
+        """获取工具列表"""
+        return [{"type": "function", "function": tool.to_dict()} for tool in self.tools]
+
     def chat(self, task_message: str) -> None:
         """
         处理用户任务
-        
+
         Args:
             task_message: 用户任务消息
         """
         self.message_manager.add_user_message(task_message)
-        
         while True:
             self.chat_count += 1
-            
-            if config.debug_mode:
-                logger.debug(f"=== Chat Round {self.chat_count} ===")
-                logger.debug(f"Messages: {json.dumps(self.message_manager.get_messages(), indent=2, ensure_ascii=False)}")
-            
+
+            logger.debug(f"=== Chat Round {self.chat_count} ===")
+            logger.debug(
+                f"Messages: {json.dumps(self.message_manager.get_messages(), indent=2, ensure_ascii=False)}"
+            )
+
             # 调用 API（带重试机制）
             max_retries = 3
             retry_count = 0
-            
+
             while retry_count < max_retries:
                 try:
-                    stream_response: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
-                        model=config.model,
-                        messages=self.message_manager.get_messages(),
-                        stream=True,
-                        temperature=0.3
+                    stream_response: Stream[ChatCompletionChunk] = (
+                        self.client.chat.completions.create(
+                            model=config.model,
+                            messages=self.message_manager.get_messages(),
+                            stream=True,
+                            temperature=1,
+                            top_p=1,
+                            max_tokens=4096,
+                            tools=self._get_tools(),
+                            tool_choice="auto",
+                        )
                     )
                     break  # 成功则跳出重试循环
                 except Exception as e:
                     retry_count += 1
-                    error_msg = str(e)
-                    
-                    # 检查是否是速率限制错误
-                    if "429" in error_msg or "rate limit" in error_msg.lower() or "TPM" in error_msg:
-                        if retry_count < max_retries:
-                            logger.warning(f"API 速率限制，第 {retry_count} 次重试...")
-                            import time
-                            time.sleep(2 ** retry_count)  # 指数退避
-                        else:
-                            logger.error("API 调用失败: 已达到最大重试次数")
-                            print("\n=== 错误信息 ===")
-                            print("抱歉，当前使用的 token 每分钟有限制，请稍后再试。")
-                            print("错误详情:", error_msg)
-                            print("=== 错误信息结束 ===\n")
-                            return  # 优雅退出，不抛出异常
-                    else:
-                        # 其他错误，直接抛出
-                        logger.error(f"API 调用失败: {e}")
-                        raise
+                    logger.error(f"API 调用失败: {e}")
+                    raise
+
             else:
                 # 重试次数用尽
                 logger.error("API 调用失败: 已达到最大重试次数")
                 print("\n=== 错误信息 ===")
-                print("抱歉，当前使用的 token 每分钟有限制，请稍后再试。")
+                print("API 调用失败: 已达到最大重试次数")
                 print("=== 错误信息结束 ===\n")
                 return  # 优雅退出，不抛出异常
-            
+
             # 处理流式响应
             content = ""
+            last_tool_call_id = None
+            tool_call_acc = {}
             usage = None
+
             print("\n=== 流式输出开始 ===")
             for chunk in stream_response:
+
                 # 获取 usage 信息（通常在最后一个 chunk 中）
-                if hasattr(chunk, 'usage') and chunk.usage is not None:
+                if hasattr(chunk, "usage") and chunk.usage is not None:
                     usage = chunk.usage
-                
+
                 if chunk.choices and len(chunk.choices) > 0:
-                    if hasattr(chunk.choices[0].delta, 'reasoning_content') and chunk.choices[0].delta.reasoning_content:
-                        print(chunk.choices[0].delta.reasoning_content, end="", flush=True)
-                    
-                    if hasattr(chunk.choices[0].delta, 'content') and chunk.choices[0].delta.content:
-                        chunk_content = chunk.choices[0].delta.content
+                    delta = chunk.choices[0].delta
+
+                    if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                        print(delta.reasoning_content, end="", flush=True)
+
+                    if hasattr(delta, "content") and delta.content:
+                        chunk_content = delta.content
                         content += chunk_content
                         print(chunk_content, end="", flush=True)
-            
+
+                    if hasattr(delta, "tool_calls") and delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            tc_id = tc.id or last_tool_call_id
+
+                            if tc_id is None:
+                                # 连第一个 id 都没有，直接跳过（极少见）
+                                continue
+
+                            last_tool_call_id = tc_id
+
+                            if tc_id not in tool_call_acc:
+                                tool_call_acc[tc_id] = {
+                                    "id": tc_id,
+                                    "name": "",
+                                    "arguments": "",
+                                }
+
+                            # 拼 name（虽然一般只来一次，但规范允许拆）
+                            if tc.function:
+                                if tc.function.name:
+                                    tool_call_acc[tc_id]["name"] += tc.function.name
+                                if tc.function.arguments:
+                                    tool_call_acc[tc_id][
+                                        "arguments"
+                                    ] += tc.function.arguments
+
             print("\n=== 流式输出结束 ===\n")
-            
+
             # 更新 token 使用量（从 API 响应获取）
             if usage:
-                prompt_tokens = getattr(usage, 'prompt_tokens', None)
+                prompt_tokens = getattr(usage, "prompt_tokens", None)
                 if prompt_tokens is not None:
                     self.message_manager.update_token_usage(prompt_tokens)
-                    if config.debug_mode:
-                        completion_tokens = getattr(usage, 'completion_tokens', 0)
-                        total_tokens = getattr(usage, 'total_tokens', 0)
-                        logger.debug(f"Token 使用: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}")
+                    completion_tokens = getattr(usage, "completion_tokens", 0)
+                    total_tokens = getattr(usage, "total_tokens", 0)
+                    logger.debug(
+                        f"Token 使用: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}"
+                    )
                 else:
                     logger.warning("API 响应中未找到 prompt_tokens")
             else:
                 logger.warning("流式响应中未找到 usage 信息")
-            
-            # 解析内容
-            parsed = self._parse_content(content)
-            
-            # 处理 think
-            if parsed["think"]:
-                logger.info(f"=== think ===\n{parsed['think']}\n")
-            
-            # 处理 final_answer
-            if parsed["final_answer"]:
-                logger.info(f"=== Final Answer ===\n{parsed['final_answer']}\n")
-                self.message_manager.add_final_answer(parsed["final_answer"])
-                break
-            
-            # 处理 action
-            if parsed["action"]:
-                logger.info(f"=== Action ===\n{parsed['action']}\n")
-                self.message_manager.add_assistant_action(parsed["action"])
-                
-                # 执行工具
-                observation = self.tool_executor.execute(parsed["action"])
-                logger.info(f"=== Observation ===\n{observation}\n")
-                self.message_manager.add_observation(observation)
-                continue
-            
-            # 如果没有 action 也没有 final_answer，尝试最后一次容错
-            if not parsed["action"] and not parsed["final_answer"]:
-                # 如果还是无法解析，报错
-                logger.error(f"模型未输出 <action> 或 <final_answer>\n内容: {content}")
-                raise RuntimeError("模型未输出 <action> 或 <final_answer>")
 
+            if tool_call_acc:
+                for tc_id, tc_data in tool_call_acc.items():
+                    logger.info(f"执行工具 {tc_data['name']}，参数: {tc_data['arguments']}")
+                    self.message_manager.add_assistant_tool_call(
+                        tc_id, tc_data["name"], tc_data["arguments"]
+                    )
+                    tool_call_result = self.tool_executor.execute(
+                        tc_data["name"], tc_data["arguments"]
+                    )
+                    logger.info(f"工具调用结果: {tool_call_result}")
+                    self.message_manager.add_assistant_tool_call_result(
+                        tc_data["id"], tool_call_result
+                    )
+                continue
+            else:
+                logger.info(f"=== Final Answer ===\n{content}\n")
+                self.message_manager.add_assistant_content(content)
+                break
