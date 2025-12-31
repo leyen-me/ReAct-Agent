@@ -159,10 +159,13 @@ class FileCompleter(Completer):
             # 计算需要替换的文本长度（从@后到光标位置）
             replace_length = len(text) - last_at_index - 1
             
+            # 用反引号包裹文件路径，方便 AI 识别
+            completion_text = f"`{file_path}`"
+            
             yield Completion(
-                file_path,
+                completion_text,
                 start_position=-replace_length,
-                display=file_path,
+                display=file_path,  # 显示时仍然显示原始路径（不带反引号）
                 style="fg:#00ffcc",
             )
 
