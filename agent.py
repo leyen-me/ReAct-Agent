@@ -144,6 +144,18 @@ class ReActAgent:
 
     def __init__(self):
         """初始化 Agent"""
+        # 禁用 OpenAI 客户端的 HTTP 日志输出
+        import httpx
+        import logging
+        
+        # 禁用 httpx 的日志
+        httpx_logger = logging.getLogger("httpx")
+        httpx_logger.setLevel(logging.WARNING)
+        
+        # 禁用 httpcore 的日志（httpx 的底层库）
+        httpcore_logger = logging.getLogger("httpcore")
+        httpcore_logger.setLevel(logging.WARNING)
+        
         self.client = OpenAI(
             api_key=config.api_key,
             base_url=config.base_url,
