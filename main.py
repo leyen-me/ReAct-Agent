@@ -19,6 +19,7 @@ class CommandProcessor:
             "help": self._help_command,
             "exit": self._exit_command,
             "status": self._status_command,
+            "get_messages": self._get_messages_command,
         }
         
     def get_command_names(self):
@@ -58,9 +59,10 @@ class CommandProcessor:
     def _help_command(self, args):
         """帮助指令"""
         print("\n可用指令:")
-        print("  /help     - 显示此帮助信息")
-        print("  /status   - 显示系统状态和上下文使用情况")
-        print("  /exit     - 退出程序")
+        print("  /help         - 显示此帮助信息")
+        print("  /status       - 显示系统状态和上下文使用情况")
+        print("  /get_messages - 显示当前对话消息历史")
+        print("  /exit         - 退出程序")
         print("\n聊天模式:")
         print("  直接输入文本进行对话，无需使用 / 前缀")
     
@@ -83,6 +85,51 @@ class CommandProcessor:
         print(f"{'='*60}")
         print(f"上下文使用: {usage_percent:.1f}% ({used_tokens:,}/{max_tokens:,} tokens)")
         print(f"剩余 tokens: {remaining_tokens:,}")
+        print(f"{'='*60}")
+    
+    def _get_messages_command(self, args):
+        """获取消息指令"""
+        if not hasattr(self.agent, 'message_manager'):
+            print("\n消息管理器不可用")
+            return
+            
+        messages = self.agent.message_manager.get_messages()
+        
+        print(f"\n{'='*60}")
+        print("当前对话消息历史:")
+        print(f"{'='*60}")
+        
+        for i, message in enumerate(messages, 1):
+            role = message.get('role', 'unknown')
+            content = message.get('content', '')
+            
+            print(f"\n{i}. [{role.upper()}]")
+            if content:
+                # 显示内容，如果太长则截断
+                if len(content) > 200:
+                    print(f"   {content[:200]}...")
+                else:
+                    print(f"   {content}")
+            
+            # 如果是工具调用，显示相关信息
+            if 'tool_calls' in message:
+                print("   [工具调用]")
+                for tool_call in message.get('tool_calls', []):
+                    if 'function' in tool_call:
+                        func = tool_call['function']
+                        print(f"     函数: {func.get('name', 'unknown')}")
+                        print(f"     参数: {func.get('arguments', '')}")
+            
+            # 如果是工具结果，显示结果
+            if 'tool_call_id' in message:
+                print(f"   [工具结果]")
+                if len(content) > 200:
+                    print(f"     结果: {content[:200]}...")
+                else:
+                    print(f"     结果: {content}")
+        
+        print(f"\n{'='*60}")
+        print(f"总计 {len(messages)} 条消息")
         print(f"{'='*60}")
 
 
@@ -164,7 +211,7 @@ def main():
     session = PromptSession(
         completer=completer,
         complete_style=CompleteStyle.MULTI_COLUMN,
-        message="请输入任务或指令: ",
+        message="\n\n请输入任务或指令: ",
     )
     
     # 显示欢迎信息

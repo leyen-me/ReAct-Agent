@@ -256,8 +256,11 @@ class ReActAgent:
             last_tool_call_id = None
             tool_call_acc = {}
             usage = None
+            
+            start_reasoning_content = False
+            start_content = False
+            start_tool_call = False
 
-            print("\n=== 流式输出开始 ===")
             for chunk in stream_response:
 
                 # 获取 usage 信息（通常在最后一个 chunk 中）
@@ -268,14 +271,23 @@ class ReActAgent:
                     delta = chunk.choices[0].delta
 
                     if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                        if not start_reasoning_content:
+                            print("\n=== 模型思考 ===")
+                            start_reasoning_content = True
                         print(delta.reasoning_content, end="", flush=True)
 
                     if hasattr(delta, "content") and delta.content:
+                        if not start_content:
+                            print("\n=== 最终回复 ===")
+                            start_content = True
                         chunk_content = delta.content
                         content += chunk_content
                         print(chunk_content, end="", flush=True)
 
                     if hasattr(delta, "tool_calls") and delta.tool_calls:
+                        if not start_tool_call:
+                            print("\n=== 工具调用 ===")
+                            start_tool_call = True
                         for tc in delta.tool_calls:
                             tc_id = tc.id or last_tool_call_id
 
@@ -296,12 +308,12 @@ class ReActAgent:
                             if tc.function:
                                 if tc.function.name:
                                     tool_call_acc[tc_id]["name"] += tc.function.name
+                                    print(tc.function.name, end="", flush=True)
                                 if tc.function.arguments:
                                     tool_call_acc[tc_id][
                                         "arguments"
                                     ] += tc.function.arguments
-
-            print("\n=== 流式输出结束 ===\n")
+                                    print(tc.function.arguments, end="", flush=True)
 
             # 更新 token 使用量（从 API 响应获取）
             if usage:
@@ -320,19 +332,21 @@ class ReActAgent:
 
             if tool_call_acc:
                 for tc_id, tc_data in tool_call_acc.items():
-                    logger.info(f"执行工具 {tc_data['name']}，参数: {tc_data['arguments']}")
+                    # logger.info(f"=== Tool Call ===")
+                    # logger.debug(f"name: {tc_data['name']}")
+                    # logger.debug(f"arguments: {tc_data['arguments']}")
                     self.message_manager.add_assistant_tool_call(
                         tc_id, tc_data["name"], tc_data["arguments"]
                     )
                     tool_call_result = self.tool_executor.execute(
                         tc_data["name"], tc_data["arguments"]
                     )
-                    logger.info(f"工具调用结果: {tool_call_result}")
                     self.message_manager.add_assistant_tool_call_result(
                         tc_data["id"], tool_call_result
                     )
                 continue
             else:
-                logger.info(f"=== Final Answer ===\n{content}\n")
+                # logger.info(f"=== Final Answer ===")
+                # logger.info(content)
                 self.message_manager.add_assistant_content(content)
                 break
