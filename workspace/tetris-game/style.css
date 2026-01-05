@@ -1,0 +1,110 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f0f0f0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+.game-container {
+    text-align: center;
+    background-color: white;
+    border-radius: 10px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+}
+
+.game-header {
+    margin-bottom: 20px;
+}
+
+.game-header h1 {
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.score-container {
+    display: flex;
+    justify-content: space-between;
+    max-width: 300px;
+    margin: 0 auto;
+}
+
+.score-container p {
+    font-size: 18px;
+    font-weight: bold;
+    color: #555;
+}
+
+.game-board {
+    display: grid;
+    grid-template-columns: repeat(10, 30px);
+    grid-template-rows: repeat(20, 30px);
+    gap: 1px;
+    margin: 0 auto;
+    background-color: #eee;
+    border: 2px solid #ccc;
+}
+
+.cell {
+    width: 30px;
+    height: 30px;
+    background-color: #fff;
+    border: 1px solid #ddd;
+}
+
+.cell.filled {
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* 方块颜色 */
+.cell.i { background-color: #00f0f0; }
+.cell.j { background-color: #0000f0; }
+.cell.l { background-color: #f0a000; }
+.cell.o { background-color: #f0f000; }
+.cell.s { background-color: #00f000; }
+.cell.t { background-color: #a000f0; }
+.cell.z { background-color: #f00000; }
+
+.game-controls {
+    margin-top: 20px;
+}
+
+button {
+    padding: 10px 20px;
+    margin: 0 10px;
+    font-size: 16px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    background-color: #4CAF50;
+    color: white;
+}
+
+button:hover {
+    background-color: #45a049;
+}
+
+#pause-btn {
+    background-color: #f0ad4e;
+}
+
+#pause-btn:hover {
+    background-color: #eea236;
+}
+
+.instructions {
+    margin-top: 20px;
+    color: #666;
+}
+
+.instructions p {
+    margin: 5px 0;
+}

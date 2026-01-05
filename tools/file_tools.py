@@ -19,7 +19,7 @@ class ReadFileTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "文件路径"}
+                "path": {"type": "string", "description": "文件绝对路径"}
             },
             "required": ["path"],
         }
@@ -50,7 +50,7 @@ class WriteFileTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "文件路径"},
+                "path": {"type": "string", "description": "文件绝对路径"},
                 "content": {"type": "string", "description": "文件内容"},
             },
             "required": ["path", "content"],
@@ -82,7 +82,7 @@ class DeleteFileTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "文件路径"}
+                "path": {"type": "string", "description": "文件绝对路径"}
             },
             "required": ["path"],
         }
@@ -113,7 +113,7 @@ class CreateFileTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "文件路径"}
+                "path": {"type": "string", "description": "文件绝对路径"}
             },
             "required": ["path"],
         }
@@ -147,7 +147,7 @@ class RenameFileTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "文件路径"},
+                "path": {"type": "string", "description": "文件绝对路径"},
                 "new_name": {"type": "string", "description": "新文件名"},
             },
             "required": ["path", "new_name"],
@@ -327,7 +327,7 @@ class EditFileTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "文件路径"},
+                "path": {"type": "string", "description": "文件绝对路径"},
                 "old_string": {"type": "string", "description": "要替换的原始文本（必须精确匹配，包括空格、换行等）"},
                 "new_string": {"type": "string", "description": "替换后的新文本"},
                 "replace_all": {"type": "boolean", "description": "是否替换所有匹配项（默认 false，只替换第一个匹配项）", "default": False},

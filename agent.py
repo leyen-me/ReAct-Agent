@@ -276,7 +276,7 @@ class ReActAgent:
             start_tool_call = False
 
             for chunk in stream_response:
-
+                
                 # 获取 usage 信息（通常在最后一个 chunk 中）
                 if hasattr(chunk, "usage") and chunk.usage is not None:
                     usage = chunk.usage
@@ -337,12 +337,12 @@ class ReActAgent:
                     completion_tokens = getattr(usage, "completion_tokens", 0)
                     total_tokens = getattr(usage, "total_tokens", 0)
                     logger.debug(
-                        f"Token 使用: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}"
+                        f"\nToken 使用: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}"
                     )
                 else:
-                    logger.warning("API 响应中未找到 prompt_tokens")
+                    logger.warning("\nAPI 响应中未找到 prompt_tokens")
             else:
-                logger.warning("流式响应中未找到 usage 信息")
+                logger.warning("\n流式响应中未找到 usage 信息")
 
             if tool_call_acc:
                 for tc_id, tc_data in tool_call_acc.items():
