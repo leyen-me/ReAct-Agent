@@ -106,6 +106,38 @@ jobs:
         run: |
           find dist -type f
 
+      - name: Rename files for release
+        shell: bash
+        run: |
+          # 获取版本号
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+          fi
+          
+          # 重命名文件，使用 artifact 目录名作为文件名以避免冲突
+          # artifact 目录格式: ask-<platform>-<version>
+          for dir in dist/*/; do
+            if [ -d "$dir" ]; then
+              artifact_name=$(basename "$dir")
+              for file in "$dir"*; do
+                if [ -f "$file" ]; then
+                  filename=$(basename "$file")
+                  extension="${filename##*.}"
+                  if [ "$extension" = "$filename" ]; then
+                    # 没有扩展名，直接使用 artifact 名称
+                    newname="$artifact_name"
+                  else
+                    # 有扩展名，保留扩展名
+                    newname="${artifact_name}.${extension}"
+                  fi
+                  mv "$file" "$dir$newname"
+                fi
+              done
+            fi
+          done
+
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
