@@ -1,10 +1,10 @@
 # ReAct Agent
 
-一个基于 ReAct（Reasoning and Acting）模式的智能代理实现，通过大语言模型进行推理和行动，能够自主完成复杂的文件操作、代码编辑和 Git 管理等任务。
+一个基于 ReAct（Reasoning and Acting）模式的智能代理实现，通过大语言模型进行推理和行动，能够自主完成复杂的文件操作、代码编辑、Git 管理和任务管理等任务。
 
 ## 📖 项目简介
 
-ReAct Agent 是一个研究项目，旨在实现和探索 ReAct（推理与行动）模式。该模式结合了推理（Reasoning）和行动（Acting）两个关键组件，使 AI 代理能够：
+ReAct Agent 是一个基于 ReAct（Reasoning and Acting）模式的智能代理实现，通过大语言模型进行推理和行动。该模式结合了推理（Reasoning）和行动（Acting）两个关键组件，使 AI 代理能够：
 
 - **思考（think）**：分析任务，制定计划
 - **行动（Action）**：调用工具执行具体操作
@@ -13,13 +13,14 @@ ReAct Agent 是一个研究项目，旨在实现和探索 ReAct（推理与行�
 ## ✨ 功能特性
 
 - 🤔 **智能推理**：基于大语言模型进行任务分解和规划
-- 🛠️ **丰富的工具集**：支持文件操作、代码搜索、命令执行、Git 管理、Todo List 管理等 24+ 种工具
+- 🛠️ **丰富的工具集**：支持文件操作、代码搜索、命令执行、Git 管理、Todo List 管理等 25+ 种工具
 - 🔄 **流式响应**：实时显示模型推理和输出过程
 - 💬 **对话式交互**：支持多轮对话，持续完成任务
 - 🔒 **安全机制**：路径验证，防止越权文件操作
 - 📊 **上下文管理**：智能管理对话上下文，自动处理 token 限制
 - 📝 **详细日志**：调试模式可查看完整的对话历史和 token 使用情况
 - ✅ **任务管理**：内置类似 Cursor 的 todo-list 功能，支持任务跟踪和统计
+- 📁 **目录树展示**：支持显示目录树结构，便于查看项目结构
 
 ## 🛠️ 可用工具
 
@@ -36,6 +37,7 @@ ReAct Agent 是一个研究项目，旨在实现和探索 ReAct（推理与行�
 | `MoveFileTool` | 移动文件 |
 | `CopyFileTool` | 复制文件 |
 | `ListFilesTool` | 列出目录文件列表 |
+| `TreeFilesTool` | 显示目录树结构 |
 | `CreateFolderTool` | 创建文件夹 |
 | `DeleteFolderTool` | 删除文件夹 |
 
@@ -75,7 +77,7 @@ ReAct Agent 是一个研究项目，旨在实现和探索 ReAct（推理与行�
 ## 📋 环境要求
 
 - Python 3.7+
-- OpenAI Python SDK（兼容 SiliconFlow API）
+- OpenAI Python SDK（兼容 NVIDIA NIM API）
 
 ## 📦 分发方式
 
@@ -198,11 +200,11 @@ export OPENAI_API_KEY=your_api_key_here
 
 可选的环境变量：
 ```bash
-# 模型名称（默认：Qwen/Qwen3-Next-80B-A3B-Instruct）
-export MODEL=Qwen/Qwen3-Next-80B-A3B-Instruct
+# 模型名称（默认：openai/gpt-oss-120b）
+export MODEL=openai/gpt-oss-120b
 
-# API 基础 URL（默认：https://api.siliconflow.cn/v1）
-export OPENAI_BASE_URL=https://api.siliconflow.cn/v1
+# API 基础 URL（默认：https://integrate.api.nvidia.com/v1）
+export OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1
 
 # 操作系统（默认：macOS）
 export OS=macOS
@@ -406,7 +408,7 @@ CreateFolderTool().run({'path': '/path/to/workspace/snake-game'})
 ## 📚 相关资源
 
 - [ReAct 论文](https://arxiv.org/abs/2210.03629)
-- [SiliconFlow 文档](https://siliconflow.cn/)
+- [NVIDIA NIM](https://www.nvidia.com/en-us/ai/)
 - [OpenAI Python SDK](https://github.com/openai/openai-python)
 
 ## 📄 许可证
