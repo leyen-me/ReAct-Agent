@@ -39,7 +39,7 @@ class Config:
         # deepseek-ai/deepseek-v3.1-terminus
         
         # 模型配置
-        self.model: str = os.getenv("MODEL", "qwen/qwen3-coder-480b-a35b-instruct")
+        self.model: str = os.getenv("MODEL", "openai/gpt-oss-120b")
         self.api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
         self.base_url: str = os.getenv("OPENAI_BASE_URL", "https://integrate.api.nvidia.com/v1")
         
