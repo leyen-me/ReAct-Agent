@@ -355,8 +355,16 @@ class ReActAgent:
                     tool_call_result = self.tool_executor.execute(
                         tc_data["name"], tc_data["arguments"]
                     )
+                    result_content = None
+                    # 处理标准化的返回格式
+                    if isinstance(tool_call_result, dict):
+                        result_content = json.dumps(tool_call_result, ensure_ascii=False, indent=2)
+                    else:
+                        # 兼容旧的返回格式
+                        result_content = tool_call_result
+                    
                     self.message_manager.add_assistant_tool_call_result(
-                        tc_data["id"], tool_call_result
+                        tc_data["id"], result_content
                     )
                 continue
             else:

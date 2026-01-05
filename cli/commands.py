@@ -182,12 +182,6 @@ class CommandProcessor:
             print("   [工具调用]")
             for tool_call in message.get("tool_calls", []):
                 self._print_tool_call(tool_call)
-        
-        # 如果是工具结果，显示结果
-        if "tool_call_id" in message:
-            print(f"   [工具结果]")
-            if content:
-                self._print_content(content, prefix="     结果: ")
     
     def _print_content(self, content: str, prefix: str = "   ", max_length: int = 200) -> None:
         """

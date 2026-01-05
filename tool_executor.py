@@ -22,7 +22,7 @@ class ToolExecutor:
         """
         self.tools = tools
 
-    def execute(self, tool_name: str, parameters: str = "") -> str:
+    def execute(self, tool_name: str, parameters: str = "") -> dict:
         """
         安全地执行工具
 
@@ -31,7 +31,7 @@ class ToolExecutor:
             parameters: 参数
 
         Returns:
-            执行结果字符串
+            标准化结果字典，包含 success、result 和 error 字段
         """
 
         if parameters:
@@ -41,25 +41,45 @@ class ToolExecutor:
                 parameters = {}
             except Exception as e:
                 logger.error(f"解析参数失败: {e}")
-                return f"执行工具失败: {e}"
+                return {
+                    "success": False,
+                    "result": None,
+                    "error": f"解析参数失败: {e}"
+                }
         try:
             # 查找工具
             tool = self.tools.get(tool_name)
             if not tool:
                 available_tools = ", ".join(self.tools.keys())
-                return f"工具 {tool_name} 不存在。可用工具: {available_tools}"
+                return {
+                    "success": False,
+                    "result": None,
+                    "error": f"工具 {tool_name} 不存在。可用工具: {available_tools}"
+                }
 
             # 执行工具
             logger.debug(f"执行工具 {tool_name}，参数: {parameters}")
             result = tool.run(parameters)
-            return result
+            return {
+                "success": True,
+                "result": result,
+                "error": None
+            }
 
         except ValueError as e:
             logger.error(f"解析 action 失败: {e}")
-            return f"执行工具失败: {e}"
+            return {
+                "success": False,
+                "result": None,
+                "error": f"执行工具失败: {e}"
+            }
         except Exception as e:
             logger.exception(f"执行工具时发生异常: {e}")
-            return f"执行工具失败: {e}"
+            return {
+                "success": False,
+                "result": None,
+                "error": f"执行工具失败: {e}"
+            }
 
 
 def create_tool_executor(tools: List[Tool]) -> ToolExecutor:
