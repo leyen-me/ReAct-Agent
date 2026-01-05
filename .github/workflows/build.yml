@@ -3,8 +3,8 @@ name: Build Binaries
 on:
   push:
     tags:
-      - 'v*'  # 当推送版本标签时触发，如 v1.0.0
-  workflow_dispatch:  # 允许手动触发
+      - 'v*'
+  workflow_dispatch:
     inputs:
       version:
         description: 'Version number (e.g., 1.0.0)'
@@ -13,114 +13,120 @@ on:
 
 jobs:
   build:
-    permissions:
-      contents: write  # 需要写入权限来创建 Release
-      id-token: write  # 用于 OIDC（如果需要）
-    
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         include:
           - os: ubuntu-latest
-            artifact_name: ask-linux
             binary_name: ask
           - os: windows-latest
-            artifact_name: ask-windows
             binary_name: ask.exe
           - os: macos-latest
-            artifact_name: ask-macos
             binary_name: ask
 
     runs-on: ${{ matrix.os }}
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
 
-    - name: Build binary
-      run: |
-        pyinstaller react_agent.spec --clean --noconfirm
+      - name: Build binary
+        run: |
+          pyinstaller react_agent.spec --clean --noconfirm
 
-    - name: Get version
-      id: get_version
-      run: |
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-        else
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-        fi
-      shell: bash
+      - name: Get version
+        id: get_version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
 
-    - name: Rename binary with version (Linux/macOS)
-      if: matrix.os != 'windows-latest'
-      run: |
-        cd dist
-        mv ask ask-${{ steps.get_version.outputs.version }}
-        chmod +x ask-${{ steps.get_version.outputs.version }}
-      shell: bash
+      - name: Rename binary (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          cd dist
+          mv ask ask-${{ steps.get_version.outputs.version }}
+          chmod +x ask-${{ steps.get_version.outputs.version }}
 
-    - name: Rename binary with version (Windows)
-      if: matrix.os == 'windows-latest'
-      run: |
-        cd dist
-        Rename-Item -Path "ask.exe" -NewName "ask-${{ steps.get_version.outputs.version }}.exe"
-      shell: pwsh
+      - name: Rename binary (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          cd dist
+          Rename-Item ask.exe ask-${{ steps.get_version.outputs.version }}.exe
 
-    - name: List dist files (debug)
-      if: matrix.os == 'windows-latest'
-      run: |
-        Get-ChildItem dist
-      shell: pwsh
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ask-${{ matrix.os }}-${{ steps.get_version.outputs.version }}
+          path: dist/ask-${{ steps.get_version.outputs.version }}*
+          if-no-files-found: error
+          retention-days: 30
 
-    - name: List dist files (debug)
-      if: matrix.os != 'windows-latest'
-      run: |
-        ls -la dist
-      shell: bash
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.artifact_name }}-${{ steps.get_version.outputs.version }}
-        path: |
-          dist/ask-${{ steps.get_version.outputs.version }}*
-        if-no-files-found: error
-        retention-days: 30
+    steps:
+      - name: Get version
+        id: get_version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
 
-    - name: Create Release
-      if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v2
-      with:
-        files: |
-          dist/ask-${{ steps.get_version.outputs.version }}*
-        tag_name: v${{ steps.get_version.outputs.version }}
-        name: Release v${{ steps.get_version.outputs.version }}
-        body: |
-          ## ReAct Agent v${{ steps.get_version.outputs.version }}
-          
-          ### 下载
-          - **Linux**: [ask-linux-${{ steps.get_version.outputs.version }}](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/ask-${{ steps.get_version.outputs.version }})
-          - **Windows**: [ask-windows-${{ steps.get_version.outputs.version }}.exe](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/ask-${{ steps.get_version.outputs.version }}.exe)
-          - **macOS**: [ask-macos-${{ steps.get_version.outputs.version }}](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/ask-${{ steps.get_version.outputs.version }})
-          
-          ### 使用方法
-          1. 下载对应平台的可执行文件
-          2. 设置环境变量：`export OPENAI_API_KEY=your_key` (Linux/macOS) 或 `set OPENAI_API_KEY=your_key` (Windows)
-          3. 运行程序：
-             - Linux/macOS: `chmod +x ask-* && ./ask-*`
-             - Windows: `ask-*.exe`
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
 
+      - name: List downloaded files
+        run: |
+          find dist -type f
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: Release v${{ steps.get_version.outputs.version }}
+          files: dist/**/*
+          body: |
+            ## ReAct Agent v${{ steps.get_version.outputs.version }}
+
+            ### 下载
+            - Linux / macOS: `ask-${{ steps.get_version.outputs.version }}`
+            - Windows: `ask-${{ steps.get_version.outputs.version }}.exe`
+
+            ### 使用方法
+            1. 下载对应平台的可执行文件
+            2. 设置环境变量：
+               - Linux/macOS: `export OPENAI_API_KEY=your_key`
+               - Windows: `set OPENAI_API_KEY=your_key`
+            3. 运行程序：
+               - Linux/macOS: `chmod +x ask-* && ./ask-*`
+               - Windows: `ask-*.exe`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
