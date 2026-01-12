@@ -51,7 +51,7 @@ class CommandPaletteScreen(ModalScreen[str]):
     
     #palette-container {
         width: 70;
-        max-height: 24;
+        max-height: 20;
         background: #ffffff;
         border: none;
         padding: 0;
@@ -59,8 +59,9 @@ class CommandPaletteScreen(ModalScreen[str]):
     
     #palette-header {
         height: 3;
-        background: #f9f9f9;
+        background: #ffffff;
         padding: 0 2;
+        margin-top: 1;
         border-bottom: solid #e5e7eb;
         align-vertical: middle;
     }
@@ -94,7 +95,7 @@ class CommandPaletteScreen(ModalScreen[str]):
     
     #palette-list {
         height: auto;
-        max-height: 18;
+        max-height: 14;
         background: #ffffff;
         border: none;
     }
@@ -236,7 +237,7 @@ class FilePickerScreen(ModalScreen[str]):
     
     #filepicker-container {
         width: 80;
-        max-height: 28;
+        max-height: 24;
         background: #ffffff;
         border: none;
         padding: 0;
@@ -244,8 +245,9 @@ class FilePickerScreen(ModalScreen[str]):
     
     #filepicker-header {
         height: 3;
-        background: #f9f9f9;
+        background: #ffffff;
         padding: 0 2;
+        margin-top: 1;
         border-bottom: solid #e5e7eb;
         align-vertical: middle;
     }
@@ -279,7 +281,7 @@ class FilePickerScreen(ModalScreen[str]):
     
     #filepicker-list {
         height: auto;
-        max-height: 22;
+        max-height: 18;
         background: #ffffff;
         border: none;
     }
