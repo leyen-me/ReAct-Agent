@@ -244,14 +244,18 @@ class ReActAgentApp(App):
         height: 1fr;
         width: 100%;
         overflow-y: auto;
+        scrollbar-color: #e5e7eb;
+        scrollbar-color-hover: #d1d5db;
+        scrollbar-size: 0 1;
         # margin: 0 2;
     }
     
     #chat-log {
         width: 100%;
         height: auto;
-        scrollbar-color: #30363d;
-        scrollbar-color-hover: #484f58;
+        scrollbar-color: #e5e7eb;
+        scrollbar-color-hover: #d1d5db;
+        scrollbar-size: 0 1;
         background: #ffffff;
     }
     
