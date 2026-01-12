@@ -273,11 +273,16 @@ class ReActAgentApp(App):
         background: #1a1b26;
     }
     
+    /* ===== 主布局容器 ===== */
+    #app-layout {
+        height: 100%;
+        width: 100%;
+    }
+    
     /* ===== Header 区域 ===== */
     #app-header {
-        height: 3;
+        height: 1;
         background: #16161e;
-        border-bottom: solid #414868;
         padding: 0 1;
     }
     
@@ -285,47 +290,41 @@ class ReActAgentApp(App):
         width: 1fr;
         color: #bb9af7;
         text-style: bold;
-        padding: 1 0;
     }
     
     #header-context {
         width: auto;
         color: #7aa2f7;
-        padding: 1 0;
     }
     
     /* ===== Main 聊天区域 ===== */
     #main-container {
         height: 1fr;
         background: #1a1b26;
+        border: solid #414868;
+        margin: 0 1;
     }
     
-    #chat-area {
-        height: 1fr;
-        padding: 1;
+    #chat-log {
+        background: #1a1b26;
         scrollbar-color: #414868;
         scrollbar-color-hover: #7aa2f7;
         scrollbar-color-active: #bb9af7;
     }
     
-    #chat-log {
-        background: #1a1b26;
-    }
-    
     /* ===== Footer 输入区域 ===== */
     #input-container {
-        height: 3;
+        height: auto;
+        min-height: 3;
         background: #16161e;
-        border-top: solid #414868;
-        padding: 0 1;
+        padding: 1;
     }
     
     #user-input {
-        width: 1fr;
+        width: 100%;
         background: #24283b;
         border: solid #414868;
         color: #c0caf5;
-        padding: 0 1;
     }
     
     #user-input:focus {
@@ -340,8 +339,8 @@ class ReActAgentApp(App):
     #setting-bar {
         height: 1;
         background: #16161e;
-        border-top: solid #414868;
         padding: 0 1;
+        dock: bottom;
     }
     
     #setting-left {
@@ -405,33 +404,33 @@ class ReActAgentApp(App):
     
     def compose(self) -> ComposeResult:
         """组合应用界面 - 四部分布局"""
-        # Header: 标题 + 上下文信息
-        with Horizontal(id="app-header"):
-            yield Static("🤖 ReAct Agent", id="header-title")
-            yield Static(self._get_context_info(), id="header-context")
-        
-        # Main: 可滚动的聊天区域
-        with ScrollableContainer(id="main-container"):
-            yield RichLog(id="chat-log", markup=True, wrap=True, highlight=True)
-        
-        # Footer: 输入框
-        with Horizontal(id="input-container"):
-            yield Input(
-                id="user-input",
-                placeholder="输入消息... (@ 选择文件, / 或 Ctrl+P 打开命令面板)",
-            )
-        
-        # Setting: 快捷键提示
-        with Horizontal(id="setting-bar"):
-            yield Static(
-                "[bold #7aa2f7]Ctrl+C[/] [#565f89]退出[/]  "
-                "[bold #7aa2f7]Ctrl+L[/] [#565f89]清屏[/]",
-                id="setting-left"
-            )
-            yield Static(
-                "[bold #7aa2f7]Ctrl+P[/] [#565f89]命令面板[/]",
-                id="setting-right"
-            )
+        with Vertical(id="app-layout"):
+            # Header: 标题 + 上下文信息
+            with Horizontal(id="app-header"):
+                yield Static("🤖 ReAct Agent", id="header-title")
+                yield Static(self._get_context_info(), id="header-context")
+            
+            # Main: 可滚动的聊天区域
+            with ScrollableContainer(id="main-container"):
+                yield RichLog(id="chat-log", markup=True, wrap=True, highlight=True)
+            
+            # Footer: 输入框
+            with Container(id="input-container"):
+                yield Input(
+                    id="user-input",
+                    placeholder="输入消息... @ 文件 / 命令",
+                )
+            
+            # Setting: 快捷键提示
+            with Horizontal(id="setting-bar"):
+                yield Static(
+                    "[#7aa2f7]^C[/][dim] 退出[/]  [#7aa2f7]^L[/][dim] 清屏[/]",
+                    id="setting-left"
+                )
+                yield Static(
+                    "[#7aa2f7]^P[/][dim] 命令[/]",
+                    id="setting-right"
+                )
     
     def _get_context_info(self) -> str:
         """获取上下文使用信息"""
