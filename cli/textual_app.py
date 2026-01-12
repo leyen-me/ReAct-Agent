@@ -53,7 +53,30 @@ class CommandPaletteScreen(ModalScreen[str]):
         width: 70;
         max-height: 24;
         background: #ffffff;
-        border: solid #8b5cf6;
+        border: none;
+        padding: 0;
+    }
+    
+    #palette-header {
+        height: 3;
+        background: #f9f9f9;
+        padding: 0 2;
+        border-bottom: solid #e5e7eb;
+        align-vertical: middle;
+    }
+    
+    #palette-title {
+        width: 1fr;
+        color: #000000;
+        text-style: bold;
+    }
+    
+    #palette-hint {
+        width: auto;
+        color: #7d8590;
+    }
+    
+    #palette-content {
         padding: 1 2;
     }
     
@@ -61,18 +84,19 @@ class CommandPaletteScreen(ModalScreen[str]):
         width: 100%;
         margin-bottom: 1;
         background: #ffffff;
-        border: solid #8b5cf6;
+        border: none;
         color: #000000;
     }
     
     #palette-search:focus {
-        border: solid #8b5cf6;
+        border: none;
     }
     
     #palette-list {
         height: auto;
         max-height: 18;
         background: #ffffff;
+        border: none;
     }
     
     #palette-list > .option-list--option-highlighted {
@@ -93,11 +117,15 @@ class CommandPaletteScreen(ModalScreen[str]):
     
     def compose(self) -> ComposeResult:
         with Container(id="palette-container"):
-            yield Input(placeholder="输入命令名称搜索...", id="palette-search")
-            yield OptionList(
-                *[Option(f"{cmd[1]}  [dim]{cmd[2]}[/]", id=cmd[0]) for cmd in self.commands],
-                id="palette-list"
-            )
+            with Horizontal(id="palette-header"):
+                yield Static(self.title, id="palette-title")
+                yield Static("[dim]ESC[/] 退出", id="palette-hint")
+            with Container(id="palette-content"):
+                yield Input(placeholder="输入命令名称搜索...", id="palette-search")
+                yield OptionList(
+                    *[Option(f"{cmd[1]}  [dim]{cmd[2]}[/]", id=cmd[0]) for cmd in self.commands],
+                    id="palette-list"
+                )
     
     def on_mount(self) -> None:
         self.query_one("#palette-search", Input).focus()
@@ -182,7 +210,30 @@ class FilePickerScreen(ModalScreen[str]):
         width: 80;
         max-height: 28;
         background: #ffffff;
-        border: solid #22c55e;
+        border: none;
+        padding: 0;
+    }
+    
+    #filepicker-header {
+        height: 3;
+        background: #f9f9f9;
+        padding: 0 2;
+        border-bottom: solid #e5e7eb;
+        align-vertical: middle;
+    }
+    
+    #filepicker-title {
+        width: 1fr;
+        color: #000000;
+        text-style: bold;
+    }
+    
+    #filepicker-hint {
+        width: auto;
+        color: #7d8590;
+    }
+    
+    #filepicker-content {
         padding: 1 2;
     }
     
@@ -190,18 +241,19 @@ class FilePickerScreen(ModalScreen[str]):
         width: 100%;
         margin-bottom: 1;
         background: #ffffff;
-        border: solid #22c55e;
+        border: none;
         color: #000000;
     }
     
     #filepicker-search:focus {
-        border: solid #22c55e;
+        border: none;
     }
     
     #filepicker-list {
         height: auto;
         max-height: 22;
         background: #ffffff;
+        border: none;
     }
     
     #filepicker-list > .option-list--option-highlighted {
@@ -221,8 +273,12 @@ class FilePickerScreen(ModalScreen[str]):
     
     def compose(self) -> ComposeResult:
         with Container(id="filepicker-container"):
-            yield Input(placeholder="输入文件名搜索...", id="filepicker-search")
-            yield OptionList(id="filepicker-list")
+            with Horizontal(id="filepicker-header"):
+                yield Static("选择文件", id="filepicker-title")
+                yield Static("[dim]ESC[/] 退出", id="filepicker-hint")
+            with Container(id="filepicker-content"):
+                yield Input(placeholder="输入文件名搜索...", id="filepicker-search")
+                yield OptionList(id="filepicker-list")
     
     def on_mount(self) -> None:
         self.query_one("#filepicker-search", Input).focus()
@@ -629,6 +685,9 @@ class ReActAgentApp(App):
                 input_widget.value = f"{current}`{file_path}` "
                 input_widget.focus()
         
+        # 移除 user-input 的焦点，避免弹窗打开时还能输入
+        input_widget = self.query_one("#user-input", Input)
+        input_widget.blur()
         self.push_screen(FilePickerScreen(config.work_dir), handle_file_selection)
     
     def action_open_palette(self) -> None:
@@ -661,6 +720,9 @@ class ReActAgentApp(App):
             else:
                 self.query_one("#user-input", Input).focus()
         
+        # 移除 user-input 的焦点，避免弹窗打开时还能输入
+        input_widget = self.query_one("#user-input", Input)
+        input_widget.blur()
         self.push_screen(CommandPaletteScreen(commands, "Commands"), handle_command)
     
     def _show_help(self) -> None:
