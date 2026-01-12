@@ -12,9 +12,17 @@ class ChatMessage(Horizontal):
     def __init__(self, content: str, **kwargs):
         super().__init__(**kwargs)
         self.content = content
+        self.static_widget: Static = None
     
     def compose(self):
-        yield Static(self._format_content(), markup=True)
+        self.static_widget = Static(self._format_content(), markup=True, id="message-content")
+        yield self.static_widget
+    
+    def update_content(self, new_content: str) -> None:
+        """更新消息内容"""
+        self.content = new_content
+        if self.static_widget:
+            self.static_widget.update(self._format_content())
 
 
 class UserMessage(ChatMessage):

@@ -405,6 +405,7 @@ class ReActAgentApp(App):
         self.command_processor = command_processor
         self.chat_count = 0
         self.is_processing = False
+        self.current_message_widget = None  # 当前正在更新的消息组件
     
     def compose(self) -> ComposeResult:
         """组合应用界面"""
@@ -607,27 +608,24 @@ class ReActAgentApp(App):
                 nonlocal current_section, current_content
                 
                 if "模型思考" in text:
-                    if current_content:
-                        app.call_from_thread(
-                            lambda: app._flush_content(current_section, current_content)
-                        )
-                        current_content = ""
+                    # 内容已经通过流式更新显示在 current_message_widget 中了
+                    # 只需要清空引用，准备下一个 section
+                    current_content = ""
+                    app.call_from_thread(lambda: setattr(app, 'current_message_widget', None))
                     current_section = "reasoning"
                     return
                 elif "最终回复" in text:
-                    if current_content:
-                        app.call_from_thread(
-                            lambda: app._flush_content(current_section, current_content)
-                        )
-                        current_content = ""
+                    # 内容已经通过流式更新显示在 current_message_widget 中了
+                    # 只需要清空引用，准备下一个 section
+                    current_content = ""
+                    app.call_from_thread(lambda: setattr(app, 'current_message_widget', None))
                     current_section = "content"
                     return
                 elif "工具调用" in text:
-                    if current_content:
-                        app.call_from_thread(
-                            lambda: app._flush_content(current_section, current_content)
-                        )
-                        current_content = ""
+                    # 内容已经通过流式更新显示在 current_message_widget 中了
+                    # 只需要清空引用，准备下一个 section
+                    current_content = ""
+                    app.call_from_thread(lambda: setattr(app, 'current_message_widget', None))
                     current_section = "tool"
                     return
                 
@@ -636,13 +634,10 @@ class ReActAgentApp(App):
                     if end_newline:
                         current_content += "\n"
                     
-                    # 只在换行时更新显示，避免频繁创建消息
-                    # 内容会在 flush 时统一显示
-                    if end_newline and len(current_content.strip()) > 0:
-                        app.call_from_thread(
-                            lambda: app._flush_content(current_section, current_content)
-                        )
-                        current_content = ""
+                    # 流式更新：如果还没有消息组件，创建一个；否则更新现有组件
+                    app.call_from_thread(
+                        lambda: app._stream_update_message(current_section, current_content)
+                    )
                 else:
                     app.call_from_thread(
                         lambda: app._add_output(text, end_newline)
@@ -650,10 +645,14 @@ class ReActAgentApp(App):
             
             self.agent.chat(message, output_callback)
             
-            if current_content:
+            # 最后确保当前消息已更新（如果还有内容且消息组件存在，已经通过流式更新显示过了）
+            # 只有在没有消息组件的情况下才需要 flush（这种情况应该不会发生）
+            if current_content and current_section:
+                # 如果已经有消息组件，确保内容已更新；如果没有，创建新消息
                 app.call_from_thread(
-                    lambda: app._flush_content(current_section, current_content)
+                    lambda: app._ensure_message_finalized(current_section, current_content)
                 )
+            app.call_from_thread(lambda: setattr(app, 'current_message_widget', None))
                 
         except Exception as e:
             app = self.app
@@ -705,10 +704,37 @@ class ReActAgentApp(App):
             chat_container.mount(msg)
         self._scroll_to_bottom()
     
+    def _stream_update_message(self, section: str, content: str) -> None:
+        """流式更新消息内容"""
+        # 如果还没有当前消息组件，创建一个
+        if self.current_message_widget is None:
+            chat_container = self.query_one("#chat-log", Vertical)
+            if section == "reasoning":
+                self.current_message_widget = ThinkingMessage("")
+            elif section == "content":
+                self.current_message_widget = ContentMessage("")
+            elif section == "tool":
+                self.current_message_widget = ToolMessage("")
+            else:
+                self.current_message_widget = ContentMessage("")
+            chat_container.mount(self.current_message_widget)
+            self._scroll_to_bottom()
+        
+        # 更新当前消息组件的内容
+        if self.current_message_widget:
+            self.current_message_widget.update_content(content)
+            self._scroll_to_bottom()
+    
+    def _ensure_message_finalized(self, section: str, content: str) -> None:
+        """确保消息已最终化（避免重复显示）"""
+        # 如果已经有消息组件，说明内容已经通过流式更新显示过了，不需要再创建
+        if self.current_message_widget is None and content.strip():
+            # 只有在没有消息组件的情况下才创建新消息（这种情况应该很少见）
+            self.flush_current_content(section, content)
+    
     def update_section_content(self, section: str, content: str) -> None:
-        """更新部分内容 - 此方法已废弃，改为使用 flush_current_content"""
+        """更新部分内容 - 此方法已废弃，改为使用 _stream_update_message"""
         # 这个方法不再使用，保留是为了兼容性
-        # 实际内容会在 flush_current_content 中统一显示
         pass
     
     def add_user_message(self, message: str) -> None:
