@@ -134,6 +134,124 @@ set OPENAI_API_KEY=your_api_key_here
 ask-1.0.0.exe
 ```
 
+#### 将二进制文件添加到 PATH（推荐）
+
+为了可以在任何目录下直接运行 `ask` 命令，可以将二进制文件添加到系统的 PATH 环境变量中：
+
+**Linux/macOS:**
+
+1. **创建存放二进制文件的目录（如果不存在）**：
+```bash
+mkdir -p ~/bin
+```
+
+2. **移动二进制文件到该目录并重命名**：
+```bash
+mv ask-1.0.0 ~/bin/ask
+chmod +x ~/bin/ask
+```
+
+3. **将目录添加到 PATH**：
+
+   **使用 zsh（macOS 默认）**：
+```bash
+# 编辑 ~/.zshrc 文件
+vim ~/.zshrc
+
+# 在文件末尾添加：
+export PATH="$HOME/bin:$PATH"
+
+# 保存后重新加载配置
+source ~/.zshrc
+```
+
+   **使用 bash**：
+```bash
+# 编辑 ~/.bashrc 文件
+vim ~/.bashrc
+
+# 在文件末尾添加：
+export PATH="$HOME/bin:$PATH"
+
+# 保存后重新加载配置
+source ~/.bashrc
+```
+
+4. **验证配置**：
+```bash
+# 重新打开终端后，运行：
+which ask
+ask --version
+```
+
+**Windows:**
+
+1. **创建存放二进制文件的目录**（例如：`C:\Tools`）：
+```cmd
+mkdir C:\Tools
+```
+
+2. **移动二进制文件到该目录并重命名**：
+```cmd
+move ask-1.0.0.exe C:\Tools\ask.exe
+```
+
+3. **添加到 PATH**：
+   - 右键点击"此电脑" → "属性"
+   - 点击"高级系统设置"
+   - 点击"环境变量"
+   - 在"用户变量"或"系统变量"中找到 `Path` 变量
+   - 点击"编辑"，然后"新建"
+   - 输入：`C:\Tools`
+   - 点击"确定"保存
+
+4. **验证配置**：
+   - 重新打开命令提示符或 PowerShell
+   - 运行：`ask --version`
+
+配置完成后，你就可以在任何目录下直接运行 `ask` 命令了！
+
+#### 配置 API Key 环境变量（推荐）
+
+为了避免每次运行都需要设置 API Key，可以将其配置为全局环境变量：
+
+**Linux/macOS：**
+
+在配置 PATH 时，可以同时配置环境变量。编辑 `~/.zshrc`（zsh）或 `~/.bashrc`（bash）文件：
+
+```bash
+# 编辑配置文件
+vim ~/.zshrc  # 或 vim ~/.bashrc
+
+# 在文件末尾添加：
+export PATH="$HOME/bin:$PATH"  # 如果还没添加 PATH
+export OPENAI_API_KEY=your_api_key_here
+export OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1  # 可选
+export MODEL=openai/gpt-oss-120b  # 可选
+
+# 保存后重新加载配置
+source ~/.zshrc  # 或 source ~/.bashrc
+```
+
+**Windows：**
+
+在配置 PATH 时，可以同时配置环境变量：
+
+1. **通过系统设置**：
+   - 右键点击"此电脑" → "属性" → "高级系统设置" → "环境变量"
+   - 在"用户变量"中点击"新建"
+   - 变量名：`OPENAI_API_KEY`
+   - 变量值：`your_api_key_here`
+   - 点击"确定"保存
+
+2. **通过 PowerShell**：
+```powershell
+# 设置 API Key
+[System.Environment]::SetEnvironmentVariable('OPENAI_API_KEY', 'your_api_key_here', 'User')
+```
+
+配置完成后，重新打开终端窗口，环境变量就会自动生效。
+
 #### 自动更新
 
 程序支持自动更新功能，可以通过以下命令管理更新：
@@ -195,6 +313,8 @@ pip install -r requirements.txt
 
 3. **配置环境变量**
 
+**方式一：临时设置（仅当前终端会话有效）**
+
 必需的环境变量：
 ```bash
 # Windows
@@ -203,6 +323,35 @@ set OPENAI_API_KEY=your_api_key_here
 # Linux/macOS
 export OPENAI_API_KEY=your_api_key_here
 ```
+
+**方式二：全局配置（推荐，永久生效）**
+
+**Linux/macOS：**
+```bash
+# 编辑 shell 配置文件（根据你使用的 shell 选择）
+# zsh 用户（macOS 默认）
+vim ~/.zshrc
+
+# bash 用户
+vim ~/.bashrc
+
+# 在文件末尾添加以下内容：
+export OPENAI_API_KEY=your_api_key_here
+export OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1
+export MODEL=openai/gpt-oss-120b
+
+# 保存后重新加载配置
+source ~/.zshrc  # 或 source ~/.bashrc
+```
+
+**Windows：**
+- 通过系统设置：右键"此电脑" → "属性" → "高级系统设置" → "环境变量" → 添加用户变量
+- 或使用 PowerShell：
+```powershell
+[System.Environment]::SetEnvironmentVariable('OPENAI_API_KEY', 'your_api_key_here', 'User')
+```
+
+配置完成后，重新打开终端窗口即可生效。
 
 可选的环境变量：
 ```bash
