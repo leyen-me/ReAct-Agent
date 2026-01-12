@@ -1,17 +1,12 @@
 # -*- coding: utf-8 -*-
 """基于 Textual 的界面应用 - 简洁风格"""
 
-import asyncio
-import sys
-from io import StringIO
-from typing import Optional, List, Tuple, Callable
-from pathlib import Path
+from typing import List, Tuple
 
 from textual.app import App, ComposeResult
 from textual.widgets import (
     Static,
     Input,
-    RichLog,
     OptionList,
 )
 from textual.widgets.option_list import Option
@@ -27,6 +22,13 @@ from textual.screen import ModalScreen
 
 from agent import ReActAgent
 from cli.commands import CommandProcessor
+from cli.chat_widgets import (
+    UserMessage,
+    ThinkingMessage,
+    ContentMessage,
+    ToolMessage,
+    SystemMessage,
+)
 from config import config
 from utils import refresh_file_list, get_file_list, search_files
 
@@ -221,7 +223,7 @@ class ReActAgentApp(App):
         height: 3;
         background: #f9f9f9;
         padding: 0 2;
-        border-left: ascii #8b5cf6;
+        border-left: ascii #b5b5b5;
         margin: 1 2 1 2;
         align-vertical: middle;
     }
@@ -240,12 +242,104 @@ class ReActAgentApp(App):
     /* ===== Main 聊天区域 ===== */
     #main-container {
         height: 1fr;
-        margin: 0 2;
+        # margin: 0 2;
     }
     
     #chat-log {
         scrollbar-color: #30363d;
         scrollbar-color-hover: #484f58;
+        background: #ffffff;
+    }
+    
+    /* ===== 聊天消息组件样式 ===== */
+    UserMessage {
+        width: 100%;
+        height: auto;
+        min-height: 3;
+        background: #f9f9f9;
+        border-left: ascii #8b5cf6;
+        margin: 0 2;
+        align-vertical: middle;
+    }
+    
+    UserMessage > Static {
+        width: 100%;
+        color: #000000;
+        text-align: left;
+        background: transparent;
+        padding: 0 2;
+    }
+    
+    ThinkingMessage {
+        width: 100%;
+        height: auto;
+        min-height: 3;
+        background: #ffffff;
+        padding: 0 2;
+        border-left: solid #f3f3f3;
+        margin: 1 2 1 2;
+        align-vertical: middle;
+    }
+    
+    ThinkingMessage > Static {
+        width: 100%;
+        color: #7d8590;
+        text-style: italic;
+        text-align: left;
+        background: transparent;
+    }
+    
+    ContentMessage {
+        width: 100%;
+        height: auto;
+        min-height: 1;
+        background: #ffffff;
+        padding: 0 2;
+        margin: 1 2 1 2;
+        align-vertical: middle;
+    }
+    
+    ContentMessage > Static {
+        width: 100%;
+        color: #000000;
+        text-align: left;
+        background: transparent;
+    }
+    
+    ToolMessage {
+        width: 100%;
+        height: auto;
+        min-height: 1;
+        background: #ffffff;
+        padding: 0 2;
+        border-left: solid #8b5cf6;
+        margin: 1 2 1 2;
+        align-vertical: middle;
+    }
+    
+    ToolMessage > Static {
+        width: 100%;
+        color: #000000;
+        text-align: left;
+        background: transparent;
+    }
+    
+    SystemMessage {
+        width: 100%;
+        height: auto;
+        min-height: 1;
+        background: #ffffff;
+        padding: 0 2;
+        border-left: solid #ef4444;
+        margin: 1 2 1 2;
+        align-vertical: middle;
+    }
+    
+    SystemMessage > Static {
+        width: 100%;
+        color: #ef4444;
+        text-align: left;
+        background: transparent;
     }
     
     /* ===== Footer 输入区域 ===== */
@@ -318,7 +412,7 @@ class ReActAgentApp(App):
             
             # Main: 聊天区域
             with ScrollableContainer(id="main-container"):
-                yield RichLog(id="chat-log", markup=True, wrap=True, highlight=True)
+                yield Vertical(id="chat-log")
             
             # Footer: 输入框
             with Horizontal(id="input-container"):
@@ -356,6 +450,16 @@ class ReActAgentApp(App):
         """刷新 Header"""
         try:
             self.query_one("#header-stats", Static).update(self._get_stats())
+        except Exception:
+            pass
+    
+    def _scroll_to_bottom(self) -> None:
+        """滚动到底部"""
+        try:
+            chat_container = self.query_one("#chat-log", Vertical)
+            main_container = self.query_one("#main-container", ScrollableContainer)
+            # 等待布局更新后滚动
+            self.set_timer(0.1, lambda: main_container.scroll_end(animate=False))
         except Exception:
             pass
     
@@ -432,13 +536,14 @@ class ReActAgentApp(App):
         self.push_screen(CommandPaletteScreen(commands, "Commands"), handle_command)
     
     def _show_help(self) -> None:
-        chat_log = self.query_one("#chat-log", RichLog)
-        chat_log.write("")
-        chat_log.write("[dim]@[/] select file  [dim]/[/] commands")
+        chat_container = self.query_one("#chat-log", Vertical)
+        help_msg = ContentMessage("[dim]@[/] select file  [dim]/[/] commands", allow_markup=True)
+        chat_container.mount(help_msg)
+        self._scroll_to_bottom()
         self.query_one("#user-input", Input).focus()
     
     def _show_status(self) -> None:
-        chat_log = self.query_one("#chat-log", RichLog)
+        chat_container = self.query_one("#chat-log", Vertical)
         
         if hasattr(self.agent, "message_manager"):
             mm = self.agent.message_manager
@@ -447,18 +552,20 @@ class ReActAgentApp(App):
             used = mm.max_context_tokens - remaining
             max_tokens = mm.max_context_tokens
             
-            chat_log.write("")
-            chat_log.write(f"[dim]Context:[/] {usage:.1f}% ({used:,}/{max_tokens:,})")
+            status_msg = ContentMessage(f"[dim]Context:[/] {usage:.1f}% ({used:,}/{max_tokens:,})", allow_markup=True)
+            chat_container.mount(status_msg)
+            self._scroll_to_bottom()
         
         self.query_one("#user-input", Input).focus()
     
     def _show_messages(self) -> None:
-        chat_log = self.query_one("#chat-log", RichLog)
+        chat_container = self.query_one("#chat-log", Vertical)
         
         if hasattr(self.agent, "message_manager"):
             messages = self.agent.message_manager.get_messages()
-            chat_log.write("")
-            chat_log.write(f"[dim]Messages: {len(messages)}[/]")
+            msg_count = ContentMessage(f"[dim]Messages: {len(messages)}[/]", allow_markup=True)
+            chat_container.mount(msg_count)
+            self._scroll_to_bottom()
         
         self.query_one("#user-input", Input).focus()
     
@@ -573,46 +680,59 @@ class ReActAgentApp(App):
         if not content.strip():
             return
         
-        chat_log = self.query_one("#chat-log", RichLog)
+        chat_container = self.query_one("#chat-log", Vertical)
         if section == "reasoning":
-            # 斜体灰色 - Thinking
-            chat_log.write(f"[italic #7d8590]Thinking:[/] {content.strip()}")
+            # 思考消息
+            msg = ThinkingMessage(content.strip())
+            chat_container.mount(msg)
         elif section == "content":
-            # 普通文本
-            chat_log.write(content.strip())
+            # 内容消息
+            msg = ContentMessage(content.strip())
+            chat_container.mount(msg)
         elif section == "tool":
-            # 紫色方块标识
-            chat_log.write(f"[#8b5cf6]■[/]  {content.strip()}")
+            # 工具调用消息
+            msg = ToolMessage(content.strip())
+            chat_container.mount(msg)
         else:
-            chat_log.write(content)
+            msg = ContentMessage(content)
+            chat_container.mount(msg)
+        self._scroll_to_bottom()
     
     def update_section_content(self, section: str, content: str) -> None:
         if "\n" in content:
-            chat_log = self.query_one("#chat-log", RichLog)
+            chat_container = self.query_one("#chat-log", Vertical)
             if section == "reasoning":
-                chat_log.write(f"[italic #7d8590]{content}[/]")
+                msg = ThinkingMessage(content)
+                chat_container.mount(msg)
             elif section == "content":
-                chat_log.write(content)
+                msg = ContentMessage(content)
+                chat_container.mount(msg)
             elif section == "tool":
-                chat_log.write(f"[#8b5cf6]{content}[/]")
+                msg = ToolMessage(content)
+                chat_container.mount(msg)
+            self._scroll_to_bottom()
     
     def add_user_message(self, message: str) -> None:
-        chat_log = self.query_one("#chat-log", RichLog)
-        # 黄色竖线标识用户消息
-        chat_log.write("")
-        chat_log.write(f"[#eab308]│[/] {message}")
+        chat_container = self.query_one("#chat-log", Vertical)
+        msg = UserMessage(message)
+        chat_container.mount(msg)
+        self._scroll_to_bottom()
     
     def add_assistant_output(self, text: str, end_newline: bool = True) -> None:
-        chat_log = self.query_one("#chat-log", RichLog)
-        chat_log.write(text)
+        chat_container = self.query_one("#chat-log", Vertical)
+        msg = ContentMessage(text)
+        chat_container.mount(msg)
+        self._scroll_to_bottom()
     
     def add_system_message(self, message: str) -> None:
-        chat_log = self.query_one("#chat-log", RichLog)
-        chat_log.write(f"[#ef4444]│[/] {message}")
+        chat_container = self.query_one("#chat-log", Vertical)
+        msg = SystemMessage(message)
+        chat_container.mount(msg)
+        self._scroll_to_bottom()
     
     def action_clear(self) -> None:
-        chat_log = self.query_one("#chat-log", RichLog)
-        chat_log.clear()
+        chat_container = self.query_one("#chat-log", Vertical)
+        chat_container.remove_children()
         self.query_one("#user-input", Input).focus()
     
     def action_quit(self) -> None:
