@@ -717,6 +717,10 @@ class ReActAgentApp(App):
         if self.is_processing:
             return
         
+        # 如果已经有弹窗打开，不处理触发逻辑，避免嵌套弹窗
+        if isinstance(self.screen, ModalScreen):
+            return
+        
         if text.endswith("@"):
             self.set_timer(0.05, self._open_file_picker_from_at)
         elif text == "/":
@@ -736,6 +740,10 @@ class ReActAgentApp(App):
         self.action_open_palette()
     
     def _open_file_picker(self) -> None:
+        # 如果已经有弹窗打开，不重复打开
+        if isinstance(self.screen, ModalScreen):
+            return
+        
         def handle_file_selection(file_path: str | None) -> None:
             input_widget = self.query_one("#user-input", Input)
             if file_path:
@@ -750,6 +758,10 @@ class ReActAgentApp(App):
         self.push_screen(FilePickerScreen(config.work_dir), handle_file_selection)
     
     def action_open_palette(self) -> None:
+        # 如果已经有弹窗打开，不重复打开
+        if isinstance(self.screen, ModalScreen):
+            return
+        
         commands = [
             ("help", "Help", "Show help"),
             ("status", "Status", "Show context usage"),
