@@ -4,28 +4,34 @@
 import asyncio
 import sys
 from io import StringIO
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Callable
 from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.widgets import (
-    Header,
-    Footer,
+    Static,
     Input,
     RichLog,
-    Static,
+    Button,
+    Label,
+    ListItem,
+    ListView,
+    OptionList,
 )
+from textual.widgets.option_list import Option
 from textual.containers import (
     Horizontal,
     Vertical,
     Container,
     ScrollableContainer,
+    Center,
 )
 from textual.binding import Binding
 from textual.message import Message
 from textual import events
 from textual.worker import Worker
 from textual import on
+from textual.screen import ModalScreen
 from rich.text import Text
 from rich.panel import Panel
 from rich.markdown import Markdown
@@ -36,114 +42,358 @@ from config import config
 from utils import refresh_file_list, get_file_list, search_files
 
 
-class ChatMessage(Static):
-    """聊天消息组件"""
+class CommandPaletteScreen(ModalScreen[str]):
+    """命令面板对话框 - 整合 / 命令和设置功能"""
     
-    def __init__(self, role: str, content: str, **kwargs):
-        super().__init__(**kwargs)
-        self.role = role
-        self.content = content
+    BINDINGS = [
+        Binding("escape", "dismiss", "关闭"),
+        Binding("up", "cursor_up", "上移"),
+        Binding("down", "cursor_down", "下移"),
+        Binding("enter", "select", "选择"),
+    ]
+    
+    CSS = """
+    CommandPaletteScreen {
+        align: center middle;
+    }
+    
+    #palette-container {
+        width: 60;
+        max-height: 24;
+        background: #1a1b26;
+        border: thick #7aa2f7;
+        border-title-color: #bb9af7;
+        padding: 1 2;
+    }
+    
+    #palette-search {
+        width: 100%;
+        margin-bottom: 1;
+        background: #24283b;
+        border: solid #414868;
+    }
+    
+    #palette-search:focus {
+        border: solid #7aa2f7;
+    }
+    
+    #palette-list {
+        height: auto;
+        max-height: 16;
+        background: #1a1b26;
+    }
+    
+    #palette-list > .option-list--option {
+        padding: 0 1;
+    }
+    
+    #palette-list > .option-list--option-highlighted {
+        background: #364a82;
+        color: #c0caf5;
+    }
+    """
+    
+    def __init__(self, commands: List[Tuple[str, str, str]], title: str = "命令面板"):
+        """
+        初始化命令面板
+        
+        Args:
+            commands: 命令列表，每项为 (id, 显示名, 描述)
+            title: 对话框标题
+        """
+        super().__init__()
+        self.commands = commands
+        self.title = title
+        self.filtered_commands = commands.copy()
     
     def compose(self) -> ComposeResult:
-        role_color = {
-            "user": "cyan",
-            "assistant": "green",
-            "system": "yellow",
-            "tool": "magenta",
-        }.get(self.role.lower(), "white")
+        with Container(id="palette-container"):
+            yield Static(f"[bold #bb9af7]⚡ {self.title}[/]", id="palette-title")
+            yield Input(placeholder="搜索命令...", id="palette-search")
+            yield OptionList(
+                *[Option(f"[#7aa2f7]{cmd[1]}[/]  [dim]{cmd[2]}[/]", id=cmd[0]) for cmd in self.commands],
+                id="palette-list"
+            )
+    
+    def on_mount(self) -> None:
+        self.query_one("#palette-search", Input).focus()
+    
+    @on(Input.Changed, "#palette-search")
+    def filter_commands(self, event: Input.Changed) -> None:
+        """过滤命令列表"""
+        query = event.value.lower().strip()
+        option_list = self.query_one("#palette-list", OptionList)
+        option_list.clear_options()
         
-        role_text = Text(f"[{self.role.upper()}]", style=f"bold {role_color}")
-        content_text = Text(self.content)
-        
-        # 如果是 markdown 格式，尝试渲染
-        if self.role == "assistant" and self.content:
-            try:
-                # 使用 Rich 的 Markdown 渲染
-                panel = Panel(
-                    Markdown(self.content),
-                    title=f"[{role_color}]{self.role.upper()}[/]",
-                    border_style=role_color,
-                )
-                yield Static(panel, classes="message")
-            except:
-                # 如果渲染失败，使用纯文本
-                yield Static(f"{role_text} {content_text}", classes="message")
+        if not query:
+            self.filtered_commands = self.commands.copy()
         else:
-            yield Static(f"{role_text} {content_text}", classes="message")
+            self.filtered_commands = [
+                cmd for cmd in self.commands
+                if query in cmd[1].lower() or query in cmd[2].lower()
+            ]
+        
+        for cmd in self.filtered_commands:
+            option_list.add_option(Option(f"[#7aa2f7]{cmd[1]}[/]  [dim]{cmd[2]}[/]", id=cmd[0]))
+    
+    @on(OptionList.OptionSelected, "#palette-list")
+    def on_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """选中命令"""
+        if event.option.id:
+            self.dismiss(event.option.id)
+    
+    @on(Input.Submitted, "#palette-search")
+    def on_search_submitted(self, event: Input.Submitted) -> None:
+        """搜索框回车时选择第一个"""
+        if self.filtered_commands:
+            self.dismiss(self.filtered_commands[0][0])
 
 
-class StatusBar(Static):
-    """状态栏组件"""
+class FilePickerScreen(ModalScreen[str]):
+    """文件选择对话框"""
     
-    def __init__(self, agent: ReActAgent, **kwargs):
-        super().__init__(**kwargs)
-        self.agent = agent
-        self.update_status()
+    BINDINGS = [
+        Binding("escape", "dismiss", "关闭"),
+    ]
     
-    def update_status(self) -> None:
-        """更新状态显示"""
-        if not hasattr(self.agent, "message_manager"):
-            self.update("状态: 不可用")
-            return
+    CSS = """
+    FilePickerScreen {
+        align: center middle;
+    }
+    
+    #filepicker-container {
+        width: 70;
+        max-height: 28;
+        background: #1a1b26;
+        border: thick #9ece6a;
+        border-title-color: #9ece6a;
+        padding: 1 2;
+    }
+    
+    #filepicker-search {
+        width: 100%;
+        margin-bottom: 1;
+        background: #24283b;
+        border: solid #414868;
+    }
+    
+    #filepicker-search:focus {
+        border: solid #9ece6a;
+    }
+    
+    #filepicker-list {
+        height: auto;
+        max-height: 20;
+        background: #1a1b26;
+    }
+    
+    #filepicker-list > .option-list--option-highlighted {
+        background: #3d5a3d;
+        color: #c0caf5;
+    }
+    """
+    
+    def __init__(self, work_dir: str):
+        super().__init__()
+        self.work_dir = work_dir
+        self.files: List[str] = []
+    
+    def compose(self) -> ComposeResult:
+        with Container(id="filepicker-container"):
+            yield Static("[bold #9ece6a]📁 选择文件[/]", id="filepicker-title")
+            yield Input(placeholder="搜索文件...", id="filepicker-search")
+            yield OptionList(id="filepicker-list")
+    
+    def on_mount(self) -> None:
+        self.query_one("#filepicker-search", Input).focus()
+        self._load_files("")
+    
+    def _load_files(self, query: str) -> None:
+        """加载文件列表"""
+        option_list = self.query_one("#filepicker-list", OptionList)
+        option_list.clear_options()
         
-        message_manager = self.agent.message_manager
-        usage_percent = message_manager.get_token_usage_percent()
-        remaining_tokens = message_manager.get_remaining_tokens()
-        used_tokens = message_manager.max_context_tokens - remaining_tokens
-        max_tokens = message_manager.max_context_tokens
+        if query.strip():
+            self.files = search_files(self.work_dir, query, limit=50)
+        else:
+            self.files = get_file_list(self.work_dir)[:30]
         
-        status_text = (
-            f"上下文: {usage_percent:.1f}% "
-            f"({used_tokens:,}/{max_tokens:,} tokens) | "
-            f"剩余: {remaining_tokens:,} tokens"
-        )
-        self.update(status_text)
+        for file_path in self.files:
+            # 根据文件类型显示不同图标
+            icon = self._get_file_icon(file_path)
+            option_list.add_option(Option(f"{icon} {file_path}", id=file_path))
+    
+    def _get_file_icon(self, path: str) -> str:
+        """根据文件扩展名获取图标"""
+        ext = Path(path).suffix.lower()
+        icons = {
+            ".py": "🐍",
+            ".js": "📜",
+            ".ts": "📘",
+            ".tsx": "⚛️",
+            ".jsx": "⚛️",
+            ".html": "🌐",
+            ".css": "🎨",
+            ".json": "📋",
+            ".md": "📝",
+            ".txt": "📄",
+            ".yml": "⚙️",
+            ".yaml": "⚙️",
+            ".toml": "⚙️",
+            ".sh": "💻",
+            ".go": "🐹",
+            ".rs": "🦀",
+        }
+        return icons.get(ext, "📄")
+    
+    @on(Input.Changed, "#filepicker-search")
+    def filter_files(self, event: Input.Changed) -> None:
+        """过滤文件"""
+        self._load_files(event.value)
+    
+    @on(OptionList.OptionSelected, "#filepicker-list")
+    def on_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """选中文件"""
+        if event.option.id:
+            self.dismiss(event.option.id)
+    
+    @on(Input.Submitted, "#filepicker-search")
+    def on_search_submitted(self, event: Input.Submitted) -> None:
+        """搜索框回车选择第一个"""
+        if self.files:
+            self.dismiss(self.files[0])
 
 
 class ReActAgentApp(App):
     """ReAct Agent Textual 应用"""
     
     CSS = """
+    /* ===== 全局主题 - Tokyo Night 风格 ===== */
     Screen {
-        background: $surface;
+        background: #1a1b26;
     }
     
-    #chat_area {
-        height: 1fr;
-        border: solid $primary;
-        padding: 1;
-    }
-    
-    #input_area {
+    /* ===== Header 区域 ===== */
+    #app-header {
         height: 3;
-        border: solid $primary;
-        padding: 1;
+        background: #16161e;
+        border-bottom: solid #414868;
+        padding: 0 1;
     }
     
-    .message {
-        margin: 1;
-        padding: 1;
+    #header-title {
+        width: 1fr;
+        color: #bb9af7;
+        text-style: bold;
+        padding: 1 0;
     }
     
-    #status_bar {
+    #header-context {
+        width: auto;
+        color: #7aa2f7;
+        padding: 1 0;
+    }
+    
+    /* ===== Main 聊天区域 ===== */
+    #main-container {
+        height: 1fr;
+        background: #1a1b26;
+    }
+    
+    #chat-area {
+        height: 1fr;
+        padding: 1;
+        scrollbar-color: #414868;
+        scrollbar-color-hover: #7aa2f7;
+        scrollbar-color-active: #bb9af7;
+    }
+    
+    #chat-log {
+        background: #1a1b26;
+    }
+    
+    /* ===== Footer 输入区域 ===== */
+    #input-container {
+        height: 3;
+        background: #16161e;
+        border-top: solid #414868;
+        padding: 0 1;
+    }
+    
+    #user-input {
+        width: 1fr;
+        background: #24283b;
+        border: solid #414868;
+        color: #c0caf5;
+        padding: 0 1;
+    }
+    
+    #user-input:focus {
+        border: solid #7aa2f7;
+    }
+    
+    #user-input.-invalid {
+        border: solid #f7768e;
+    }
+    
+    /* ===== Setting 底栏 ===== */
+    #setting-bar {
         height: 1;
-        background: $panel;
-        padding: 1;
+        background: #16161e;
+        border-top: solid #414868;
+        padding: 0 1;
     }
     
-    #completion_list {
-        height: 10;
-        border: solid $accent;
-        background: $panel;
-        padding: 1;
+    #setting-left {
+        width: 1fr;
+        color: #565f89;
+    }
+    
+    #setting-right {
+        width: auto;
+        color: #565f89;
+    }
+    
+    .key-hint {
+        color: #7aa2f7;
+        text-style: bold;
+    }
+    
+    .key-desc {
+        color: #565f89;
+    }
+    
+    /* ===== 消息样式 ===== */
+    .user-message {
+        color: #7dcfff;
+        margin: 1 0;
+    }
+    
+    .assistant-message {
+        color: #9ece6a;
+        margin: 1 0;
+    }
+    
+    .system-message {
+        color: #e0af68;
+        margin: 1 0;
+    }
+    
+    .tool-message {
+        color: #bb9af7;
+        margin: 1 0;
+    }
+    
+    /* ===== 隐藏类 ===== */
+    .hidden {
+        display: none;
     }
     """
     
     BINDINGS = [
         Binding("ctrl+c", "quit", "退出", priority=True),
         Binding("ctrl+l", "clear", "清屏"),
-        Binding("tab", "complete", "补全"),
-        Binding("escape", "cancel_completion", "取消补全"),
+        Binding("ctrl+p", "open_palette", "命令面板"),
     ]
     
     def __init__(self, agent: ReActAgent, command_processor: CommandProcessor):
@@ -151,39 +401,242 @@ class ReActAgentApp(App):
         self.agent = agent
         self.command_processor = command_processor
         self.chat_count = 0
-        self.current_completions: List[str] = []
-        self.completion_index = 0
-        self.showing_completions = False
-        self.current_input = ""
         self.is_processing = False
     
     def compose(self) -> ComposeResult:
-        """组合应用界面"""
-        yield Header(show_clock=True)
+        """组合应用界面 - 四部分布局"""
+        # Header: 标题 + 上下文信息
+        with Horizontal(id="app-header"):
+            yield Static("🤖 ReAct Agent", id="header-title")
+            yield Static(self._get_context_info(), id="header-context")
         
-        with Vertical():
-            with ScrollableContainer(id="chat_area"):
-                yield RichLog(id="chat_log", markup=True, wrap=True)
-            
-            with Container(id="completion_list", classes="hidden"):
-                yield RichLog(id="completion_log", markup=True)
-            
-            with Horizontal():
-                yield Input(
-                    id="input",
-                    placeholder="输入消息，@ 补全文件，/ 执行命令",
-                )
-            
-            yield StatusBar(self.agent, id="status_bar")
+        # Main: 可滚动的聊天区域
+        with ScrollableContainer(id="main-container"):
+            yield RichLog(id="chat-log", markup=True, wrap=True, highlight=True)
         
-        yield Footer()
+        # Footer: 输入框
+        with Horizontal(id="input-container"):
+            yield Input(
+                id="user-input",
+                placeholder="输入消息... (@ 选择文件, / 或 Ctrl+P 打开命令面板)",
+            )
+        
+        # Setting: 快捷键提示
+        with Horizontal(id="setting-bar"):
+            yield Static(
+                "[bold #7aa2f7]Ctrl+C[/] [#565f89]退出[/]  "
+                "[bold #7aa2f7]Ctrl+L[/] [#565f89]清屏[/]",
+                id="setting-left"
+            )
+            yield Static(
+                "[bold #7aa2f7]Ctrl+P[/] [#565f89]命令面板[/]",
+                id="setting-right"
+            )
+    
+    def _get_context_info(self) -> str:
+        """获取上下文使用信息"""
+        if not hasattr(self.agent, "message_manager"):
+            return "[dim]上下文: 不可用[/]"
+        
+        mm = self.agent.message_manager
+        usage = mm.get_token_usage_percent()
+        remaining = mm.get_remaining_tokens()
+        used = mm.max_context_tokens - remaining
+        max_tokens = mm.max_context_tokens
+        
+        # 根据使用率选择颜色
+        if usage < 50:
+            color = "#9ece6a"  # 绿色
+        elif usage < 80:
+            color = "#e0af68"  # 橙色
+        else:
+            color = "#f7768e"  # 红色
+        
+        return f"[{color}]📊 {usage:.1f}%[/] [{color}]({used:,}/{max_tokens:,})[/]"
+    
+    def refresh_header(self) -> None:
+        """刷新 Header 中的上下文信息"""
+        try:
+            context_widget = self.query_one("#header-context", Static)
+            context_widget.update(self._get_context_info())
+        except Exception:
+            pass
     
     def on_mount(self) -> None:
         """应用挂载时的初始化"""
-        self.query_one("#input", Input).focus()
-        self.refresh_status()
+        self.query_one("#user-input", Input).focus()
         # 启动时刷新文件列表
         refresh_file_list(config.work_dir)
+        # 显示欢迎信息
+        self._show_welcome()
+    
+    def _show_welcome(self) -> None:
+        """显示欢迎信息"""
+        chat_log = self.query_one("#chat-log", RichLog)
+        chat_log.write("[bold #bb9af7]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]")
+        chat_log.write("[bold #7aa2f7]          欢迎使用 ReAct Agent![/]")
+        chat_log.write("")
+        chat_log.write("[#565f89]快捷操作:[/]")
+        chat_log.write("  [#7aa2f7]@[/]  [dim]输入 @ 选择文件引用[/]")
+        chat_log.write("  [#7aa2f7]/[/]  [dim]输入 / 打开命令面板[/]")
+        chat_log.write("  [#7aa2f7]Ctrl+P[/]  [dim]打开命令面板[/]")
+        chat_log.write("[bold #bb9af7]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]")
+        chat_log.write("")
+    
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """监听输入变化，检测 @ 和 / 触发对话框"""
+        text = event.value
+        
+        if self.is_processing:
+            return
+        
+        # 检测输入 @ 触发文件选择
+        if text.endswith("@"):
+            # 使用 set_timer 延迟打开，避免 @ 被输入
+            self.set_timer(0.05, self._open_file_picker_from_at)
+        
+        # 检测输入 / 触发命令面板
+        elif text == "/":
+            self.set_timer(0.05, self._open_palette_from_slash)
+    
+    def _open_file_picker_from_at(self) -> None:
+        """从 @ 触发打开文件选择器"""
+        input_widget = self.query_one("#user-input", Input)
+        current_value = input_widget.value
+        
+        # 移除尾部的 @
+        if current_value.endswith("@"):
+            input_widget.value = current_value[:-1]
+        
+        self._open_file_picker()
+    
+    def _open_palette_from_slash(self) -> None:
+        """从 / 触发打开命令面板"""
+        input_widget = self.query_one("#user-input", Input)
+        # 清空 /
+        if input_widget.value == "/":
+            input_widget.value = ""
+        self.action_open_palette()
+    
+    def _open_file_picker(self) -> None:
+        """打开文件选择对话框"""
+        def handle_file_selection(file_path: str | None) -> None:
+            if file_path:
+                input_widget = self.query_one("#user-input", Input)
+                # 在当前位置插入文件引用
+                current = input_widget.value
+                input_widget.value = f"{current}`{file_path}` "
+                input_widget.focus()
+        
+        self.push_screen(FilePickerScreen(config.work_dir), handle_file_selection)
+    
+    def action_open_palette(self) -> None:
+        """打开命令面板"""
+        commands = [
+            ("help", "帮助", "显示帮助信息"),
+            ("status", "状态", "显示系统状态和上下文使用情况"),
+            ("get_messages", "消息历史", "显示当前对话消息历史"),
+            ("clear", "清屏", "清空聊天记录"),
+            ("file", "选择文件", "选择文件添加到输入"),
+            ("exit", "退出", "退出程序"),
+        ]
+        
+        def handle_command(cmd_id: str | None) -> None:
+            if not cmd_id:
+                self.query_one("#user-input", Input).focus()
+                return
+            
+            if cmd_id == "help":
+                self._show_help()
+            elif cmd_id == "status":
+                self._show_status()
+            elif cmd_id == "get_messages":
+                self._show_messages()
+            elif cmd_id == "clear":
+                self.action_clear()
+            elif cmd_id == "file":
+                self._open_file_picker()
+            elif cmd_id == "exit":
+                self.action_quit()
+            else:
+                self.query_one("#user-input", Input).focus()
+        
+        self.push_screen(CommandPaletteScreen(commands, "命令面板"), handle_command)
+    
+    def _show_help(self) -> None:
+        """显示帮助信息"""
+        chat_log = self.query_one("#chat-log", RichLog)
+        chat_log.write("\n[bold #bb9af7]📖 帮助信息[/]")
+        chat_log.write("[#565f89]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]")
+        chat_log.write("[#7aa2f7]基本操作:[/]")
+        chat_log.write("  直接输入文本进行对话")
+        chat_log.write("  输入 [bold]@[/] 选择文件引用")
+        chat_log.write("  输入 [bold]/[/] 或按 [bold]Ctrl+P[/] 打开命令面板")
+        chat_log.write("")
+        chat_log.write("[#7aa2f7]快捷键:[/]")
+        chat_log.write("  [bold]Ctrl+C[/]  退出程序")
+        chat_log.write("  [bold]Ctrl+L[/]  清空聊天记录")
+        chat_log.write("  [bold]Ctrl+P[/]  打开命令面板")
+        chat_log.write("[#565f89]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n")
+        self.query_one("#user-input", Input).focus()
+    
+    def _show_status(self) -> None:
+        """显示状态信息"""
+        chat_log = self.query_one("#chat-log", RichLog)
+        chat_log.write("\n[bold #bb9af7]📊 系统状态[/]")
+        chat_log.write("[#565f89]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]")
+        
+        if hasattr(self.agent, "message_manager"):
+            mm = self.agent.message_manager
+            usage = mm.get_token_usage_percent()
+            remaining = mm.get_remaining_tokens()
+            used = mm.max_context_tokens - remaining
+            max_tokens = mm.max_context_tokens
+            
+            chat_log.write(f"  上下文使用: [bold]{usage:.1f}%[/]")
+            chat_log.write(f"  已用 tokens: [bold]{used:,}[/]")
+            chat_log.write(f"  最大 tokens: [bold]{max_tokens:,}[/]")
+            chat_log.write(f"  剩余 tokens: [bold]{remaining:,}[/]")
+        else:
+            chat_log.write("  [dim]状态信息不可用[/]")
+        
+        chat_log.write("[#565f89]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n")
+        self.query_one("#user-input", Input).focus()
+    
+    def _show_messages(self) -> None:
+        """显示消息历史"""
+        chat_log = self.query_one("#chat-log", RichLog)
+        chat_log.write("\n[bold #bb9af7]📜 消息历史[/]")
+        chat_log.write("[#565f89]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]")
+        
+        if hasattr(self.agent, "message_manager"):
+            messages = self.agent.message_manager.get_messages()
+            for i, msg in enumerate(messages, 1):
+                role = msg.get("role", "unknown")
+                content = msg.get("content", "")
+                
+                role_colors = {
+                    "user": "#7dcfff",
+                    "assistant": "#9ece6a",
+                    "system": "#e0af68",
+                    "tool": "#bb9af7",
+                }
+                color = role_colors.get(role, "#c0caf5")
+                
+                # 截断长内容
+                if len(content) > 100:
+                    content = content[:100] + "..."
+                
+                chat_log.write(f"  [{color}]{i}. [{role.upper()}][/]")
+                if content:
+                    chat_log.write(f"     {content}")
+            
+            chat_log.write(f"\n  [dim]共 {len(messages)} 条消息[/]")
+        else:
+            chat_log.write("  [dim]消息历史不可用[/]")
+        
+        chat_log.write("[#565f89]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/]\n")
+        self.query_one("#user-input", Input).focus()
     
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """处理输入提交"""
@@ -195,51 +648,26 @@ class ReActAgentApp(App):
             return
         
         # 清空输入框
-        input_widget = self.query_one("#input", Input)
+        input_widget = self.query_one("#user-input", Input)
         input_widget.value = ""
-        self.hide_completions()
-        
-        # 处理命令（需要捕获输出）
-        if message.startswith("/"):
-            # 重定向命令输出到界面
-            old_stdout = sys.stdout
-            output_buffer = StringIO()
-            sys.stdout = output_buffer
-            
-            try:
-                is_command = self.command_processor.process_command(message)
-                if is_command:
-                    output_text = output_buffer.getvalue()
-                    if output_text:
-                        self.add_system_message(output_text.strip())
-                    if message.startswith("/exit"):
-                        self.exit()
-                    return
-            finally:
-                sys.stdout = old_stdout
         
         # 处理聊天
-        if message:
-            self.chat_count += 1
-            self.add_user_message(message)
-            # 刷新文件列表
-            refresh_file_list(config.work_dir)
-            # 使用 Worker 处理聊天（避免阻塞 UI）
-            self.is_processing = True
-            # 使用 lambda 包装函数调用
-            self.worker = self.run_worker(
-                lambda: self.handle_chat(message),
-                thread=True,
-                name="chat_worker",
-            )
+        self.chat_count += 1
+        self.add_user_message(message)
+        # 刷新文件列表
+        refresh_file_list(config.work_dir)
+        # 使用 Worker 处理聊天（避免阻塞 UI）
+        self.is_processing = True
+        self.worker = self.run_worker(
+            lambda: self.handle_chat(message),
+            thread=True,
+            name="chat_worker",
+        )
     
     def handle_chat(self, message: str) -> None:
         """处理聊天（在 Worker 线程中运行）"""
         try:
-            # 获取 App 实例
             app = self.app
-            
-            # 定义输出回调，使用 App 的 call_from_thread 在主线程中更新 UI
             current_section = None
             current_content = ""
             
@@ -255,8 +683,8 @@ class ReActAgentApp(App):
                         current_content = ""
                     current_section = "reasoning"
                     app.call_from_thread(
-                        lambda: app.query_one("#chat_log", RichLog).write(
-                            f"[dim]{'='*config.log_separator_length} 模型思考 {'='*config.log_separator_length}[/]\n"
+                        lambda: app.query_one("#chat-log", RichLog).write(
+                            f"\n[dim #565f89]{'─'*20} 💭 模型思考 {'─'*20}[/]"
                         )
                     )
                     return
@@ -268,8 +696,8 @@ class ReActAgentApp(App):
                         current_content = ""
                     current_section = "content"
                     app.call_from_thread(
-                        lambda: app.query_one("#chat_log", RichLog).write(
-                            f"[green]{'='*config.log_separator_length} 最终回复 {'='*config.log_separator_length}[/]\n"
+                        lambda: app.query_one("#chat-log", RichLog).write(
+                            f"\n[#9ece6a]{'─'*20} ✨ 最终回复 {'─'*20}[/]"
                         )
                     )
                     return
@@ -281,31 +709,29 @@ class ReActAgentApp(App):
                         current_content = ""
                     current_section = "tool"
                     app.call_from_thread(
-                        lambda: app.query_one("#chat_log", RichLog).write(
-                            f"[magenta]{'='*config.log_separator_length} 工具调用 {'='*config.log_separator_length}[/]\n"
+                        lambda: app.query_one("#chat-log", RichLog).write(
+                            f"\n[#bb9af7]{'─'*20} 🔧 工具调用 {'─'*20}[/]"
                         )
                     )
                     return
                 
-                # 累积内容并定期更新
+                # 累积内容
                 if current_section:
                     current_content += text
                     if end_newline:
                         current_content += "\n"
                     
-                    # 定期更新显示（每 50 个字符或遇到换行）
                     if end_newline or len(current_content) >= 50:
                         app.call_from_thread(
                             lambda: app._update_content(current_section, current_content)
                         )
                         current_content = ""
                 else:
-                    # 没有明确部分，直接输出
                     app.call_from_thread(
                         lambda: app._add_output(text, end_newline)
                     )
             
-            # 在线程中运行 agent.chat
+            # 运行 agent.chat
             self.agent.chat(message, output_callback)
             
             # 刷新剩余内容
@@ -326,26 +752,24 @@ class ReActAgentApp(App):
                 )
         finally:
             app = self.app
-            app.call_from_thread(
-                lambda: app._finish_chat()
-            )
+            app.call_from_thread(lambda: app._finish_chat())
     
     def _finish_chat(self) -> None:
         """完成聊天处理"""
         self.is_processing = False
-        self.refresh_status()
-        self.query_one("#input", Input).focus()
+        self.refresh_header()
+        self.query_one("#user-input", Input).focus()
     
     def _flush_content(self, section: str, content: str) -> None:
-        """刷新内容（从 Worker 线程调用）"""
+        """刷新内容"""
         self.flush_current_content(section, content)
     
     def _update_content(self, section: str, content: str) -> None:
-        """更新内容（从 Worker 线程调用）"""
+        """更新内容"""
         self.update_section_content(section, content)
     
     def _add_output(self, text: str, end_newline: bool) -> None:
-        """添加输出（从 Worker 线程调用）"""
+        """添加输出"""
         self.add_assistant_output(text, end_newline)
     
     def flush_current_content(self, section: str, content: str) -> None:
@@ -353,154 +777,49 @@ class ReActAgentApp(App):
         if not content.strip():
             return
         
-        chat_log = self.query_one("#chat_log", RichLog)
+        chat_log = self.query_one("#chat-log", RichLog)
         if section == "reasoning":
-            chat_log.write(f"[dim]💭 模型思考:[/]\n{content}")
+            chat_log.write(f"[dim]{content}[/]")
         elif section == "content":
-            chat_log.write(f"[green]🤖 助手回复:[/]\n{content}")
+            chat_log.write(f"[#9ece6a]{content}[/]")
         elif section == "tool":
-            chat_log.write(f"[magenta]🔧 工具调用:[/]\n{content}")
+            chat_log.write(f"[#bb9af7]{content}[/]")
         else:
             chat_log.write(content)
     
     def update_section_content(self, section: str, content: str) -> None:
-        """更新部分内容（用于实时显示）"""
-        # 由于 RichLog 不支持部分更新，我们每次显示完整内容
-        # 为了更好的体验，只在换行时更新
+        """更新部分内容"""
         if "\n" in content:
-            chat_log = self.query_one("#chat_log", RichLog)
-            # 清除之前的内容并重新显示（简单实现）
-            # 实际应用中可以使用更复杂的逻辑来只更新最后一行
+            chat_log = self.query_one("#chat-log", RichLog)
             if section == "reasoning":
                 chat_log.write(f"[dim]{content}[/]")
             elif section == "content":
-                chat_log.write(f"[green]{content}[/]")
+                chat_log.write(f"[#9ece6a]{content}[/]")
             elif section == "tool":
-                chat_log.write(f"[magenta]{content}[/]")
+                chat_log.write(f"[#bb9af7]{content}[/]")
     
     def add_user_message(self, message: str) -> None:
         """添加用户消息"""
-        chat_log = self.query_one("#chat_log", RichLog)
-        chat_log.write(f"[cyan]👤 USER[/]: {message}\n")
+        chat_log = self.query_one("#chat-log", RichLog)
+        chat_log.write(f"\n[bold #7dcfff]👤 USER[/]: {message}")
     
     def add_assistant_output(self, text: str, end_newline: bool = True) -> None:
         """添加助手输出"""
-        chat_log = self.query_one("#chat_log", RichLog)
-        if end_newline:
-            chat_log.write(text)
-        else:
-            # 对于流式输出，我们需要累积
-            # 但 RichLog 不支持追加，所以先简单处理
-            chat_log.write(text)
+        chat_log = self.query_one("#chat-log", RichLog)
+        chat_log.write(text)
     
     def add_system_message(self, message: str) -> None:
         """添加系统消息"""
-        chat_log = self.query_one("#chat_log", RichLog)
-        chat_log.write(f"[yellow]SYSTEM[/]: {message}")
-    
-    def on_input_changed(self, event: Input.Changed) -> None:
-        """处理输入变化，用于补全"""
-        text = event.value
-        self.current_input = text
-        
-        # 如果输入为空或正在处理，不显示补全
-        if not text or self.is_processing:
-            self.hide_completions()
-            return
-        
-        # 检查是否需要补全
-        completions = self.get_completions(text)
-        if completions:
-            self.show_completions(completions)
-        else:
-            self.hide_completions()
-    
-    def get_completions(self, text: str) -> List[str]:
-        """获取补全列表"""
-        completions = []
-        
-        # 命令补全（以 / 开头）
-        if text.startswith("/"):
-            command_names = self.command_processor.get_command_names()
-            query = text[1:].lower()
-            for cmd in command_names:
-                if cmd[1:].lower().startswith(query):
-                    completions.append(cmd)
-        
-        # 文件补全（包含 @）
-        elif "@" in text:
-            last_at_index = text.rfind("@")
-            query = text[last_at_index + 1:]
-            
-            if query.strip() == "":
-                files = get_file_list(config.work_dir)[:20]
-            else:
-                files = search_files(config.work_dir, query, limit=50)
-            
-            for file_path in files:
-                # 构建补全文本：保留 @ 之前的内容，替换 @ 之后的内容
-                before_at = text[:last_at_index + 1]
-                completion_text = f"{before_at}`{file_path}`"
-                completions.append(completion_text)
-        
-        return completions[:20]  # 限制最多 20 个
-    
-    def show_completions(self, completions: List[str]) -> None:
-        """显示补全列表"""
-        if not completions:
-            self.hide_completions()
-            return
-        
-        self.current_completions = completions
-        self.completion_index = 0
-        self.showing_completions = True
-        
-        completion_log = self.query_one("#completion_log", RichLog)
-        completion_log.clear()
-        
-        for i, comp in enumerate(completions[:10]):  # 最多显示 10 个
-            style = "bold cyan" if i == 0 else "white"
-            completion_log.write(f"[{style}]{comp}[/]")
-        
-        completion_container = self.query_one("#completion_list", Container)
-        completion_container.remove_class("hidden")
-    
-    def hide_completions(self) -> None:
-        """隐藏补全列表"""
-        self.showing_completions = False
-        completion_container = self.query_one("#completion_list", Container)
-        completion_container.add_class("hidden")
-    
-    def action_complete(self) -> None:
-        """处理 Tab 补全"""
-        if not self.showing_completions or not self.current_completions:
-            return
-        
-        # 选择当前补全项
-        selected = self.current_completions[self.completion_index]
-        input_widget = self.query_one("#input", Input)
-        input_widget.value = selected
-        self.hide_completions()
-    
-    def action_cancel_completion(self) -> None:
-        """取消补全"""
-        self.hide_completions()
+        chat_log = self.query_one("#chat-log", RichLog)
+        chat_log.write(f"[bold #e0af68]⚠️ SYSTEM[/]: {message}")
     
     def action_clear(self) -> None:
         """清屏"""
-        chat_log = self.query_one("#chat_log", RichLog)
+        chat_log = self.query_one("#chat-log", RichLog)
         chat_log.clear()
-    
-    def refresh_status(self) -> None:
-        """刷新状态栏"""
-        status_bar = self.query_one("#status_bar", StatusBar)
-        status_bar.update_status()
+        self._show_welcome()
+        self.query_one("#user-input", Input).focus()
     
     def action_quit(self) -> None:
         """退出应用"""
         self.exit()
-
-
-# 为了兼容原有的 agent.chat 输出，我们需要修改 agent.py
-# 或者创建一个包装器来捕获输出
-# 但更好的方式是修改 agent.chat 接受一个输出回调
