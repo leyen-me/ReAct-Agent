@@ -242,10 +242,14 @@ class ReActAgentApp(App):
     /* ===== Main 聊天区域 ===== */
     #main-container {
         height: 1fr;
+        width: 100%;
+        overflow-y: auto;
         # margin: 0 2;
     }
     
     #chat-log {
+        width: 100%;
+        height: auto;
         scrollbar-color: #30363d;
         scrollbar-color-hover: #484f58;
         background: #ffffff;
@@ -412,7 +416,8 @@ class ReActAgentApp(App):
             
             # Main: 聊天区域
             with ScrollableContainer(id="main-container"):
-                yield Vertical(id="chat-log")
+                with Vertical(id="chat-log"):
+                    pass
             
             # Footer: 输入框
             with Horizontal(id="input-container"):
