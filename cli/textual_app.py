@@ -316,7 +316,7 @@ class ReActAgentApp(App):
         min-height: 1;
         background: #ffffff;
         padding: 0 2;
-        border-left: solid #8b5cf6;
+        border-left: ascii #22c55e;
         margin: 1 2 1 2;
         align-vertical: middle;
     }

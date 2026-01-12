@@ -68,7 +68,7 @@ class ToolMessage(ChatMessage):
     """
     
     def _format_content(self) -> str:
-        return f"[#8b5cf6]■[/]  {escape(self.content)}"
+        return f"[#22c55e]■[/]  {escape(self.content)}"
 
 
 class SystemMessage(ChatMessage):
