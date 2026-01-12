@@ -19,6 +19,7 @@ from textual.containers import (
 from textual.binding import Binding
 from textual import on
 from textual.screen import ModalScreen
+from textual.events import Click
 
 from agent import ReActAgent
 from cli.commands import CommandProcessor
@@ -477,6 +478,20 @@ class ReActAgentApp(App):
         """应用挂载"""
         self.query_one("#user-input", Input).focus()
         refresh_file_list(config.work_dir)
+    
+    @on(Click)
+    def on_click(self, event: Click) -> None:
+        """处理点击事件，保持输入框焦点"""
+        # 检查当前焦点是否在输入框上
+        input_widget = self.query_one("#user-input", Input)
+        focused_widget = self.focused
+        
+        # 如果焦点不在输入框上，且不在模态对话框中，则重新聚焦输入框
+        if focused_widget != input_widget:
+            # 检查是否在模态对话框中（命令面板或文件选择器）
+            if not isinstance(self.screen, ModalScreen):
+                # 延迟一下再聚焦，避免与点击事件冲突
+                self.set_timer(0.05, lambda: input_widget.focus())
     
     def on_input_changed(self, event: Input.Changed) -> None:
         """监听输入变化"""
