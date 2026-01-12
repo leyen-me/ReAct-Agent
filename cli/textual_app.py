@@ -628,6 +628,7 @@ class ReActAgentApp(App):
         self.chat_count = 0
         self.is_processing = False
         self.current_message_widget = None  # 当前正在更新的消息组件
+        self._programmatic_value_set = False  # 标记是否是程序设置的文本
     
     def compose(self) -> ComposeResult:
         """组合应用界面"""
@@ -730,7 +731,29 @@ class ReActAgentApp(App):
         input_widget = self.query_one("#user-input", Input)
         current_value = input_widget.value
         if current_value.endswith("@"):
-            input_widget.value = current_value[:-1]
+            new_value = current_value[:-1]
+            
+            # 标记这是程序设置的文本
+            self._programmatic_value_set = True
+            
+            # 先移除焦点，避免设置值时自动选中所有文本
+            input_widget.blur()
+            
+            # 设置新值（此时没有焦点，不会选中）
+            input_widget.value = new_value
+            
+            # 延迟恢复焦点并清除选中状态
+            def restore_focus():
+                input_widget.focus()
+                # 延迟清除选中状态
+                def clear_selection():
+                    if input_widget.has_focus and self._programmatic_value_set:
+                        # 设置光标位置到文本末尾，这会取消选中
+                        input_widget.cursor_position = len(new_value)
+                        input_widget.action_end()
+                        self._programmatic_value_set = False
+                self.set_timer(0.05, clear_selection)
+            self.set_timer(0.05, restore_focus)
         self._open_file_picker()
     
     def _open_palette_from_slash(self) -> None:
@@ -748,9 +771,32 @@ class ReActAgentApp(App):
             input_widget = self.query_one("#user-input", Input)
             if file_path:
                 current = input_widget.value
-                input_widget.value = f"{current}`{file_path}` "
-            # 无论是否选择文件，关闭弹窗后都聚焦到 user-input
-            input_widget.focus()
+                new_value = f"{current}`{file_path}` "
+                
+                # 标记这是程序设置的文本
+                self._programmatic_value_set = True
+                
+                # 先移除焦点，避免设置值时自动选中所有文本
+                input_widget.blur()
+                
+                # 设置新值（此时没有焦点，不会选中）
+                input_widget.value = new_value
+                
+                # 延迟恢复焦点并清除选中状态
+                def restore_focus():
+                    input_widget.focus()
+                    # 延迟清除选中状态
+                    def clear_selection():
+                        if input_widget.has_focus and self._programmatic_value_set:
+                            # 设置光标位置到文本末尾，这会取消选中
+                            input_widget.cursor_position = len(new_value)
+                            input_widget.action_end()
+                            self._programmatic_value_set = False
+                    self.set_timer(0.05, clear_selection)
+                self.set_timer(0.1, restore_focus)
+            else:
+                # 无论是否选择文件，关闭弹窗后都聚焦到 user-input
+                input_widget.focus()
         
         # 移除 user-input 的焦点，避免弹窗打开时还能输入
         input_widget = self.query_one("#user-input", Input)
