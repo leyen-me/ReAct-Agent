@@ -735,11 +735,12 @@ class ReActAgentApp(App):
     
     def _open_file_picker(self) -> None:
         def handle_file_selection(file_path: str | None) -> None:
+            input_widget = self.query_one("#user-input", Input)
             if file_path:
-                input_widget = self.query_one("#user-input", Input)
                 current = input_widget.value
                 input_widget.value = f"{current}`{file_path}` "
-                input_widget.focus()
+            # 无论是否选择文件，关闭弹窗后都聚焦到 user-input
+            input_widget.focus()
         
         # 移除 user-input 的焦点，避免弹窗打开时还能输入
         input_widget = self.query_one("#user-input", Input)
@@ -757,24 +758,33 @@ class ReActAgentApp(App):
         ]
         
         def handle_command(cmd_id: str | None) -> None:
+            input_widget = self.query_one("#user-input", Input)
+            
             if not cmd_id:
-                self.query_one("#user-input", Input).focus()
+                # 取消选择，聚焦到 user-input
+                input_widget.focus()
                 return
             
             if cmd_id == "help":
                 self._show_help()
+                input_widget.focus()
             elif cmd_id == "status":
                 self._show_status()
+                input_widget.focus()
             elif cmd_id == "messages":
                 self._show_messages()
+                input_widget.focus()
             elif cmd_id == "clear":
                 self.action_clear()
+                input_widget.focus()
             elif cmd_id == "file":
                 self._open_file_picker()
+                # file 命令会打开新的弹窗，焦点会在新弹窗关闭时处理
             elif cmd_id == "exit":
                 self.action_quit()
+                # exit 命令会退出应用，不需要聚焦
             else:
-                self.query_one("#user-input", Input).focus()
+                input_widget.focus()
         
         # 移除 user-input 的焦点，避免弹窗打开时还能输入
         input_widget = self.query_one("#user-input", Input)
