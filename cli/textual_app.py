@@ -128,8 +128,15 @@ class CommandPaletteScreen(ModalScreen[str]):
                 )
     
     def on_mount(self) -> None:
-        self.query_one("#palette-search", Input).focus()
-        self.focus_on_input = True
+        # 默认让列表获得焦点，这样上下键可以直接使用
+        option_list = self.query_one("#palette-list", OptionList)
+        if self.filtered_commands:
+            option_list.highlighted = 0
+            option_list.focus()
+            self.focus_on_input = False
+        else:
+            self.query_one("#palette-search", Input).focus()
+            self.focus_on_input = True
     
     def action_toggle_focus(self) -> None:
         """切换焦点"""
@@ -161,8 +168,8 @@ class CommandPaletteScreen(ModalScreen[str]):
         for cmd in self.filtered_commands:
             option_list.add_option(Option(f"{cmd[1]}  [dim]{cmd[2]}[/]", id=cmd[0]))
         
-        # 如果有结果，选中第一个
-        if self.filtered_commands and not self.focus_on_input:
+        # 如果有结果，默认选中第一个
+        if self.filtered_commands:
             option_list.highlighted = 0
     
     @on(OptionList.OptionSelected, "#palette-list")
@@ -179,9 +186,30 @@ class CommandPaletteScreen(ModalScreen[str]):
     def on_key(self, event: Key) -> None:
         """处理按键事件"""
         focused = self.focused
-        if isinstance(focused, OptionList):
+        option_list = self.query_one("#palette-list", OptionList)
+        
+        if isinstance(focused, Input):
+            # 输入框获得焦点时，上下键操作列表
+            if event.key == "up":
+                if self.filtered_commands:
+                    option_list.focus()
+                    current = option_list.highlighted or 0
+                    option_list.highlighted = max(0, current - 1)
+                    self.focus_on_input = False
+                    event.prevent_default()
+            elif event.key == "down":
+                if self.filtered_commands:
+                    option_list.focus()
+                    current = option_list.highlighted or 0
+                    option_list.highlighted = min(len(self.filtered_commands) - 1, current + 1)
+                    self.focus_on_input = False
+                    event.prevent_default()
+            elif event.key == "tab":
+                # Tab 键切换焦点
+                self.action_toggle_focus()
+                event.prevent_default()
+        elif isinstance(focused, OptionList):
             if event.key == "enter":
-                option_list = self.query_one("#palette-list", OptionList)
                 highlighted = option_list.highlighted
                 if highlighted is not None and self.filtered_commands:
                     self.dismiss(self.filtered_commands[highlighted][0])
@@ -281,9 +309,16 @@ class FilePickerScreen(ModalScreen[str]):
                 yield OptionList(id="filepicker-list")
     
     def on_mount(self) -> None:
-        self.query_one("#filepicker-search", Input).focus()
-        self.focus_on_input = True
         self._load_files("")
+        # 默认让列表获得焦点，这样上下键可以直接使用
+        option_list = self.query_one("#filepicker-list", OptionList)
+        if self.files:
+            option_list.highlighted = 0
+            option_list.focus()
+            self.focus_on_input = False
+        else:
+            self.query_one("#filepicker-search", Input).focus()
+            self.focus_on_input = True
     
     def action_toggle_focus(self) -> None:
         """切换焦点"""
@@ -310,8 +345,8 @@ class FilePickerScreen(ModalScreen[str]):
         for file_path in self.files:
             option_list.add_option(Option(file_path, id=file_path))
         
-        # 如果有结果且焦点在列表上，选中第一个
-        if self.files and not self.focus_on_input:
+        # 如果有结果，默认选中第一个
+        if self.files:
             option_list.highlighted = 0
     
     @on(Input.Changed, "#filepicker-search")
@@ -332,9 +367,30 @@ class FilePickerScreen(ModalScreen[str]):
     def on_key(self, event: Key) -> None:
         """处理按键事件"""
         focused = self.focused
-        if isinstance(focused, OptionList):
+        option_list = self.query_one("#filepicker-list", OptionList)
+        
+        if isinstance(focused, Input):
+            # 输入框获得焦点时，上下键操作列表
+            if event.key == "up":
+                if self.files:
+                    option_list.focus()
+                    current = option_list.highlighted or 0
+                    option_list.highlighted = max(0, current - 1)
+                    self.focus_on_input = False
+                    event.prevent_default()
+            elif event.key == "down":
+                if self.files:
+                    option_list.focus()
+                    current = option_list.highlighted or 0
+                    option_list.highlighted = min(len(self.files) - 1, current + 1)
+                    self.focus_on_input = False
+                    event.prevent_default()
+            elif event.key == "tab":
+                # Tab 键切换焦点
+                self.action_toggle_focus()
+                event.prevent_default()
+        elif isinstance(focused, OptionList):
             if event.key == "enter":
-                option_list = self.query_one("#filepicker-list", OptionList)
                 highlighted = option_list.highlighted
                 if highlighted is not None and self.files:
                     self.dismiss(self.files[highlighted])
