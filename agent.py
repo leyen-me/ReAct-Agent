@@ -4,7 +4,7 @@
 import json
 import logging
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Callable
 
 from openai import OpenAI, Stream
 from openai.types.chat import ChatCompletionChunk
@@ -303,12 +303,14 @@ You must reason and act strictly based on the above real environment.
         """获取工具列表"""
         return [{"type": "function", "function": tool.to_dict()} for tool in self.tools]
 
-    def chat(self, task_message: str) -> None:
+    def chat(self, task_message: str, output_callback: Optional[Callable[[str, bool], None]] = None) -> None:
         """
         处理用户任务
 
         Args:
             task_message: 用户任务消息
+            output_callback: 可选的输出回调函数，接受 (text, end_newline) 参数
+                            如果提供，将使用回调而不是 print
         """
         self.message_manager.add_user_message(task_message)
         while True:
@@ -346,9 +348,11 @@ You must reason and act strictly based on the above real environment.
             else:
                 # 重试次数用尽
                 logger.error("API 调用失败: 已达到最大重试次数")
-                print("\n=== 错误信息 ===")
-                print("API 调用失败: 已达到最大重试次数")
-                print("=== 错误信息结束 ===\n")
+                error_msg = "\n=== 错误信息 ===\nAPI 调用失败: 已达到最大重试次数\n=== 错误信息结束 ===\n"
+                if output_callback:
+                    output_callback(error_msg, end_newline=True)
+                else:
+                    print(error_msg)
                 return  # 优雅退出，不抛出异常
 
             # 处理流式响应
@@ -360,6 +364,13 @@ You must reason and act strictly based on the above real environment.
             start_reasoning_content = False
             start_content = False
             start_tool_call = False
+            
+            # 定义输出函数
+            def output(text: str, end_newline: bool = True):
+                if output_callback:
+                    output_callback(text, end_newline)
+                else:
+                    print(text, end="\n" if end_newline else "", flush=True)
 
             for chunk in stream_response:
                 
@@ -372,21 +383,21 @@ You must reason and act strictly based on the above real environment.
 
                     if hasattr(delta, "reasoning_content") and delta.reasoning_content:
                         if not start_reasoning_content:
-                            print(f"\n{'='*config.log_separator_length} 模型思考 {'='*config.log_separator_length}")
+                            output(f"\n{'='*config.log_separator_length} 模型思考 {'='*config.log_separator_length}\n")
                             start_reasoning_content = True
-                        print(delta.reasoning_content, end="", flush=True)
+                        output(delta.reasoning_content, end_newline=False)
 
                     if hasattr(delta, "content") and delta.content:
                         if not start_content:
-                            print(f"\n{'='*config.log_separator_length} 最终回复 {'='*config.log_separator_length}")
+                            output(f"\n{'='*config.log_separator_length} 最终回复 {'='*config.log_separator_length}\n")
                             start_content = True
                         chunk_content = delta.content
                         content += chunk_content
-                        print(chunk_content, end="", flush=True)
+                        output(chunk_content, end_newline=False)
 
                     if hasattr(delta, "tool_calls") and delta.tool_calls:
                         if not start_tool_call:
-                            print(f"\n{'='*config.log_separator_length} 工具调用 {'='*config.log_separator_length}")
+                            output(f"\n{'='*config.log_separator_length} 工具调用 {'='*config.log_separator_length}\n")
                             start_tool_call = True
                         for tc in delta.tool_calls:
                             tc_id = tc.id or last_tool_call_id
@@ -408,12 +419,12 @@ You must reason and act strictly based on the above real environment.
                             if tc.function:
                                 if tc.function.name:
                                     tool_call_acc[tc_id]["name"] += tc.function.name
-                                    print(tc.function.name, end="", flush=True)
+                                    output(tc.function.name, end_newline=False)
                                 if tc.function.arguments:
                                     tool_call_acc[tc_id][
                                         "arguments"
                                     ] += tc.function.arguments
-                                    print(tc.function.arguments, end="", flush=True)
+                                    output(tc.function.arguments, end_newline=False)
 
             # 更新 token 使用量（从 API 响应获取）
             if usage:
