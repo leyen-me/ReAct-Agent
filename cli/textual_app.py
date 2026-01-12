@@ -19,7 +19,7 @@ from textual.containers import (
 from textual.binding import Binding
 from textual import on
 from textual.screen import ModalScreen
-from textual.events import Click
+from textual.events import Click, Key
 
 from agent import ReActAgent
 from cli.commands import CommandProcessor
@@ -40,26 +40,29 @@ class CommandPaletteScreen(ModalScreen[str]):
     
     BINDINGS = [
         Binding("escape", "dismiss", "关闭"),
+        Binding("tab", "toggle_focus", "切换焦点"),
     ]
     
     CSS = """
     CommandPaletteScreen {
         align: center middle;
+        background: rgba(0, 0, 0, 0.5);
     }
     
     #palette-container {
-        width: 60;
-        max-height: 20;
-        background: #0d1117;
-        border: solid #30363d;
+        width: 70;
+        max-height: 24;
+        background: #ffffff;
+        border: solid #8b5cf6;
         padding: 1 2;
     }
     
     #palette-search {
         width: 100%;
         margin-bottom: 1;
-        background: #161b22;
+        background: #ffffff;
         border: solid #8b5cf6;
+        color: #000000;
     }
     
     #palette-search:focus {
@@ -68,12 +71,16 @@ class CommandPaletteScreen(ModalScreen[str]):
     
     #palette-list {
         height: auto;
-        max-height: 14;
-        background: #0d1117;
+        max-height: 18;
+        background: #ffffff;
     }
     
     #palette-list > .option-list--option-highlighted {
-        background: #1f2937;
+        background: #f3f3f3;
+    }
+    
+    #palette-list > .option-list--option {
+        color: #000000;
     }
     """
     
@@ -82,10 +89,11 @@ class CommandPaletteScreen(ModalScreen[str]):
         self.commands = commands
         self.title = title
         self.filtered_commands = commands.copy()
+        self.focus_on_input = True
     
     def compose(self) -> ComposeResult:
         with Container(id="palette-container"):
-            yield Input(placeholder="Type a command...", id="palette-search")
+            yield Input(placeholder="输入命令名称搜索...", id="palette-search")
             yield OptionList(
                 *[Option(f"{cmd[1]}  [dim]{cmd[2]}[/]", id=cmd[0]) for cmd in self.commands],
                 id="palette-list"
@@ -93,6 +101,20 @@ class CommandPaletteScreen(ModalScreen[str]):
     
     def on_mount(self) -> None:
         self.query_one("#palette-search", Input).focus()
+        self.focus_on_input = True
+    
+    def action_toggle_focus(self) -> None:
+        """切换焦点"""
+        if self.focus_on_input:
+            option_list = self.query_one("#palette-list", OptionList)
+            if self.filtered_commands:
+                option_list.focus()
+                if option_list.highlighted is None:
+                    option_list.highlighted = 0
+                self.focus_on_input = False
+        else:
+            self.query_one("#palette-search", Input).focus()
+            self.focus_on_input = True
     
     @on(Input.Changed, "#palette-search")
     def filter_commands(self, event: Input.Changed) -> None:
@@ -110,6 +132,10 @@ class CommandPaletteScreen(ModalScreen[str]):
         
         for cmd in self.filtered_commands:
             option_list.add_option(Option(f"{cmd[1]}  [dim]{cmd[2]}[/]", id=cmd[0]))
+        
+        # 如果有结果，选中第一个
+        if self.filtered_commands and not self.focus_on_input:
+            option_list.highlighted = 0
     
     @on(OptionList.OptionSelected, "#palette-list")
     def on_option_selected(self, event: OptionList.OptionSelected) -> None:
@@ -120,6 +146,22 @@ class CommandPaletteScreen(ModalScreen[str]):
     def on_search_submitted(self, event: Input.Submitted) -> None:
         if self.filtered_commands:
             self.dismiss(self.filtered_commands[0][0])
+    
+    @on(Key)
+    def on_key(self, event: Key) -> None:
+        """处理按键事件"""
+        focused = self.focused
+        if isinstance(focused, OptionList):
+            if event.key == "enter":
+                option_list = self.query_one("#palette-list", OptionList)
+                highlighted = option_list.highlighted
+                if highlighted is not None and self.filtered_commands:
+                    self.dismiss(self.filtered_commands[highlighted][0])
+                    event.prevent_default()
+            elif event.key == "tab":
+                # Tab 键切换焦点
+                self.action_toggle_focus()
+                event.prevent_default()
 
 
 class FilePickerScreen(ModalScreen[str]):
@@ -127,26 +169,29 @@ class FilePickerScreen(ModalScreen[str]):
     
     BINDINGS = [
         Binding("escape", "dismiss", "关闭"),
+        Binding("tab", "toggle_focus", "切换焦点"),
     ]
     
     CSS = """
     FilePickerScreen {
         align: center middle;
+        background: rgba(0, 0, 0, 0.5);
     }
     
     #filepicker-container {
-        width: 70;
-        max-height: 24;
-        background: #0d1117;
-        border: solid #30363d;
+        width: 80;
+        max-height: 28;
+        background: #ffffff;
+        border: solid #22c55e;
         padding: 1 2;
     }
     
     #filepicker-search {
         width: 100%;
         margin-bottom: 1;
-        background: #161b22;
+        background: #ffffff;
         border: solid #22c55e;
+        color: #000000;
     }
     
     #filepicker-search:focus {
@@ -155,12 +200,16 @@ class FilePickerScreen(ModalScreen[str]):
     
     #filepicker-list {
         height: auto;
-        max-height: 18;
-        background: #0d1117;
+        max-height: 22;
+        background: #ffffff;
     }
     
     #filepicker-list > .option-list--option-highlighted {
-        background: #1f2937;
+        background: #f3f3f3;
+    }
+    
+    #filepicker-list > .option-list--option {
+        color: #000000;
     }
     """
     
@@ -168,15 +217,30 @@ class FilePickerScreen(ModalScreen[str]):
         super().__init__()
         self.work_dir = work_dir
         self.files: List[str] = []
+        self.focus_on_input = True
     
     def compose(self) -> ComposeResult:
         with Container(id="filepicker-container"):
-            yield Input(placeholder="Search files...", id="filepicker-search")
+            yield Input(placeholder="输入文件名搜索...", id="filepicker-search")
             yield OptionList(id="filepicker-list")
     
     def on_mount(self) -> None:
         self.query_one("#filepicker-search", Input).focus()
+        self.focus_on_input = True
         self._load_files("")
+    
+    def action_toggle_focus(self) -> None:
+        """切换焦点"""
+        if self.focus_on_input:
+            option_list = self.query_one("#filepicker-list", OptionList)
+            if self.files:
+                option_list.focus()
+                if option_list.highlighted is None:
+                    option_list.highlighted = 0
+                self.focus_on_input = False
+        else:
+            self.query_one("#filepicker-search", Input).focus()
+            self.focus_on_input = True
     
     def _load_files(self, query: str) -> None:
         option_list = self.query_one("#filepicker-list", OptionList)
@@ -189,6 +253,10 @@ class FilePickerScreen(ModalScreen[str]):
         
         for file_path in self.files:
             option_list.add_option(Option(file_path, id=file_path))
+        
+        # 如果有结果且焦点在列表上，选中第一个
+        if self.files and not self.focus_on_input:
+            option_list.highlighted = 0
     
     @on(Input.Changed, "#filepicker-search")
     def filter_files(self, event: Input.Changed) -> None:
@@ -203,6 +271,22 @@ class FilePickerScreen(ModalScreen[str]):
     def on_search_submitted(self, event: Input.Submitted) -> None:
         if self.files:
             self.dismiss(self.files[0])
+    
+    @on(Key)
+    def on_key(self, event: Key) -> None:
+        """处理按键事件"""
+        focused = self.focused
+        if isinstance(focused, OptionList):
+            if event.key == "enter":
+                option_list = self.query_one("#filepicker-list", OptionList)
+                highlighted = option_list.highlighted
+                if highlighted is not None and self.files:
+                    self.dismiss(self.files[highlighted])
+                    event.prevent_default()
+            elif event.key == "tab":
+                # Tab 键切换焦点
+                self.action_toggle_focus()
+                event.prevent_default()
 
 
 class ReActAgentApp(App):
@@ -581,7 +665,61 @@ class ReActAgentApp(App):
     
     def _show_help(self) -> None:
         chat_container = self.query_one("#chat-log", Vertical)
-        help_msg = ContentMessage("[dim]@[/] select file  [dim]/[/] commands", allow_markup=True)
+        
+        help_content = """[bold]📖 ReAct Agent 帮助[/bold]
+
+[bold #8b5cf6]⌨️  快捷键[/bold #8b5cf6]
+  [dim]Ctrl+C[/dim]  退出应用
+  [dim]Ctrl+L[/dim]  清空聊天记录
+
+[bold #3b82f6]💬 命令面板[/bold #3b82f6]
+  输入 [dim]/[/dim] 打开命令面板，可用命令：
+  • [bold]help[/bold]      - 显示此帮助信息
+  • [bold]status[/bold]    - 显示上下文使用情况
+  • [bold]messages[/bold] - 显示消息历史
+  • [bold]clear[/bold]    - 清空聊天记录
+  • [bold]file[/bold]     - 选择文件
+  • [bold]exit[/bold]     - 退出应用
+
+[bold #22c55e]📁 文件选择[/bold #22c55e]
+  输入 [dim]@[/dim] 打开文件选择器，快速插入文件路径
+
+[bold #ef4444]🛠️  可用工具[/bold #ef4444]
+  Agent 可以使用以下工具完成任务：
+
+  [bold]文件操作[/bold]
+  • 读取/写入/编辑文件
+  • 创建/删除/重命名文件
+  • 移动/复制文件
+  • 列出目录/显示目录树
+
+  [bold]代码搜索[/bold]
+  • 在文件中搜索文本（支持正则）
+  • 查找文件（按名称模式）
+
+  [bold]Git 管理[/bold]
+  • 查看状态/差异
+  • 提交代码
+  • 分支管理
+  • 查看日志
+
+  [bold]命令执行[/bold]
+  • 执行终端命令
+  • 后台运行服务
+
+  [bold]任务管理[/bold]
+  • 添加/列出 Todo
+  • 更新任务状态
+  • 查看任务统计
+
+[bold #8b5cf6]💡 使用技巧[/bold #8b5cf6]
+  • 直接输入问题或任务，Agent 会自动推理和执行
+  • 使用 [dim]@文件名[/dim] 引用文件，Agent 会自动读取
+  • Agent 支持多轮对话，可以持续完善任务
+  • 查看 [dim]/status[/dim] 了解上下文使用情况
+  • 查看 [dim]/messages[/dim] 查看完整的对话历史"""
+        
+        help_msg = HistoryMessage(help_content)
         chat_container.mount(help_msg)
         self._scroll_to_bottom()
         self.query_one("#user-input", Input).focus()
