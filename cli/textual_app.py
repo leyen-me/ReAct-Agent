@@ -636,9 +636,11 @@ class ReActAgentApp(App):
                     if end_newline:
                         current_content += "\n"
                     
-                    if end_newline or len(current_content) >= 50:
+                    # 只在换行时更新显示，避免频繁创建消息
+                    # 内容会在 flush 时统一显示
+                    if end_newline and len(current_content.strip()) > 0:
                         app.call_from_thread(
-                            lambda: app._update_content(current_section, current_content)
+                            lambda: app._flush_content(current_section, current_content)
                         )
                         current_content = ""
                 else:
@@ -704,18 +706,10 @@ class ReActAgentApp(App):
         self._scroll_to_bottom()
     
     def update_section_content(self, section: str, content: str) -> None:
-        if "\n" in content:
-            chat_container = self.query_one("#chat-log", Vertical)
-            if section == "reasoning":
-                msg = ThinkingMessage(content)
-                chat_container.mount(msg)
-            elif section == "content":
-                msg = ContentMessage(content)
-                chat_container.mount(msg)
-            elif section == "tool":
-                msg = ToolMessage(content)
-                chat_container.mount(msg)
-            self._scroll_to_bottom()
+        """更新部分内容 - 此方法已废弃，改为使用 flush_current_content"""
+        # 这个方法不再使用，保留是为了兼容性
+        # 实际内容会在 flush_current_content 中统一显示
+        pass
     
     def add_user_message(self, message: str) -> None:
         chat_container = self.query_one("#chat-log", Vertical)
