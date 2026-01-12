@@ -10,6 +10,12 @@ ReAct Agent 是一个基于 ReAct（Reasoning and Acting）模式的智能代理
 - **行动（Action）**：调用工具执行具体操作
 - **观察（Observation）**：获取行动结果，调整策略
 
+## 演示截图
+
+| 示例1 | 示例2 |
+|-------|-------|
+| ![示例截图1](images/example-01.png) | ![示例截图2](images/example-02.png) |
+
 ## ✨ 功能特性
 
 - 🤔 **智能推理**：基于大语言模型进行任务分解和规划
