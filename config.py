@@ -33,7 +33,7 @@ class Config:
     def __init__(self):
         
         # 模型配置
-        self.model: str = os.getenv("MODEL", "openai/gpt-oss-120b")
+        self.model: str = os.getenv("MODEL", "deepseek-ai/deepseek-v3.1-terminus")
         self.api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
         self.base_url: str = os.getenv("OPENAI_BASE_URL", "https://integrate.api.nvidia.com/v1")
         
