@@ -46,8 +46,48 @@ class ChatInput(TextArea):
             self.value = value
             super().__init__()
     
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.placeholder = "输入消息... (/ 打开命令, @ 选择文件)"
+        self._showing_placeholder = False
+    
+    def on_mount(self) -> None:
+        """挂载时显示 placeholder"""
+        if not self.text:
+            self._show_placeholder()
+    
+    def _show_placeholder(self) -> None:
+        """显示 placeholder"""
+        if not self.text and not self._showing_placeholder:
+            self.load_text(self.placeholder)
+            self._showing_placeholder = True
+            # 设置为只读样式（通过添加类）
+            self.add_class("placeholder")
+    
+    def _clear_placeholder(self) -> None:
+        """清除 placeholder"""
+        if self._showing_placeholder:
+            self.clear()
+            self._showing_placeholder = False
+            self.remove_class("placeholder")
+    
+    def on_focus(self) -> None:
+        """获得焦点时清除 placeholder"""
+        if self._showing_placeholder:
+            self._clear_placeholder()
+    
+    def on_blur(self) -> None:
+        """失去焦点时恢复 placeholder"""
+        if not self.text and not self._showing_placeholder:
+            self._show_placeholder()
+    
     def _on_key(self, event: Key) -> None:
         """拦截 Enter 键"""
+        # 如果显示 placeholder，任何输入都要先清除它
+        if self._showing_placeholder and event.key not in ("escape", "tab", "up", "down", "left", "right", "home", "end", "pageup", "pagedown"):
+            if event.key != "enter":
+                self._clear_placeholder()
+        
         if event.key == "enter":
             # 检查是否按住 Shift 键（Shift+Enter 换行）
             # 如果不是 Shift+Enter，则提交
@@ -55,7 +95,9 @@ class ChatInput(TextArea):
             # 直接让 Enter 提交消息
             event.prevent_default()
             event.stop()
-            self.post_message(self.Submitted(self.text))
+            # 不提交 placeholder 文本
+            if not self._showing_placeholder:
+                self.post_message(self.Submitted(self.text))
             return
         super()._on_key(event)
 
@@ -614,6 +656,10 @@ class ReActAgentApp(App):
         margin: 1 0 0 0;
     }
     
+    #user-input.placeholder {
+        color: #9ca3af;
+    }
+    
     #input-model-info {
         width: 100%;
         height: 1;
@@ -1053,7 +1099,8 @@ class ReActAgentApp(App):
             return
         
         input_widget = self.query_one("#user-input", ChatInput)
-        input_widget.text = ""
+        input_widget.clear()
+        input_widget._showing_placeholder = False
         
         self.chat_count += 1
         self.add_user_message(message)
@@ -1140,7 +1187,10 @@ class ReActAgentApp(App):
     def _finish_chat(self) -> None:
         self.is_processing = False
         self.refresh_header()
-        self.query_one("#user-input", ChatInput).focus()
+        input_widget = self.query_one("#user-input", ChatInput)
+        if not input_widget.text:
+            input_widget._show_placeholder()
+        input_widget.focus()
     
     def _flush_content(self, section: str, content: str) -> None:
         self.flush_current_content(section, content)
