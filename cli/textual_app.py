@@ -199,15 +199,12 @@ class CommandPaletteScreen(ModalScreen[str]):
                 )
     
     def on_mount(self) -> None:
-        # 默认让列表获得焦点，这样上下键可以直接使用
+        # 默认让搜索框获得焦点，方便用户直接输入
         option_list = self.query_one("#palette-list", OptionList)
         if self.filtered_commands:
             option_list.highlighted = 0
-            option_list.focus()
-            self.focus_on_input = False
-        else:
-            self.query_one("#palette-search", Input).focus()
-            self.focus_on_input = True
+        self.query_one("#palette-search", Input).focus()
+        self.focus_on_input = True
     
     def action_toggle_focus(self) -> None:
         """切换焦点"""
@@ -384,15 +381,12 @@ class FilePickerScreen(ModalScreen[str]):
     
     def on_mount(self) -> None:
         self._load_files("")
-        # 默认让列表获得焦点，这样上下键可以直接使用
+        # 默认让搜索框获得焦点，方便用户直接输入
         option_list = self.query_one("#filepicker-list", OptionList)
         if self.files:
             option_list.highlighted = 0
-            option_list.focus()
-            self.focus_on_input = False
-        else:
-            self.query_one("#filepicker-search", Input).focus()
-            self.focus_on_input = True
+        self.query_one("#filepicker-search", Input).focus()
+        self.focus_on_input = True
     
     def action_toggle_focus(self) -> None:
         """切换焦点"""
