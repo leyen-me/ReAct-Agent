@@ -1100,7 +1100,6 @@ class ReActAgentApp(App):
             ("messages", "Messages", "Show message history"),
             ("logs", "Logs", "View logs"),
             ("clear", "Clear", "Clear chat"),
-            ("file", "File", "Select file"),
             ("exit", "Exit", "Exit app"),
         ]
         
@@ -1123,16 +1122,11 @@ class ReActAgentApp(App):
                 input_widget.focus()
             elif cmd_id == "logs":
                 self._open_log_viewer()
-                # logs 命令会打开新的弹窗，焦点会在新弹窗关闭时处理
             elif cmd_id == "clear":
                 self.action_clear()
                 input_widget.focus()
-            elif cmd_id == "file":
-                self._open_file_picker()
-                # file 命令会打开新的弹窗，焦点会在新弹窗关闭时处理
             elif cmd_id == "exit":
                 self.action_quit()
-                # exit 命令会退出应用，不需要聚焦
             else:
                 input_widget.focus()
         
@@ -1144,59 +1138,16 @@ class ReActAgentApp(App):
     def _show_help(self) -> None:
         chat_container = self.query_one("#chat-log", Vertical)
         
-        help_content = """[bold]📖 ReAct Agent 帮助[/bold]
+        help_content = """[bold]ReAct Agent[/bold]
 
-[bold #8b5cf6]⌨️  快捷键[/bold #8b5cf6]
-  [dim]Ctrl+C[/dim]  退出应用
-  [dim]Ctrl+L[/dim]  清空聊天记录
+[bold]快捷键[/bold]
+  [dim]Ctrl+C[/dim]  退出
+  [dim]Ctrl+L[/dim]  清屏
+  [dim]/[/dim]       命令面板
+  [dim]@[/dim]       文件选择
 
-[bold #3b82f6]💬 命令面板[/bold #3b82f6]
-  输入 [dim]/[/dim] 打开命令面板，可用命令：
-  • [bold]help[/bold]      - 显示此帮助信息
-  • [bold]status[/bold]    - 显示上下文使用情况
-  • [bold]messages[/bold] - 显示消息历史
-  • [bold]logs[/bold]     - 查看日志文件
-  • [bold]clear[/bold]    - 清空聊天记录
-  • [bold]file[/bold]     - 选择文件
-  • [bold]exit[/bold]     - 退出应用
-
-[bold #22c55e]📁 文件选择[/bold #22c55e]
-  输入 [dim]@[/dim] 打开文件选择器，快速插入文件路径
-
-[bold #ef4444]🛠️  可用工具[/bold #ef4444]
-  Agent 可以使用以下工具完成任务：
-
-  [bold]文件操作[/bold]
-  • 读取/写入/编辑文件
-  • 创建/删除/重命名文件
-  • 移动/复制文件
-  • 列出目录/显示目录树
-
-  [bold]代码搜索[/bold]
-  • 在文件中搜索文本（支持正则）
-  • 查找文件（按名称模式）
-
-  [bold]Git 管理[/bold]
-  • 查看状态/差异
-  • 提交代码
-  • 分支管理
-  • 查看日志
-
-  [bold]命令执行[/bold]
-  • 执行终端命令
-  • 后台运行服务
-
-  [bold]任务管理[/bold]
-  • 添加/列出 Todo
-  • 更新任务状态
-  • 查看任务统计
-
-[bold #8b5cf6]💡 使用技巧[/bold #8b5cf6]
-  • 直接输入问题或任务，Agent 会自动推理和执行
-  • 使用 [dim]@文件名[/dim] 引用文件，Agent 会自动读取
-  • Agent 支持多轮对话，可以持续完善任务
-  • 查看 [dim]/status[/dim] 了解上下文使用情况
-  • 查看 [dim]/messages[/dim] 查看完整的对话历史"""
+[bold]可用工具[/bold]
+  文件操作、代码搜索、Git 管理、命令执行、任务管理"""
         
         help_msg = HistoryMessage(help_content)
         chat_container.mount(help_msg)
