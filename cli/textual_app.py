@@ -605,7 +605,7 @@ class ReActAgentApp(App):
     #user-input {
         width: 100%;
         height: auto;
-        min-height: 3;
+        min-height: 1;
         max-height: 10;
         background: #f3f3f3;
         border: none;
