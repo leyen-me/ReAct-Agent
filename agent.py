@@ -167,6 +167,7 @@ class ReActAgent:
             self._get_system_prompt(), config.max_context_tokens
         )
         self.chat_count = 0
+        self.should_stop = False  # 中断标志
 
     def _create_tools(self) -> List[Tool]:
         """创建工具列表"""
@@ -303,6 +304,10 @@ You must reason and act strictly based on the above real environment.
         """获取工具列表"""
         return [{"type": "function", "function": tool.to_dict()} for tool in self.tools]
 
+    def stop_chat(self) -> None:
+        """停止当前对话"""
+        self.should_stop = True
+    
     def chat(self, task_message: str, output_callback: Optional[Callable[[str, bool], None]] = None) -> None:
         """
         处理用户任务
@@ -312,8 +317,19 @@ You must reason and act strictly based on the above real environment.
             output_callback: 可选的输出回调函数，接受 (text, end_newline) 参数
                             如果提供，将使用回调而不是 print
         """
+        # 重置中断标志
+        self.should_stop = False
+        
         self.message_manager.add_user_message(task_message)
         while True:
+            # 检查是否需要中断
+            if self.should_stop:
+                logger.info("对话被用户中断")
+                if output_callback:
+                    output_callback("\n\n[对话已被用户中断]", end_newline=True)
+                else:
+                    print("\n\n[对话已被用户中断]")
+                break
             self.chat_count += 1
 
             logger.debug(f"=== Chat Round {self.chat_count} ===")
@@ -372,59 +388,77 @@ You must reason and act strictly based on the above real environment.
                 else:
                     print(text, end="\n" if end_newline else "", flush=True)
 
-            for chunk in stream_response:
-                
-                # 获取 usage 信息（通常在最后一个 chunk 中）
-                if hasattr(chunk, "usage") and chunk.usage is not None:
-                    usage = chunk.usage
+            try:
+                for chunk in stream_response:
+                    # 检查是否需要中断
+                    if self.should_stop:
+                        logger.info("流式响应被中断，正在关闭流...")
+                        stream_response.close()  # 关闭流，停止后端继续生成
+                        break
+                    
+                    # 获取 usage 信息（通常在最后一个 chunk 中）
+                    if hasattr(chunk, "usage") and chunk.usage is not None:
+                        usage = chunk.usage
 
-                if chunk.choices and len(chunk.choices) > 0:
-                    delta = chunk.choices[0].delta
+                    if chunk.choices and len(chunk.choices) > 0:
+                        delta = chunk.choices[0].delta
 
-                    if hasattr(delta, "reasoning_content") and delta.reasoning_content:
-                        if not start_reasoning_content:
-                            output(f"\n{'='*config.log_separator_length} 模型思考 {'='*config.log_separator_length}\n")
-                            start_reasoning_content = True
-                        output(delta.reasoning_content, end_newline=False)
+                        if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                            if not start_reasoning_content:
+                                output(f"\n{'='*config.log_separator_length} 模型思考 {'='*config.log_separator_length}\n")
+                                start_reasoning_content = True
+                            output(delta.reasoning_content, end_newline=False)
 
-                    if hasattr(delta, "content") and delta.content:
-                        if not start_content:
-                            output(f"\n{'='*config.log_separator_length} 最终回复 {'='*config.log_separator_length}\n")
-                            start_content = True
-                        chunk_content = delta.content
-                        content += chunk_content
-                        output(chunk_content, end_newline=False)
+                        if hasattr(delta, "content") and delta.content:
+                            if not start_content:
+                                output(f"\n{'='*config.log_separator_length} 最终回复 {'='*config.log_separator_length}\n")
+                                start_content = True
+                            chunk_content = delta.content
+                            content += chunk_content
+                            output(chunk_content, end_newline=False)
 
-                    if hasattr(delta, "tool_calls") and delta.tool_calls:
-                        if not start_tool_call:
-                            output(f"\n{'='*config.log_separator_length} 工具调用 {'='*config.log_separator_length}\n")
-                            start_tool_call = True
-                        for tc in delta.tool_calls:
-                            tc_id = tc.id or last_tool_call_id
+                        if hasattr(delta, "tool_calls") and delta.tool_calls:
+                            if not start_tool_call:
+                                output(f"\n{'='*config.log_separator_length} 工具调用 {'='*config.log_separator_length}\n")
+                                start_tool_call = True
+                            for tc in delta.tool_calls:
+                                tc_id = tc.id or last_tool_call_id
 
-                            if tc_id is None:
-                                # 连第一个 id 都没有，直接跳过（极少见）
-                                continue
+                                if tc_id is None:
+                                    # 连第一个 id 都没有，直接跳过（极少见）
+                                    continue
 
-                            last_tool_call_id = tc_id
+                                last_tool_call_id = tc_id
 
-                            if tc_id not in tool_call_acc:
-                                tool_call_acc[tc_id] = {
-                                    "id": tc_id,
-                                    "name": "",
-                                    "arguments": "",
-                                }
+                                if tc_id not in tool_call_acc:
+                                    tool_call_acc[tc_id] = {
+                                        "id": tc_id,
+                                        "name": "",
+                                        "arguments": "",
+                                    }
 
-                            # 拼 name（虽然一般只来一次，但规范允许拆）
-                            if tc.function:
-                                if tc.function.name:
-                                    tool_call_acc[tc_id]["name"] += tc.function.name
-                                    output(tc.function.name, end_newline=False)
-                                if tc.function.arguments:
-                                    tool_call_acc[tc_id][
-                                        "arguments"
-                                    ] += tc.function.arguments
-                                    output(tc.function.arguments, end_newline=False)
+                                # 拼 name（虽然一般只来一次，但规范允许拆）
+                                if tc.function:
+                                    if tc.function.name:
+                                        tool_call_acc[tc_id]["name"] += tc.function.name
+                                        output(tc.function.name, end_newline=False)
+                                    if tc.function.arguments:
+                                        tool_call_acc[tc_id][
+                                            "arguments"
+                                        ] += tc.function.arguments
+                                        output(tc.function.arguments, end_newline=False)
+            except Exception as e:
+                # 如果在处理流时发生异常（包括关闭流），记录日志
+                logger.debug(f"流处理异常: {e}")
+                # 如果是用户中断，不需要抛出异常
+                if not self.should_stop:
+                    raise
+            finally:
+                # 确保流被关闭
+                try:
+                    stream_response.close()
+                except Exception:
+                    pass
 
             # 更新 token 使用量（从 API 响应获取）
             if usage:

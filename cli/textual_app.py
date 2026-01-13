@@ -693,6 +693,10 @@ class ReActAgentApp(App):
         color: #7d8590;
     }
     
+    #setting-right.chatting {
+        color: #ef4444;
+    }
+    
     /* ===== 隐藏类 ===== */
     .hidden {
         display: none;
@@ -702,6 +706,7 @@ class ReActAgentApp(App):
     BINDINGS = [
         Binding("ctrl+c", "quit", "退出", priority=True),
         Binding("ctrl+l", "clear", "清屏"),
+        Binding("escape", "stop_chat", "停止对话", show=False),
         # Binding("ctrl+p", "open_palette", "命令"),
     ]
     
@@ -738,7 +743,7 @@ class ReActAgentApp(App):
             with Horizontal(id="setting-bar"):
                 yield Static(self._get_status_info(), id="setting-left")
                 yield Static(
-                    "[#3b82f6]ctrl+c[/] quit  [#8b5cf6]ctrl+l[/] clear",
+                    self._get_shortcuts_info(),
                     id="setting-right"
                 )
     
@@ -775,6 +780,13 @@ class ReActAgentApp(App):
         else:
             return status
     
+    def _get_shortcuts_info(self) -> str:
+        """获取快捷键信息"""
+        if self.is_processing:
+            return "[#ef4444]esc[/] stop  [#3b82f6]ctrl+c[/] quit  [#8b5cf6]ctrl+l[/] clear"
+        else:
+            return "[#3b82f6]ctrl+c[/] quit  [#8b5cf6]ctrl+l[/] clear"
+    
     def refresh_header(self) -> None:
         """刷新 Header"""
         try:
@@ -786,6 +798,7 @@ class ReActAgentApp(App):
         """刷新状态栏"""
         try:
             self.query_one("#setting-left", Static).update(self._get_status_info())
+            self.query_one("#setting-right", Static).update(self._get_shortcuts_info())
         except Exception:
             pass
     
@@ -1307,6 +1320,14 @@ class ReActAgentApp(App):
         msg = SystemMessage(message)
         chat_container.mount(msg)
         self._scroll_to_bottom()
+    
+    def action_stop_chat(self) -> None:
+        """停止当前对话"""
+        if self.is_processing:
+            # 设置 agent 的中断标志
+            self.agent.stop_chat()
+            # 添加系统消息提示
+            self.add_system_message("正在停止对话...")
     
     def action_clear(self) -> None:
         chat_container = self.query_one("#chat-log", Vertical)
