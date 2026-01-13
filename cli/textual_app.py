@@ -151,10 +151,12 @@ class CommandPaletteScreen(ModalScreen[str]):
     
     #palette-search {
         width: 100%;
+        height: 1;
         margin-bottom: 1;
         background: #ffffff;
         border: none;
         color: #000000;
+        align-vertical: middle;
     }
     
     #palette-search:focus {
@@ -337,10 +339,12 @@ class FilePickerScreen(ModalScreen[str]):
     
     #filepicker-search {
         width: 100%;
+        height: 1;
         margin-bottom: 1;
         background: #ffffff;
         border: none;
         color: #000000;
+        align-vertical: middle;
     }
     
     #filepicker-search:focus {
@@ -1095,12 +1099,12 @@ class ReActAgentApp(App):
             return
         
         commands = [
-            ("help", "Help", "Show help"),
-            ("status", "Status", "Show context usage"),
-            ("messages", "Messages", "Show message history"),
-            ("logs", "Logs", "View logs"),
-            ("clear", "Clear", "Clear chat"),
-            ("exit", "Exit", "Exit app"),
+            ("help", "Help", "显示帮助"),
+            ("status", "Status", "上下文使用情况"),
+            ("messages", "Messages", "消息历史"),
+            ("logs", "Logs", "查看日志"),
+            ("clear", "Clear", "清空聊天"),
+            ("exit", "Exit", "退出应用"),
         ]
         
         def handle_command(cmd_id: str | None) -> None:
