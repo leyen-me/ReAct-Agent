@@ -713,6 +713,8 @@ class ReActAgentApp(App):
         self.is_processing = False
         self.current_message_widget = None  # 当前正在更新的消息组件
         self._programmatic_value_set = False  # 标记是否是程序设置的文本
+        self.chat_start_time = None  # 对话开始时间
+        self.last_chat_duration = None  # 上一轮对话耗时（秒）
     
     def compose(self) -> ComposeResult:
         """组合应用界面"""
@@ -734,7 +736,7 @@ class ReActAgentApp(App):
             
             # Setting: 底栏
             with Horizontal(id="setting-bar"):
-                yield Static("", id="setting-left")
+                yield Static(self._get_status_info(), id="setting-left")
                 yield Static(
                     "[#3b82f6]ctrl+c[/] quit  [#8b5cf6]ctrl+l[/] clear",
                     id="setting-right"
@@ -760,10 +762,30 @@ class ReActAgentApp(App):
         model = getattr(config, 'model', 'unknown')
         return f"[#8b5cf6]■[/] Build [dim]{model}[/]"
     
+    def _get_status_info(self) -> str:
+        """获取状态信息"""
+        if self.is_processing:
+            status = "[#22c55e]●[/] 对话中"
+        else:
+            status = "[#7d8590]○[/] 空闲"
+        
+        if self.last_chat_duration is not None:
+            duration = f"[dim]上轮耗时: {self.last_chat_duration:.1f}s[/]"
+            return f"{status}  {duration}"
+        else:
+            return status
+    
     def refresh_header(self) -> None:
         """刷新 Header"""
         try:
             self.query_one("#header-stats", Static).update(self._get_stats())
+        except Exception:
+            pass
+    
+    def refresh_status(self) -> None:
+        """刷新状态栏"""
+        try:
+            self.query_one("#setting-left", Static).update(self._get_status_info())
         except Exception:
             pass
     
@@ -1106,7 +1128,12 @@ class ReActAgentApp(App):
         self.add_user_message(message)
         refresh_file_list(config.work_dir)
         
+        # 记录对话开始时间
+        import time
+        self.chat_start_time = time.time()
         self.is_processing = True
+        self.refresh_status()
+        
         self.worker = self.run_worker(
             lambda: self.handle_chat(message),
             thread=True,
@@ -1185,8 +1212,15 @@ class ReActAgentApp(App):
             app.call_from_thread(lambda: app._finish_chat())
     
     def _finish_chat(self) -> None:
+        # 计算对话耗时
+        import time
+        if self.chat_start_time is not None:
+            self.last_chat_duration = time.time() - self.chat_start_time
+            self.chat_start_time = None
+        
         self.is_processing = False
         self.refresh_header()
+        self.refresh_status()
         input_widget = self.query_one("#user-input", ChatInput)
         if not input_widget.text:
             input_widget._show_placeholder()
