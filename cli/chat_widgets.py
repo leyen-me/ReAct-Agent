@@ -78,7 +78,7 @@ class SystemMessage(ChatMessage):
     """
     
     def _format_content(self) -> str:
-        return f"[#ef4444]│[/] {escape(self.content)}"
+        return f"[#ef4444][SYSTEM][/] {escape(self.content)}"
 
 
 class HistoryMessage(ChatMessage):

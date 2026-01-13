@@ -598,14 +598,13 @@ class ReActAgentApp(App):
         background: transparent;
     }
     
-    SystemMessage {
+    SystemMessage {        
         width: 100%;
         height: auto;
-        min-height: 1;
-        background: #ffffff;
-        padding: 0 2;
-        border-left: solid #ef4444;
-        margin: 1 2 1 2;
+        min-height: 3;
+        background: #f9f9f9;
+        border-left: ascii #ef4444;
+        margin: 0 2;
         align-vertical: middle;
     }
     
@@ -749,7 +748,7 @@ class ReActAgentApp(App):
     
     def _get_title(self) -> str:
         """获取标题"""
-        return "[bold]# ReAct Agent[/]"
+        return "[bold]ReAct Agent[/]"
     
     def _get_stats(self) -> str:
         """获取统计信息"""
@@ -760,7 +759,7 @@ class ReActAgentApp(App):
         usage = mm.get_token_usage_percent()
         used = mm.max_context_tokens - mm.get_remaining_tokens()
         
-        return f"{used:,}  {usage:.0f}% ($0.00)"
+        return f"Token: {used:,}  Usage: {usage:.0f}%"
     
     def _get_model_info(self) -> str:
         """获取模型信息"""
@@ -783,9 +782,9 @@ class ReActAgentApp(App):
     def _get_shortcuts_info(self) -> str:
         """获取快捷键信息"""
         if self.is_processing:
-            return "[#ef4444]esc[/] stop  [#3b82f6]ctrl+c[/] quit  [#8b5cf6]ctrl+l[/] clear"
+            return "[#ef4444]ESC[/] 停止对话  [#3b82f6]CTRL+C[/] 退出  [#8b5cf6]CTRL+L[/] 清屏"
         else:
-            return "[#3b82f6]ctrl+c[/] quit  [#8b5cf6]ctrl+l[/] clear"
+            return "[#3b82f6]CTRL+C[/] 退出  [#8b5cf6]CTRL+L[/] 清屏"
     
     def refresh_header(self) -> None:
         """刷新 Header"""
@@ -1327,7 +1326,7 @@ class ReActAgentApp(App):
             # 设置 agent 的中断标志
             self.agent.stop_chat()
             # 添加系统消息提示
-            self.add_system_message("正在停止对话...")
+            self.add_system_message("[用户在此处中断了对话，未完成的任务已暂停]")
     
     def action_clear(self) -> None:
         chat_container = self.query_one("#chat-log", Vertical)

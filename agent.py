@@ -322,9 +322,14 @@ You must reason and act strictly based on the above real environment.
         
         self.message_manager.add_user_message(task_message)
         while True:
-            # 检查是否需要中断
+            # 检查是否需要中断（在主循环开始时）
             if self.should_stop:
-                logger.info("对话被用户中断")
+                logger.info("对话在主循环被用户中断")
+                # 添加系统消息说明用户中断了对话
+                self.message_manager.messages.append({
+                    "role": "system",
+                    "content": "[用户在对话开始前中断了任务]"
+                })
                 if output_callback:
                     output_callback("\n\n[对话已被用户中断]", end_newline=True)
                 else:
@@ -459,6 +464,19 @@ You must reason and act strictly based on the above real environment.
                     stream_response.close()
                 except Exception:
                     pass
+            
+            # 如果用户中断了对话，将中断信息添加到上下文
+            if self.should_stop:
+                # 如果有部分内容，先保存
+                if content.strip():
+                    self.message_manager.add_assistant_content(content)
+                # 添加系统消息说明用户中断了对话
+                self.message_manager.messages.append({
+                    "role": "system",
+                    "content": "[用户在此处中断了对话，未完成的任务已暂停]"
+                })
+                logger.info("已将用户中断信息添加到上下文")
+                break
 
             # 更新 token 使用量（从 API 响应获取）
             if usage:
