@@ -1093,6 +1093,7 @@ class ReActAgentApp(App):
             return
         
         commands = [
+            ("new", "New", "新建对话"),
             ("help", "Help", "显示帮助"),
             ("status", "Status", "上下文使用情况"),
             ("messages", "Messages", "消息历史"),
@@ -1109,7 +1110,9 @@ class ReActAgentApp(App):
                 input_widget.focus()
                 return
             
-            if cmd_id == "help":
+            if cmd_id == "new":
+                self.action_new_chat()
+            elif cmd_id == "help":
                 self._show_help()
                 input_widget.focus()
             elif cmd_id == "status":
@@ -1436,6 +1439,25 @@ class ReActAgentApp(App):
             self.agent.stop_chat()
             # 添加系统消息提示
             self.add_system_message("[用户在此处中断了对话，未完成的任务已暂停]")
+    
+    def action_new_chat(self) -> None:
+        """新建对话"""
+        if self.is_processing:
+            return
+        # 清空聊天记录
+        chat_container = self.query_one("#chat-log", Vertical)
+        chat_container.remove_children()
+        # 重置 agent 的消息历史
+        if hasattr(self.agent, "message_manager"):
+            # 保留系统消息，清空其他消息
+            system_message = self.agent.message_manager.messages[0]
+            self.agent.message_manager.messages = [system_message]
+            self.agent.message_manager.current_tokens = 0
+        # 刷新 header 和状态
+        self.refresh_header()
+        self.refresh_status()
+        # 聚焦输入框
+        self.query_one("#user-input", ChatInput).focus()
     
     def action_clear(self) -> None:
         chat_container = self.query_one("#chat-log", Vertical)
