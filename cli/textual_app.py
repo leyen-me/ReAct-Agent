@@ -21,6 +21,7 @@ from textual.binding import Binding
 from textual import on
 from textual.screen import ModalScreen
 from textual.events import Click, Key
+from textual.message import Message
 
 from agent import ReActAgent
 from cli.commands import CommandProcessor
@@ -34,6 +35,29 @@ from cli.chat_widgets import (
 )
 from config import config
 from utils import refresh_file_list, get_file_list, search_files
+
+
+class ChatInput(TextArea):
+    """自定义聊天输入框，Enter 提交，Shift+Enter 换行"""
+    
+    class Submitted(Message):
+        """提交消息事件"""
+        def __init__(self, value: str) -> None:
+            self.value = value
+            super().__init__()
+    
+    def _on_key(self, event: Key) -> None:
+        """拦截 Enter 键"""
+        if event.key == "enter":
+            # 检查是否按住 Shift 键（Shift+Enter 换行）
+            # 如果不是 Shift+Enter，则提交
+            # Textual 中 Shift+Enter 通常表示为不同的 key 值
+            # 直接让 Enter 提交消息
+            event.prevent_default()
+            event.stop()
+            self.post_message(self.Submitted(self.text))
+            return
+        super()._on_key(event)
 
 
 class CommandPaletteScreen(ModalScreen[str]):
@@ -659,7 +683,7 @@ class ReActAgentApp(App):
             
             # Footer: 输入框
             with Vertical(id="input-container"):
-                yield TextArea(id="user-input", placeholder="输入消息... @选择文件 /命令")
+                yield ChatInput(id="user-input")
                 yield Static(self._get_model_info(), id="input-model-info")
             
             # Setting: 底栏
@@ -709,14 +733,14 @@ class ReActAgentApp(App):
     
     def on_mount(self) -> None:
         """应用挂载"""
-        self.query_one("#user-input", TextArea).focus()
+        self.query_one("#user-input", ChatInput).focus()
         refresh_file_list(config.work_dir)
     
     @on(Click)
     def on_click(self, event: Click) -> None:
         """处理点击事件，保持输入框焦点"""
         # 检查当前焦点是否在输入框上
-        input_widget = self.query_one("#user-input", TextArea)
+        input_widget = self.query_one("#user-input", ChatInput)
         focused_widget = self.focused
         
         # 如果焦点不在输入框上，且不在模态对话框中，则重新聚焦输入框
@@ -730,7 +754,7 @@ class ReActAgentApp(App):
     def on_input_changed(self, event: TextArea.Changed) -> None:
         """监听输入变化"""
         # TextArea.Changed 事件没有 value 属性，需要从组件获取文本
-        input_widget = self.query_one("#user-input", TextArea)
+        input_widget = self.query_one("#user-input", ChatInput)
         text = input_widget.text
         
         if self.is_processing:
@@ -746,7 +770,7 @@ class ReActAgentApp(App):
             self.set_timer(0.05, self._open_palette_from_slash)
     
     def _open_file_picker_from_at(self) -> None:
-        input_widget = self.query_one("#user-input", TextArea)
+        input_widget = self.query_one("#user-input", ChatInput)
         current_value = input_widget.text
         if current_value.endswith("@"):
             new_value = current_value[:-1]
@@ -778,7 +802,7 @@ class ReActAgentApp(App):
         self._open_file_picker()
     
     def _open_palette_from_slash(self) -> None:
-        input_widget = self.query_one("#user-input", TextArea)
+        input_widget = self.query_one("#user-input", ChatInput)
         if input_widget.text == "/":
             input_widget.text = ""
         self.action_open_palette()
@@ -789,7 +813,7 @@ class ReActAgentApp(App):
             return
         
         def handle_file_selection(file_path: str | None) -> None:
-            input_widget = self.query_one("#user-input", TextArea)
+            input_widget = self.query_one("#user-input", ChatInput)
             if file_path:
                 current = input_widget.text
                 new_value = f"{current}`{file_path}` "
@@ -823,7 +847,7 @@ class ReActAgentApp(App):
                 input_widget.focus()
         
         # 移除 user-input 的焦点，避免弹窗打开时还能输入
-        input_widget = self.query_one("#user-input", TextArea)
+        input_widget = self.query_one("#user-input", ChatInput)
         input_widget.blur()
         self.push_screen(FilePickerScreen(config.work_dir), handle_file_selection)
     
@@ -842,7 +866,7 @@ class ReActAgentApp(App):
         ]
         
         def handle_command(cmd_id: str | None) -> None:
-            input_widget = self.query_one("#user-input", TextArea)
+            input_widget = self.query_one("#user-input", ChatInput)
             
             if not cmd_id:
                 # 取消选择，聚焦到 user-input
@@ -871,7 +895,7 @@ class ReActAgentApp(App):
                 input_widget.focus()
         
         # 移除 user-input 的焦点，避免弹窗打开时还能输入
-        input_widget = self.query_one("#user-input", TextArea)
+        input_widget = self.query_one("#user-input", ChatInput)
         input_widget.blur()
         self.push_screen(CommandPaletteScreen(commands, "Commands"), handle_command)
     
@@ -934,7 +958,7 @@ class ReActAgentApp(App):
         help_msg = HistoryMessage(help_content)
         chat_container.mount(help_msg)
         self._scroll_to_bottom()
-        self.query_one("#user-input", TextArea).focus()
+        self.query_one("#user-input", ChatInput).focus()
     
     def _show_status(self) -> None:
         chat_container = self.query_one("#chat-log", Vertical)
@@ -950,7 +974,7 @@ class ReActAgentApp(App):
             chat_container.mount(status_msg)
             self._scroll_to_bottom()
         
-        self.query_one("#user-input", TextArea).focus()
+        self.query_one("#user-input", ChatInput).focus()
     
     def _show_messages(self) -> None:
         chat_container = self.query_one("#chat-log", Vertical)
@@ -1016,18 +1040,19 @@ class ReActAgentApp(App):
             chat_container.mount(msg)
         
         self._scroll_to_bottom()
-        self.query_one("#user-input", TextArea).focus()
+        self.query_one("#user-input", ChatInput).focus()
     
-    def _submit_message(self) -> None:
-        """提交消息"""
+    @on(ChatInput.Submitted)
+    def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
+        """处理聊天输入提交"""
         if self.is_processing:
             return
         
-        input_widget = self.query_one("#user-input", TextArea)
-        message = input_widget.text.strip()
+        message = event.value.strip()
         if not message:
             return
         
+        input_widget = self.query_one("#user-input", ChatInput)
         input_widget.text = ""
         
         self.chat_count += 1
@@ -1040,17 +1065,6 @@ class ReActAgentApp(App):
             thread=True,
             name="chat_worker",
         )
-    
-    @on(Key)
-    def on_key_press(self, event: Key) -> None:
-        """处理键盘事件"""
-        # 如果焦点在 TextArea 上，且按下 Ctrl+Enter，则提交消息
-        focused = self.focused
-        if isinstance(focused, TextArea) and focused.id == "user-input":
-            # Ctrl+Enter 或 Ctrl+J 提交消息
-            if event.key == "ctrl+j" or (event.key == "enter" and event.is_ctrl):
-                self._submit_message()
-                event.prevent_default()
     
     def handle_chat(self, message: str) -> None:
         """处理聊天"""
@@ -1126,7 +1140,7 @@ class ReActAgentApp(App):
     def _finish_chat(self) -> None:
         self.is_processing = False
         self.refresh_header()
-        self.query_one("#user-input", TextArea).focus()
+        self.query_one("#user-input", ChatInput).focus()
     
     def _flush_content(self, section: str, content: str) -> None:
         self.flush_current_content(section, content)
@@ -1213,7 +1227,7 @@ class ReActAgentApp(App):
     def action_clear(self) -> None:
         chat_container = self.query_one("#chat-log", Vertical)
         chat_container.remove_children()
-        self.query_one("#user-input", TextArea).focus()
+        self.query_one("#user-input", ChatInput).focus()
     
     def action_quit(self) -> None:
         self.exit()
