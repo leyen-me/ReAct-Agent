@@ -30,7 +30,7 @@ def initialize_application() -> Tuple[ReActAgent, CommandProcessor]:
         sys.exit(1)
     
     # 设置日志
-    setup_logging(debug_mode=config.debug_mode)
+    log_file_path = setup_logging()
     
     # 启动时检查更新（后台，不阻塞）
     try:

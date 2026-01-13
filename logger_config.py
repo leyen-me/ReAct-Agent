@@ -3,68 +3,92 @@
 
 import logging
 import sys
+import os
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 
-class NoNewlineFormatter(logging.Formatter):
-    """不添加换行符的格式化器（用于流式输出）"""
+def get_log_dir() -> Path:
+    """获取日志目录路径"""
+    # 获取项目根目录（logger_config.py 所在目录）
+    project_root = Path(__file__).parent
+    log_dir = project_root / "logs"
+    return log_dir
+
+
+def get_current_log_file() -> Path:
+    """获取当前日志文件路径"""
+    log_dir = get_log_dir()
+    # 使用日期作为日志文件名
+    log_filename = f"agent_{datetime.now().strftime('%Y%m%d')}.log"
+    return log_dir / log_filename
+
+
+def get_all_log_files() -> list:
+    """获取所有日志文件列表（按时间倒序）"""
+    log_dir = get_log_dir()
+    if not log_dir.exists():
+        return []
     
-    def format(self, record):
-        # 检查 extra 中的 no_newline 属性
-        no_newline = getattr(record, 'no_newline', False)
-        if no_newline:
-            # 移除默认的换行符
-            original_fmt = self._style._fmt
-            if original_fmt and original_fmt.endswith('\n'):
-                self._style._fmt = original_fmt[:-1]
-            result = super().format(record)
-            self._style._fmt = original_fmt
-            return result
-        return super().format(record)
+    log_files = list(log_dir.glob("agent_*.log"))
+    # 按修改时间倒序排序
+    log_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+    return log_files
 
 
-def setup_logging(debug_mode: bool = False, log_file: Optional[str] = None) -> None:
+def setup_logging(log_file: Optional[str] = None) -> str:
     """
     配置日志系统
     
     Args:
-        debug_mode: 是否启用调试模式
-        log_file: 日志文件路径（可选）
-    """
-    # 设置日志级别
-    level = logging.DEBUG if debug_mode else logging.INFO
+        log_file: 日志文件路径（可选，如果不指定则使用默认路径）
     
-    # 创建根 logger
+    Returns:
+        实际使用的日志文件路径
+    
+    Note:
+        始终记录 DEBUG 级别的日志到控制台和文件
+    """
+    # 创建根 logger（始终设置为 DEBUG）
     root_logger = logging.getLogger()
-    root_logger.setLevel(level)
+    root_logger.setLevel(logging.DEBUG)
     
     # 清除已有的处理器
     root_logger.handlers.clear()
     
-    # 控制台处理器
+    # 控制台处理器（始终 DEBUG 级别）
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(level)
+    console_handler.setLevel(logging.DEBUG)
     
-    # 格式化器
-    if debug_mode:
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-    else:
-        formatter = NoNewlineFormatter('%(message)s')
+    # 格式化器（始终使用详细格式）
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
     
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
     
-    # 文件处理器（如果指定）
+    # 创建 logs 目录
+    log_dir = get_log_dir()
+    log_dir.mkdir(exist_ok=True)
+    
+    # 确定日志文件路径
     if log_file:
-        file_handler = logging.FileHandler(log_file, encoding='utf-8')
-        file_handler.setLevel(logging.DEBUG)
-        file_formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        file_handler.setFormatter(file_formatter)
-        root_logger.addHandler(file_handler)
+        actual_log_file = Path(log_file)
+    else:
+        actual_log_file = get_current_log_file()
+    
+    # 文件处理器（始终 DEBUG 级别）
+    file_handler = logging.FileHandler(actual_log_file, encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+    file_formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    file_handler.setFormatter(file_formatter)
+    root_logger.addHandler(file_handler)
+    
+    return str(actual_log_file)
 

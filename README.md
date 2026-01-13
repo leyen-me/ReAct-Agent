@@ -364,9 +364,6 @@ export OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1
 # 操作系统（默认：macOS）
 export OS=macOS
 
-# 调试模式（默认：False）
-export DEBUG=True
-
 # 命令执行超时时间，单位：秒（默认：300）
 export COMMAND_TIMEOUT=300
 
@@ -487,7 +484,7 @@ ask "显示任务进度统计"
 - **模型配置**：通过 `MODEL` 环境变量设置，默认使用 `Qwen/Qwen3-Next-80B-A3B-Instruct`
 - **API 配置**：通过 `OPENAI_API_KEY` 和 `OPENAI_BASE_URL` 环境变量设置
 - **工作目录**：默认使用项目根目录下的 `workspace` 文件夹，所有文件操作都限制在此目录内
-- **调试模式**：通过 `DEBUG` 环境变量控制，启用后会显示详细的日志信息
+- **日志记录**：所有日志自动保存到 `logs/` 目录，按日期分文件存储，可通过命令面板查看
 
 ### 高级配置
 

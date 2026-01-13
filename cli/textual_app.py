@@ -35,6 +35,7 @@ from cli.chat_widgets import (
 )
 from config import config
 from utils import refresh_file_list, get_file_list, search_files
+from logger_config import get_all_log_files
 
 
 class ChatInput(TextArea):
@@ -470,6 +471,148 @@ class FilePickerScreen(ModalScreen[str]):
                 event.prevent_default()
 
 
+class LogViewerScreen(ModalScreen[None]):
+    """日志查看对话框"""
+    
+    BINDINGS = [
+        Binding("escape", "dismiss", "关闭"),
+        Binding("tab", "toggle_focus", "切换焦点"),
+    ]
+    
+    CSS = """
+    LogViewerScreen {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.5);
+    }
+    
+    #logviewer-container {
+        width: 90%;
+        height: 90%;
+        background: #ffffff;
+        border: none;
+        padding: 0;
+    }
+    
+    #logviewer-header {
+        height: 3;
+        background: #ffffff;
+        padding: 0 2;
+        margin-top: 1;
+        border-bottom: solid #e5e7eb;
+        align-vertical: middle;
+    }
+    
+    #logviewer-title {
+        width: 1fr;
+        color: #000000;
+        text-style: bold;
+    }
+    
+    #logviewer-hint {
+        width: auto;
+        color: #7d8590;
+    }
+    
+    #logviewer-content {
+        height: 1fr;
+        padding: 1 2;
+    }
+    
+    #logviewer-file-list {
+        width: 30;
+        height: 100%;
+        background: #ffffff;
+        border-right: solid #e5e7eb;
+        padding-right: 1;
+    }
+    
+    #logviewer-file-list > .option-list--option-highlighted {
+        background: #f3f3f3;
+    }
+    
+    #logviewer-file-list > .option-list--option {
+        color: #000000;
+    }
+    
+    #logviewer-text {
+        width: 1fr;
+        height: 100%;
+        background: #f9f9f9;
+        padding: 1 2;
+        border: none;
+    }
+    
+    #logviewer-text:focus {
+        border: none;
+    }
+    """
+    
+    def __init__(self):
+        super().__init__()
+        self.log_files = []
+        self.current_log_content = ""
+    
+    def compose(self) -> ComposeResult:
+        with Container(id="logviewer-container"):
+            with Horizontal(id="logviewer-header"):
+                yield Static("日志查看器", id="logviewer-title")
+                yield Static("[dim]ESC[/] 关闭  [dim]↑↓[/] 选择", id="logviewer-hint")
+            with Horizontal(id="logviewer-content"):
+                yield OptionList(id="logviewer-file-list")
+                yield TextArea("", id="logviewer-text", read_only=True)
+    
+    def on_mount(self) -> None:
+        self._load_log_files()
+        option_list = self.query_one("#logviewer-file-list", OptionList)
+        if self.log_files:
+            option_list.highlighted = 0
+            option_list.focus()
+            # 自动加载第一个日志文件
+            self._load_log_content(self.log_files[0])
+        else:
+            text_area = self.query_one("#logviewer-text", TextArea)
+            text_area.load_text("没有找到日志文件")
+    
+    def _load_log_files(self) -> None:
+        option_list = self.query_one("#logviewer-file-list", OptionList)
+        option_list.clear_options()
+        
+        self.log_files = get_all_log_files()
+        
+        if not self.log_files:
+            option_list.add_option(Option("无日志文件", id="empty"))
+            return
+        
+        for log_file in self.log_files:
+            # 显示文件名和大小
+            size_kb = log_file.stat().st_size / 1024
+            display_name = f"{log_file.name}  [dim]({size_kb:.1f} KB)[/]"
+            option_list.add_option(Option(display_name, id=str(log_file)))
+        
+        if self.log_files:
+            option_list.highlighted = 0
+    
+    def _load_log_content(self, log_file_path) -> None:
+        try:
+            with open(log_file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            text_area = self.query_one("#logviewer-text", TextArea)
+            text_area.load_text(content)
+            # 滚动到底部
+            text_area.scroll_end(animate=False)
+        except Exception as e:
+            text_area = self.query_one("#logviewer-text", TextArea)
+            text_area.load_text(f"无法读取日志文件: {e}")
+    
+    @on(OptionList.OptionSelected, "#logviewer-file-list")
+    def on_log_selected(self, event: OptionList.OptionSelected) -> None:
+        if event.option.id and event.option.id != "empty":
+            from pathlib import Path
+            log_file = Path(event.option.id)
+            self._load_log_content(log_file)
+
+
 class ReActAgentApp(App):
     """ReAct Agent Textual 应用 - 简洁风格"""
     
@@ -887,6 +1030,21 @@ class ReActAgentApp(App):
             input_widget.text = ""
         self.action_open_palette()
     
+    def _open_log_viewer(self) -> None:
+        # 如果已经有弹窗打开，不重复打开
+        if isinstance(self.screen, ModalScreen):
+            return
+        
+        def handle_close(result: None) -> None:
+            # 关闭后聚焦到输入框
+            input_widget = self.query_one("#user-input", ChatInput)
+            input_widget.focus()
+        
+        # 移除 user-input 的焦点
+        input_widget = self.query_one("#user-input", ChatInput)
+        input_widget.blur()
+        self.push_screen(LogViewerScreen(), handle_close)
+    
     def _open_file_picker(self) -> None:
         # 如果已经有弹窗打开，不重复打开
         if isinstance(self.screen, ModalScreen):
@@ -940,6 +1098,7 @@ class ReActAgentApp(App):
             ("help", "Help", "Show help"),
             ("status", "Status", "Show context usage"),
             ("messages", "Messages", "Show message history"),
+            ("logs", "Logs", "View logs"),
             ("clear", "Clear", "Clear chat"),
             ("file", "File", "Select file"),
             ("exit", "Exit", "Exit app"),
@@ -962,6 +1121,9 @@ class ReActAgentApp(App):
             elif cmd_id == "messages":
                 self._show_messages()
                 input_widget.focus()
+            elif cmd_id == "logs":
+                self._open_log_viewer()
+                # logs 命令会打开新的弹窗，焦点会在新弹窗关闭时处理
             elif cmd_id == "clear":
                 self.action_clear()
                 input_widget.focus()
@@ -993,6 +1155,7 @@ class ReActAgentApp(App):
   • [bold]help[/bold]      - 显示此帮助信息
   • [bold]status[/bold]    - 显示上下文使用情况
   • [bold]messages[/bold] - 显示消息历史
+  • [bold]logs[/bold]     - 查看日志文件
   • [bold]clear[/bold]    - 清空聊天记录
   • [bold]file[/bold]     - 选择文件
   • [bold]exit[/bold]     - 退出应用
@@ -1211,14 +1374,11 @@ class ReActAgentApp(App):
                 
         except Exception as e:
             app = self.app
-            app.call_from_thread(
-                lambda: app.add_system_message(f"Error: {e}")
-            )
             import traceback
-            if config.debug_mode:
-                app.call_from_thread(
-                    lambda: app.add_system_message(traceback.format_exc())
-                )
+            error_msg = f"Error: {e}\n\n{traceback.format_exc()}"
+            app.call_from_thread(
+                lambda: app.add_system_message(error_msg)
+            )
         finally:
             app = self.app
             app.call_from_thread(lambda: app._finish_chat())

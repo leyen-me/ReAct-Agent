@@ -49,9 +49,6 @@ class Config:
             self.work_dir: Path = Path.cwd()
         self.work_dir = self.work_dir.resolve()  # 规范化路径
         
-        # 调试配置
-        self.debug_mode: bool = os.getenv("DEBUG", "False").lower() == "true"
-        
         # 命令执行配置
         self.command_timeout: int = int(os.getenv("COMMAND_TIMEOUT", "300"))
         
