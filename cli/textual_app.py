@@ -487,7 +487,7 @@ class LogViewerScreen(ModalScreen[None]):
     
     #logviewer-container {
         width: 90%;
-        height: 90%;
+        height: 85%;
         background: #ffffff;
         border: none;
         padding: 0;
@@ -515,15 +515,15 @@ class LogViewerScreen(ModalScreen[None]):
     
     #logviewer-content {
         height: 1fr;
-        padding: 1 2;
+        padding: 0;
     }
     
     #logviewer-file-list {
-        width: 30;
+        width: 28;
         height: 100%;
         background: #ffffff;
-        border-right: solid #e5e7eb;
-        padding-right: 1;
+        border: none;
+        padding: 1 2;
     }
     
     #logviewer-file-list > .option-list--option-highlighted {
@@ -537,7 +537,7 @@ class LogViewerScreen(ModalScreen[None]):
     #logviewer-text {
         width: 1fr;
         height: 100%;
-        background: #f9f9f9;
+        background: #ffffff;
         padding: 1 2;
         border: none;
     }
@@ -556,7 +556,7 @@ class LogViewerScreen(ModalScreen[None]):
         with Container(id="logviewer-container"):
             with Horizontal(id="logviewer-header"):
                 yield Static("日志查看器", id="logviewer-title")
-                yield Static("[dim]ESC[/] 关闭  [dim]↑↓[/] 选择", id="logviewer-hint")
+                yield Static("[dim]ESC[/] 关闭", id="logviewer-hint")
             with Horizontal(id="logviewer-content"):
                 yield OptionList(id="logviewer-file-list")
                 yield TextArea("", id="logviewer-text", read_only=True)
@@ -567,7 +567,6 @@ class LogViewerScreen(ModalScreen[None]):
         if self.log_files:
             option_list.highlighted = 0
             option_list.focus()
-            # 自动加载第一个日志文件
             self._load_log_content(self.log_files[0])
         else:
             text_area = self.query_one("#logviewer-text", TextArea)
@@ -584,9 +583,8 @@ class LogViewerScreen(ModalScreen[None]):
             return
         
         for log_file in self.log_files:
-            # 显示文件名和大小
-            size_kb = log_file.stat().st_size / 1024
-            display_name = f"{log_file.name}  [dim]({size_kb:.1f} KB)[/]"
+            # 显示文件名
+            display_name = log_file.name
             option_list.add_option(Option(display_name, id=str(log_file)))
         
         if self.log_files:
@@ -597,9 +595,11 @@ class LogViewerScreen(ModalScreen[None]):
             with open(log_file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
+            if not content.strip():
+                content = "日志文件为空"
+            
             text_area = self.query_one("#logviewer-text", TextArea)
             text_area.load_text(content)
-            # 滚动到底部
             text_area.scroll_end(animate=False)
         except Exception as e:
             text_area = self.query_one("#logviewer-text", TextArea)
