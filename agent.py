@@ -32,6 +32,9 @@ from tools import (
     GitCommitTool,
     GitBranchTool,
     GitLogTool,
+    UpdateStepStatusTool,
+    MoveToNextStepTool,
+    GetPlanStatusTool,
 )
 from tool_executor import create_tool_executor
 from task_planner import TaskPlanner, TaskPlan, PlanStep, StepStatus
@@ -172,7 +175,11 @@ class ReActAgent:
 
     def _create_tools(self) -> List[Tool]:
         """创建工具列表"""
-        return [
+        # 创建任务计划工具的回调函数
+        def get_plan() -> Optional[TaskPlan]:
+            return self.current_plan
+        
+        tools = [
             ReadFileTool(config.work_dir),
             WriteFileTool(config.work_dir),
             DeleteFileTool(config.work_dir),
@@ -193,7 +200,12 @@ class ReActAgent:
             GitCommitTool(config.work_dir),
             GitBranchTool(config.work_dir),
             GitLogTool(config.work_dir),
+            # 任务计划管理工具
+            UpdateStepStatusTool(config.work_dir, get_plan),
+            MoveToNextStepTool(config.work_dir, get_plan),
+            GetPlanStatusTool(config.work_dir, get_plan),
         ]
+        return tools
         
     def _get_system_prompt_by_en(self) -> str:
         """Generate system prompt"""
@@ -219,6 +231,19 @@ You are a professional task-execution AI Agent.
 - When uncertain, attempt the Minimum Viable Action (MVP)
 - Do not fabricate non-existent files, commands, or results
 - Report progress as you complete each step of the plan
+
+━━━━━━━━━━━━━━
+【Task Plan Management】
+━━━━━━━━━━━━━━
+When a task plan is provided, you are responsible for managing its execution and progress:
+
+1. **Before starting a step**: Use the `update_step_status` tool to mark the step as "in_progress"
+2. **After completing a step**: Use the `update_step_status` tool to mark the step as "completed" and provide a brief result summary
+3. **If a step fails**: Use the `update_step_status` tool to mark the step as "failed" and provide error information
+4. **To move to next step**: Use the `move_to_next_step` tool when you're ready to proceed to the next step
+5. **To check plan status**: Use the `get_plan_status` tool to view the current plan progress and all step statuses
+
+IMPORTANT: You must actively manage the task plan progress. Do not rely on automatic updates - you control when steps are marked as started, completed, failed, or skipped.
 
 ━━━━━━━━━━━━━━
 【Environment Information】
@@ -272,6 +297,19 @@ You must reason and act strictly based on the above real environment.
 - 完成每个步骤后报告进度
 
 ━━━━━━━━━━━━━━
+【任务计划管理】
+━━━━━━━━━━━━━━
+当提供了任务计划时，你需要主动管理计划的执行和进度：
+
+1. **开始执行步骤前**：使用 `update_step_status` 工具将步骤标记为 "in_progress"
+2. **步骤完成后**：使用 `update_step_status` 工具将步骤标记为 "completed" 并提供简要结果摘要
+3. **步骤失败时**：使用 `update_step_status` 工具将步骤标记为 "failed" 并提供错误信息
+4. **移动到下一步**：当你准备执行下一个步骤时，使用 `move_to_next_step` 工具
+5. **查看计划状态**：使用 `get_plan_status` 工具查看当前计划进度和所有步骤状态
+
+重要提示：你必须主动管理任务计划的进度。不要依赖自动更新 - 你控制何时将步骤标记为开始、完成、失败或跳过。
+
+━━━━━━━━━━━━━━
 【环境信息】
 ━━━━━━━━━━━━━━
 操作系统：{config.operating_system}
@@ -285,7 +323,7 @@ You must reason and act strictly based on the above real environment.
 【输出要求】
 ━━━━━━━━━━━━━━
 - 只输出对用户有价值的内容
-- 任务完成后，明确说明“任务已完成”
+- 任务完成后，明确说明"任务已完成"
 - 如无法完成，明确说明原因与下一步建议
 
 ━━━━━━━━━━━━━━
@@ -452,11 +490,33 @@ Respond with: "yes (reason)" or "no (reason)"."""
                 progress = self.current_plan.get_progress()
                 update_plan_status(f"📋 计划完成 ({len(self.current_plan.steps)} 步) | 进度: {progress['completed']}/{progress['total']}")
                 
-                # 将计划添加到消息中，让模型知道计划
-                plan_summary = f"\n执行计划（共 {len(self.current_plan.steps)} 步）：\n"
+                # 将完整的计划信息添加到消息中，让模型知道计划并可以管理它
+                plan_info = f"\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                plan_info += f"📋 任务执行计划（共 {len(self.current_plan.steps)} 步）\n"
+                plan_info += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                plan_info += f"任务描述：{self.current_plan.task_description}\n\n"
+                plan_info += f"当前进度：{progress['completed']}/{progress['total']} 已完成 ({progress['progress_percent']:.1f}%)\n"
+                plan_info += f"待执行：{progress['pending']} | 执行中：{progress['in_progress']} | 失败：{progress['failed']}\n\n"
+                plan_info += f"执行步骤：\n"
                 for step in self.current_plan.steps:
-                    plan_summary += f"{step.step_number}. {step.description}\n"
-                task_message = f"{task_message}\n\n{plan_summary}"
+                    status_icon = {
+                        StepStatus.PENDING: "⏳",
+                        StepStatus.IN_PROGRESS: "🔄",
+                        StepStatus.COMPLETED: "✅",
+                        StepStatus.FAILED: "❌",
+                        StepStatus.SKIPPED: "⏭️",
+                    }.get(step.status, "❓")
+                    plan_info += f"{status_icon} 步骤 {step.step_number}: {step.description}"
+                    if step.expected_tools:
+                        plan_info += f" [预期工具: {', '.join(step.expected_tools)}]"
+                    plan_info += f"\n"
+                    if step.status == StepStatus.COMPLETED and step.result:
+                        plan_info += f"   ✓ 结果: {step.result[:100]}{'...' if len(step.result) > 100 else ''}\n"
+                    elif step.status == StepStatus.FAILED and step.error:
+                        plan_info += f"   ✗ 错误: {step.error}\n"
+                plan_info += f"\n重要提示：你需要使用任务计划管理工具（update_step_status, move_to_next_step, get_plan_status）来主动管理计划的执行进度。\n"
+                plan_info += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                task_message = f"{task_message}{plan_info}"
                 
             except Exception as e:
                 logger.error(f"规划失败: {e}")
@@ -481,9 +541,28 @@ Respond with: "yes (reason)" or "no (reason)"."""
                 break
             self.chat_count += 1
 
+            # 如果有任务计划，在每次循环开始时将当前计划状态传递给大模型
+            if self.current_plan:
+                progress = self.current_plan.get_progress()
+                current_step = self.current_plan.get_current_step()
+                plan_status_info = f"\n[任务计划状态更新]\n"
+                plan_status_info += f"进度: {progress['completed']}/{progress['total']} 已完成 ({progress['progress_percent']:.1f}%)\n"
+                plan_status_info += f"待执行: {progress['pending']} | 执行中: {progress['in_progress']} | 失败: {progress['failed']}\n"
+                if current_step:
+                    plan_status_info += f"当前步骤: {current_step.step_number} - {current_step.description} (状态: {current_step.status.value})\n"
+                plan_status_info += f"提示: 使用任务计划管理工具（update_step_status, move_to_next_step, get_plan_status）来管理计划进度。\n"
+                # 将计划状态作为系统消息添加到消息列表中（只在当前循环中使用）
+                # 注意：这里不直接修改message_manager.messages，而是在API调用时临时添加
+                messages_with_plan = self.message_manager.get_messages() + [{
+                    "role": "system",
+                    "content": plan_status_info
+                }]
+            else:
+                messages_with_plan = self.message_manager.get_messages()
+
             logger.debug(f"=== Chat Round {self.chat_count} ===")
             logger.debug(
-                f"Messages: {json.dumps(self.message_manager.get_messages(), indent=2, ensure_ascii=False)}"
+                f"Messages: {json.dumps(messages_with_plan, indent=2, ensure_ascii=False)}"
             )
 
             # 调用 API（带重试机制）
@@ -495,7 +574,7 @@ Respond with: "yes (reason)" or "no (reason)"."""
                     stream_response: Stream[ChatCompletionChunk] = (
                         self.client.chat.completions.create(
                             model=config.model,
-                            messages=self.message_manager.get_messages(),
+                            messages=messages_with_plan,  # 使用包含计划状态的消息
                             stream=True,
                             temperature=1,
                             top_p=1,
@@ -630,15 +709,14 @@ Respond with: "yes (reason)" or "no (reason)"."""
                 logger.warning("\n流式响应中未找到 usage 信息")
 
             if tool_call_acc:
-                # 更新当前步骤状态（如果有计划）
-                current_step = None
+                # 如果有任务计划，更新UI显示（但不自动更新计划状态，由大模型自己管理）
                 if self.current_plan:
+                    progress = self.current_plan.get_progress()
                     current_step = self.current_plan.get_current_step()
-                    if current_step and current_step.status == StepStatus.PENDING:
-                        current_step.mark_started()
-                        progress = self.current_plan.get_progress()
-                        # 更新 header 中的规划状态
+                    if current_step:
                         update_plan_status(f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%) | 步骤 {current_step.step_number}")
+                    else:
+                        update_plan_status(f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%)")
                 
                 for tc_id, tc_data in tool_call_acc.items():
                     # logger.info(f"=== Tool Call ===")
@@ -665,33 +743,23 @@ Respond with: "yes (reason)" or "no (reason)"."""
                         tool_result = tool_call_result
                         tool_error = None
                     
-                    # 更新步骤状态
-                    if self.current_plan and current_step:
-                        if is_success:
-                            # 截断过长的结果
-                            result_summary = str(tool_result)[:200] + "..." if len(str(tool_result)) > 200 else str(tool_result)
-                            current_step.mark_completed(result_summary)
-                            # 更新 header 中的规划状态
-                            progress = self.current_plan.get_progress()
-                            update_plan_status(f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%)")
-                        else:
-                            current_step.mark_failed(tool_error or "工具执行失败")
-                            # 移动到下一步（即使失败也继续）
-                            self.current_plan.move_to_next_step()
-                            # 更新 header 中的规划状态
-                            progress = self.current_plan.get_progress()
-                            update_plan_status(f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%) ⚠️")
+                    # 检查是否是任务计划管理工具，如果是则更新UI显示
+                    if self.current_plan and tc_data["name"] in ["update_step_status", "move_to_next_step", "get_plan_status"]:
+                        # 解析工具结果以更新UI
+                        try:
+                            if isinstance(tool_call_result, dict) and tool_call_result.get("success"):
+                                progress = self.current_plan.get_progress()
+                                current_step = self.current_plan.get_current_step()
+                                if current_step:
+                                    update_plan_status(f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%) | 步骤 {current_step.step_number}")
+                                else:
+                                    update_plan_status(f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%)")
+                        except:
+                            pass
                     
                     self.message_manager.add_assistant_tool_call_result(
                         tc_data["id"], result_content
                     )
-                
-                # 如果当前步骤完成，移动到下一步
-                if self.current_plan and current_step and current_step.status == StepStatus.COMPLETED:
-                    self.current_plan.move_to_next_step()
-                    # 更新 header 中的规划状态
-                    progress = self.current_plan.get_progress()
-                    update_plan_status(f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%)")
                 
                 continue
             else:
@@ -699,17 +767,8 @@ Respond with: "yes (reason)" or "no (reason)"."""
                 # logger.info(f"=== Final Answer ===")
                 # logger.info(content)
                 
-                # 如果任务完成，更新计划状态
+                # 如果有任务计划，更新UI显示最终进度（但不自动更新计划状态）
                 if self.current_plan:
-                    # 标记所有剩余步骤为完成（如果任务已完成）
-                    progress = self.current_plan.get_progress()
-                    if progress["pending"] > 0:
-                        # 如果还有待执行的步骤，标记为跳过（可能计划过于详细）
-                        for step in self.current_plan.steps:
-                            if step.status == StepStatus.PENDING:
-                                step.mark_skipped("任务已完成，步骤自动跳过")
-                    
-                    # 显示最终进度
                     final_progress = self.current_plan.get_progress()
                     if final_progress["total"] > 0:
                         # 更新 header 中的规划状态
