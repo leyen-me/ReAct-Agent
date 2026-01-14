@@ -71,6 +71,9 @@ class Config:
         
         # 日志分隔符长度
         self.log_separator_length: int = int(os.getenv("LOG_SEPARATOR_LENGTH", "20"))
+        
+        # 任务规划配置
+        self.enable_task_planning: bool = os.getenv("ENABLE_TASK_PLANNING", "true").lower() == "true"
     
     def validate(self) -> None:
         """验证配置"""

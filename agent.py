@@ -39,6 +39,7 @@ from tools import (
     GetTodoStatsTool,
 )
 from tool_executor import create_tool_executor
+from task_planner import TaskPlanner, TaskPlan, PlanStep, StepStatus
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +167,11 @@ class ReActAgent:
         self.message_manager = MessageManager(
             self._get_system_prompt(), config.max_context_tokens
         )
+        # 初始化任务规划器
+        available_tool_names = [tool.name for tool in self.tools]
+        self.task_planner = TaskPlanner(self.client, available_tool_names)
+        self.current_plan: Optional[TaskPlan] = None  # 当前任务计划
+        self.enable_planning: bool = config.enable_task_planning  # 是否启用规划功能
         self.chat_count = 0
         self.should_stop = False  # 中断标志
 
@@ -208,7 +214,7 @@ You are a professional task-execution AI Agent.
 【Core Responsibilities】
 ━━━━━━━━━━━━━━
 1. Accurately understand the user's true goal, not just the surface-level question
-2. Decompose complex tasks into executable steps
+2. Follow the execution plan if one is provided, or decompose complex tasks into executable steps
 3. Complete tasks within the constraints of the current environment
 4. If a task fails, analyze the cause and attempt corrective solutions
 5. Stop only after confirming the task is completed
@@ -217,10 +223,12 @@ You are a professional task-execution AI Agent.
 【Execution Principles】
 ━━━━━━━━━━━━━━
 - Prioritize execution over explanation
+- If an execution plan is provided, follow it step by step
 - Think through the overall plan first, then execute step by step
 - Evaluate each step by whether it moves closer to the goal
 - When uncertain, attempt the Minimum Viable Action (MVP)
 - Do not fabricate non-existent files, commands, or results
+- Report progress as you complete each step of the plan
 
 ━━━━━━━━━━━━━━
 【Environment Information】
@@ -257,7 +265,7 @@ You must reason and act strictly based on the above real environment.
 【核心职责】
 ━━━━━━━━━━━━━━
 1. 准确理解用户的目标，而不仅是表面问题
-2. 将复杂任务拆解为可执行的步骤
+2. 如果提供了执行计划，请按照计划逐步执行；否则将复杂任务拆解为可执行的步骤
 3. 在当前环境约束下完成任务
 4. 如果任务失败，分析原因并尝试修正方案
 5. 在确认任务完成后才停止
@@ -266,10 +274,12 @@ You must reason and act strictly based on the above real environment.
 【执行原则】
 ━━━━━━━━━━━━━━
 - 优先执行，而不是解释
+- 如果提供了执行计划，请严格按照计划执行
 - 先思考整体方案，再逐步执行
-- 每一步都以“是否更接近目标”为判断标准
+- 每一步都以"是否更接近目标"为判断标准
 - 不确定时，做最小可行尝试（MVP）
 - 不编造不存在的文件、命令或结果
+- 完成每个步骤后报告进度
 
 ━━━━━━━━━━━━━━
 【环境信息】
@@ -308,6 +318,31 @@ You must reason and act strictly based on the above real environment.
         """停止当前对话"""
         self.should_stop = True
     
+    def set_planning_enabled(self, enabled: bool) -> None:
+        """设置是否启用规划功能"""
+        self.enable_planning = enabled
+    
+    def _should_create_plan(self, task_message: str) -> bool:
+        """
+        判断是否应该创建计划
+        
+        Args:
+            task_message: 任务消息
+            
+        Returns:
+            是否应该创建计划
+        """
+        if not self.enable_planning:
+            return False
+        
+        # 如果已经有计划在执行，不创建新计划
+        if self.current_plan and self.current_plan.get_progress()["completed"] < len(self.current_plan.steps):
+            return False
+        
+        # 简单启发式：如果任务描述较长或包含多个动作，可能需要规划
+        # 这里可以根据需要调整判断逻辑
+        return True
+    
     def chat(self, task_message: str, output_callback: Optional[Callable[[str, bool], None]] = None) -> None:
         """
         处理用户任务
@@ -320,6 +355,36 @@ You must reason and act strictly based on the above real environment.
         # 重置中断标志
         self.should_stop = False
         
+        # 定义输出函数
+        def output(text: str, end_newline: bool = True):
+            if output_callback:
+                output_callback(text, end_newline)
+            else:
+                print(text, end="\n" if end_newline else "", flush=True)
+        
+        # 任务规划阶段
+        if self._should_create_plan(task_message):
+            try:
+                output(f"\n{'='*config.log_separator_length} 任务规划 {'='*config.log_separator_length}\n")
+                output("正在分析任务并制定执行计划...\n")
+                
+                self.current_plan = self.task_planner.create_plan(task_message)
+                
+                # 显示计划
+                output("\n" + self.current_plan.format_plan() + "\n")
+                output(f"{'='*config.log_separator_length} 开始执行 {'='*config.log_separator_length}\n")
+                
+                # 将计划添加到消息中，让模型知道计划
+                plan_summary = f"\n执行计划（共 {len(self.current_plan.steps)} 步）：\n"
+                for step in self.current_plan.steps:
+                    plan_summary += f"{step.step_number}. {step.description}\n"
+                task_message = f"{task_message}\n\n{plan_summary}"
+                
+            except Exception as e:
+                logger.error(f"规划失败: {e}")
+                output(f"⚠️ 规划失败，将直接执行任务: {e}\n")
+                self.current_plan = None
+        
         self.message_manager.add_user_message(task_message)
         while True:
             # 检查是否需要中断（在主循环开始时）
@@ -330,10 +395,7 @@ You must reason and act strictly based on the above real environment.
                     "role": "system",
                     "content": "[用户在对话开始前中断了任务]"
                 })
-                if output_callback:
-                    output_callback("\n\n[对话已被用户中断]", end_newline=True)
-                else:
-                    print("\n\n[对话已被用户中断]")
+                output("\n\n[对话已被用户中断]", end_newline=True)
                 break
             self.chat_count += 1
 
@@ -370,10 +432,7 @@ You must reason and act strictly based on the above real environment.
                 # 重试次数用尽
                 logger.error("API 调用失败: 已达到最大重试次数")
                 error_msg = "\n=== 错误信息 ===\nAPI 调用失败: 已达到最大重试次数\n=== 错误信息结束 ===\n"
-                if output_callback:
-                    output_callback(error_msg, end_newline=True)
-                else:
-                    print(error_msg)
+                output(error_msg, end_newline=True)
                 return  # 优雅退出，不抛出异常
 
             # 处理流式响应
@@ -386,12 +445,7 @@ You must reason and act strictly based on the above real environment.
             start_content = False
             start_tool_call = False
             
-            # 定义输出函数
-            def output(text: str, end_newline: bool = True):
-                if output_callback:
-                    output_callback(text, end_newline)
-                else:
-                    print(text, end="\n" if end_newline else "", flush=True)
+            # 定义输出函数（已在方法开始处定义，这里不需要重复定义）
 
             try:
                 for chunk in stream_response:
@@ -494,6 +548,15 @@ You must reason and act strictly based on the above real environment.
                 logger.warning("\n流式响应中未找到 usage 信息")
 
             if tool_call_acc:
+                # 更新当前步骤状态（如果有计划）
+                current_step = None
+                if self.current_plan:
+                    current_step = self.current_plan.get_current_step()
+                    if current_step and current_step.status == StepStatus.PENDING:
+                        current_step.mark_started()
+                        progress = self.current_plan.get_progress()
+                        output(f"\n[进度: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.1f}%)] 执行步骤 {current_step.step_number}: {current_step.description}\n")
+                
                 for tc_id, tc_data in tool_call_acc.items():
                     # logger.info(f"=== Tool Call ===")
                     # logger.debug(f"name: {tc_data['name']}")
@@ -508,16 +571,59 @@ You must reason and act strictly based on the above real environment.
                     # 处理标准化的返回格式
                     if isinstance(tool_call_result, dict):
                         result_content = json.dumps(tool_call_result, ensure_ascii=False, indent=2)
+                        # 检查工具执行是否成功
+                        is_success = tool_call_result.get("success", False)
+                        tool_result = tool_call_result.get("result", "")
+                        tool_error = tool_call_result.get("error")
                     else:
                         # 兼容旧的返回格式
                         result_content = tool_call_result
+                        is_success = True  # 假设成功
+                        tool_result = tool_call_result
+                        tool_error = None
+                    
+                    # 更新步骤状态
+                    if self.current_plan and current_step:
+                        if is_success:
+                            # 截断过长的结果
+                            result_summary = str(tool_result)[:200] + "..." if len(str(tool_result)) > 200 else str(tool_result)
+                            current_step.mark_completed(result_summary)
+                        else:
+                            current_step.mark_failed(tool_error or "工具执行失败")
+                            # 移动到下一步（即使失败也继续）
+                            self.current_plan.move_to_next_step()
                     
                     self.message_manager.add_assistant_tool_call_result(
                         tc_data["id"], result_content
                     )
+                
+                # 如果当前步骤完成，移动到下一步
+                if self.current_plan and current_step and current_step.status == StepStatus.COMPLETED:
+                    self.current_plan.move_to_next_step()
+                
                 continue
             else:
+                # 最终回复阶段
                 # logger.info(f"=== Final Answer ===")
                 # logger.info(content)
+                
+                # 如果任务完成，更新计划状态
+                if self.current_plan:
+                    # 标记所有剩余步骤为完成（如果任务已完成）
+                    progress = self.current_plan.get_progress()
+                    if progress["pending"] > 0:
+                        # 如果还有待执行的步骤，标记为跳过（可能计划过于详细）
+                        for step in self.current_plan.steps:
+                            if step.status == StepStatus.PENDING:
+                                step.mark_skipped("任务已完成，步骤自动跳过")
+                    
+                    # 显示最终进度
+                    final_progress = self.current_plan.get_progress()
+                    if final_progress["total"] > 0:
+                        output(f"\n{'='*config.log_separator_length} 任务完成 {'='*config.log_separator_length}\n")
+                        output(f"✅ 已完成 {final_progress['completed']}/{final_progress['total']} 个步骤 ({final_progress['progress_percent']:.1f}%)\n")
+                        if final_progress["failed"] > 0:
+                            output(f"⚠️ {final_progress['failed']} 个步骤失败\n")
+                
                 self.message_manager.add_assistant_content(content)
                 break
