@@ -58,7 +58,7 @@ class Config:
         
         # 上下文配置
         # 根据模型设置默认最大上下文 token 数
-        default_max_tokens = 180000
+        default_max_tokens = 128000
         self.max_context_tokens: int = int(os.getenv("MAX_CONTEXT_TOKENS", str(default_max_tokens)))
         
         # 确保工作目录存在
