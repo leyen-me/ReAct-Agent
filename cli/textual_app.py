@@ -36,6 +36,7 @@ from cli.chat_widgets import (
 from config import config
 from utils import refresh_file_list, get_file_list, search_files
 from logger_config import get_all_log_files
+from task_planner import StepStatus
 
 
 class ChatInput(TextArea):
@@ -637,14 +638,17 @@ class ReActAgentApp(App):
     }
     
     #header-title {
-        width: 1fr;
+        width: auto;
         color: #000000;
         text-style: bold;
     }
     
-    #header-stats {
-        width: auto;
-        color: #7f7f7f;
+    #header-plan-status {
+        width: 1fr;
+        color: #8b5cf6;
+        text-align: right;
+        text-overflow: ellipsis;
+        overflow: hidden;
     }
     
     /* ===== Main 聊天区域 ===== */
@@ -828,6 +832,10 @@ class ReActAgentApp(App):
         color: #7d8590;
     }
     
+    #setting-left > Static {
+        color: #7d8590;
+    }
+    
     #setting-right {
         width: auto;
         color: #7d8590;
@@ -867,7 +875,7 @@ class ReActAgentApp(App):
             # Header
             with Horizontal(id="app-header"):
                 yield Static(self._get_title(), id="header-title")
-                yield Static(self._get_stats(), id="header-stats")
+                yield Static("", id="header-plan-status")
             
             # Main: 聊天区域
             with ScrollableContainer(id="main-container"):
@@ -881,7 +889,7 @@ class ReActAgentApp(App):
             
             # Setting: 底栏
             with Horizontal(id="setting-bar"):
-                yield Static(self._get_status_info(), id="setting-left")
+                yield Static(self._get_status_info_with_stats(), id="setting-left")
                 yield Static(
                     self._get_shortcuts_info(),
                     id="setting-right"
@@ -901,6 +909,27 @@ class ReActAgentApp(App):
         used = mm.max_context_tokens - mm.get_remaining_tokens()
         
         return f"Token: {used:,}  Usage: {usage:.0f}%"
+    
+    def _get_status_info_with_stats(self) -> str:
+        """获取状态信息（包含统计信息）"""
+        if self.is_processing:
+            status = "[#22c55e]●[/] 对话中"
+        else:
+            status = "[#7d8590]○[/] 空闲"
+        
+        # 添加统计信息
+        stats = ""
+        if hasattr(self.agent, "message_manager"):
+            mm = self.agent.message_manager
+            usage = mm.get_token_usage_percent()
+            used = mm.max_context_tokens - mm.get_remaining_tokens()
+            stats = f"  Token: {used:,} ({usage:.0f}%)"
+        
+        if self.last_chat_duration is not None:
+            duration = f"  [dim]上轮耗时: {self.last_chat_duration:.1f}s[/]"
+            return f"{status}{stats}{duration}"
+        else:
+            return f"{status}{stats}"
     
     def _get_model_info(self) -> str:
         """获取模型信息"""
@@ -930,7 +959,20 @@ class ReActAgentApp(App):
     def refresh_header(self) -> None:
         """刷新 Header"""
         try:
-            self.query_one("#header-stats", Static).update(self._get_stats())
+            # 刷新统计信息（现在在 setting-left 中）
+            self.query_one("#setting-left", Static).update(self._get_status_info_with_stats())
+        except Exception:
+            pass
+    
+    def update_plan_status(self, status: str) -> None:
+        """更新规划状态显示"""
+        try:
+            plan_status_widget = self.query_one("#header-plan-status", Static)
+            # 限制长度，超出部分用省略号
+            max_length = 60
+            if len(status) > max_length:
+                status = status[:max_length-3] + "..."
+            plan_status_widget.update(status)
         except Exception:
             pass
     
@@ -1096,6 +1138,7 @@ class ReActAgentApp(App):
             ("new", "New", "新建对话"),
             ("help", "Help", "显示帮助"),
             ("status", "Status", "上下文使用情况"),
+            ("plan", "Plan", "查看任务计划进度"),
             ("messages", "Messages", "消息历史"),
             ("logs", "Logs", "查看日志"),
             ("clear", "Clear", "清空聊天"),
@@ -1117,6 +1160,9 @@ class ReActAgentApp(App):
                 input_widget.focus()
             elif cmd_id == "status":
                 self._show_status()
+                input_widget.focus()
+            elif cmd_id == "plan":
+                self._show_plan()
                 input_widget.focus()
             elif cmd_id == "messages":
                 self._show_messages()
@@ -1169,6 +1215,88 @@ class ReActAgentApp(App):
             chat_container.mount(status_msg)
             self._scroll_to_bottom()
         
+        self.query_one("#user-input", ChatInput).focus()
+    
+    def _show_plan(self) -> None:
+        """显示任务计划进度"""
+        chat_container = self.query_one("#chat-log", Vertical)
+        
+        # 检查是否有当前计划
+        if not hasattr(self.agent, "current_plan") or self.agent.current_plan is None:
+            no_plan_msg = ContentMessage("[dim]当前没有任务计划[/]", allow_markup=True)
+            chat_container.mount(no_plan_msg)
+            self._scroll_to_bottom()
+            self.query_one("#user-input", ChatInput).focus()
+            return
+        
+        plan = self.agent.current_plan
+        progress = plan.get_progress()
+        
+        # 构建计划显示内容
+        plan_lines = [
+            f"[bold]📋 任务计划[/bold]",
+            f"[dim]任务描述:[/] {plan.task_description}",
+            f"[dim]创建时间:[/] {plan.created_at.strftime('%Y-%m-%d %H:%M:%S')}",
+            "",
+            f"[bold]进度概览[/bold]",
+            f"  总步骤: {progress['total']}",
+            f"  ✅ 已完成: {progress['completed']}",
+            f"  🔄 执行中: {progress['in_progress']}",
+            f"  ⏳ 待执行: {progress['pending']}",
+            f"  ❌ 失败: {progress['failed']}",
+            f"  完成度: {progress['progress_percent']:.1f}%",
+            "",
+            f"[bold]执行步骤[/bold]",
+        ]
+        
+        # 添加每个步骤的详细信息
+        for step in plan.steps:
+            status_icon = {
+                StepStatus.PENDING: "⏳",
+                StepStatus.IN_PROGRESS: "🔄",
+                StepStatus.COMPLETED: "✅",
+                StepStatus.FAILED: "❌",
+                StepStatus.SKIPPED: "⏭️",
+            }.get(step.status, "❓")
+            
+            # 根据状态设置颜色
+            if step.status == StepStatus.COMPLETED:
+                step_line = f"  {status_icon} [#22c55e]步骤 {step.step_number}:[/] {step.description}"
+            elif step.status == StepStatus.FAILED:
+                step_line = f"  {status_icon} [#ef4444]步骤 {step.step_number}:[/] {step.description}"
+            elif step.status == StepStatus.IN_PROGRESS:
+                step_line = f"  {status_icon} [#3b82f6]步骤 {step.step_number}:[/] {step.description}"
+            else:
+                step_line = f"  {status_icon} [dim]步骤 {step.step_number}:[/] {step.description}"
+            
+            plan_lines.append(step_line)
+            
+            # 显示预期工具
+            if step.expected_tools:
+                plan_lines.append(f"    [dim]工具:[/] {', '.join(step.expected_tools)}")
+            
+            # 显示结果或错误
+            if step.status == StepStatus.COMPLETED and step.result:
+                result_display = step.result[:150] + "..." if len(step.result) > 150 else step.result
+                plan_lines.append(f"    [#22c55e]✓ 结果:[/] {result_display}")
+            elif step.status == StepStatus.FAILED and step.error:
+                plan_lines.append(f"    [#ef4444]✗ 错误:[/] {step.error}")
+            
+            # 显示时间信息
+            if step.start_time:
+                plan_lines.append(f"    [dim]开始:[/] {step.start_time.strftime('%H:%M:%S')}")
+            if step.end_time:
+                plan_lines.append(f"    [dim]结束:[/] {step.end_time.strftime('%H:%M:%S')}")
+                if step.start_time:
+                    duration = (step.end_time - step.start_time).total_seconds()
+                    plan_lines.append(f"    [dim]耗时:[/] {duration:.1f}s")
+            
+            plan_lines.append("")  # 空行分隔
+        
+        plan_content = "\n".join(plan_lines)
+        plan_msg = ContentMessage(plan_content, allow_markup=True)
+        chat_container.mount(plan_msg)
+        self._scroll_to_bottom()
         self.query_one("#user-input", ChatInput).focus()
     
     def _show_messages(self) -> None:
@@ -1251,6 +1379,11 @@ class ReActAgentApp(App):
         input_widget.clear()
         input_widget._showing_placeholder = False
         
+        # 检查是否是命令
+        if message == "/plan":
+            self._show_plan()
+            return
+        
         self.chat_count += 1
         self.add_user_message(message)
         refresh_file_list(config.work_dir)
@@ -1276,6 +1409,10 @@ class ReActAgentApp(App):
             
             def output_callback(text: str, end_newline: bool = True) -> None:
                 nonlocal current_section, current_content
+                
+                # 过滤掉规划相关的输出（这些会显示在 header 中）
+                if any(keyword in text for keyword in ["Task Analysis", "执行计划", "开始执行", "任务完成", "已完成", "步骤失败"]):
+                    return
                 
                 if "模型思考" in text:
                     # 内容已经通过流式更新显示在 current_message_widget 中了
@@ -1313,7 +1450,14 @@ class ReActAgentApp(App):
                         lambda: app._add_output(text, end_newline)
                     )
             
-            self.agent.chat(message, output_callback)
+            def plan_status_callback(status: str) -> None:
+                """规划状态回调，更新 header 显示"""
+                app.call_from_thread(lambda: app.update_plan_status(status))
+            
+            # 清空规划状态
+            app.call_from_thread(lambda: app.update_plan_status(""))
+            
+            self.agent.chat(message, output_callback, plan_status_callback)
             
             # 最后确保当前消息已更新（如果还有内容且消息组件存在，已经通过流式更新显示过了）
             # 只有在没有消息组件的情况下才需要 flush（这种情况应该不会发生）
@@ -1333,6 +1477,8 @@ class ReActAgentApp(App):
             )
         finally:
             app = self.app
+            # 清空规划状态
+            app.call_from_thread(lambda: app.update_plan_status(""))
             app.call_from_thread(lambda: app._finish_chat())
     
     def _finish_chat(self) -> None:

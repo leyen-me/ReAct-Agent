@@ -312,12 +312,13 @@ You must reason and act strictly based on the above real environment.
         """设置是否启用规划功能"""
         self.enable_planning = enabled
     
-    def _should_create_plan(self, task_message: str) -> Tuple[bool, str]:
+    def _should_create_plan(self, task_message: str, plan_status_callback: Optional[Callable[[str], None]] = None) -> Tuple[bool, str]:
         """
         判断是否应该创建计划（使用 LLM 智能判断）
         
         Args:
             task_message: 任务消息
+            plan_status_callback: 可选的规划状态回调函数，用于更新 header 显示
             
         Returns:
             (是否需要规划, 判断原因)
@@ -338,6 +339,9 @@ You must reason and act strictly based on the above real environment.
         
         # 使用 LLM 智能判断是否需要规划（完全交给模型判断，不预设规则）
         try:
+            if plan_status_callback:
+                plan_status_callback("🔍 判断是否需要规划...")
+            
             # 构建标准的判断提示词（参考 OpenAI/Anthropic 最佳实践）
             system_prompt = """You are a task analysis assistant. Your role is to determine whether a user's request requires detailed task planning before execution.
 
@@ -359,7 +363,8 @@ User request: "{message}"
 
 Respond with: "yes (reason)" or "no (reason)"."""
 
-            response = self.client.chat.completions.create(
+            # 使用流式输出
+            stream_response = self.client.chat.completions.create(
                 model=config.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -367,9 +372,25 @@ Respond with: "yes (reason)" or "no (reason)"."""
                 ],
                 temperature=0.1,  # Very low temperature for deterministic classification
                 max_tokens=50,  # Allow space for brief reason
+                stream=True,
             )
             
-            result = response.choices[0].message.content.strip()
+            result = ""
+            try:
+                for chunk in stream_response:
+                    if chunk.choices and len(chunk.choices) > 0:
+                        delta = chunk.choices[0].delta
+                        if hasattr(delta, "content") and delta.content:
+                            result += delta.content
+                            if plan_status_callback:
+                                plan_status_callback(f"🔍 判断中: {result[:30]}...")
+            finally:
+                try:
+                    stream_response.close()
+                except:
+                    pass
+            
+            result = result.strip()
             result_lower = result.lower()
             
             # 解析结果：提取 yes/no 和原因
@@ -388,9 +409,11 @@ Respond with: "yes (reason)" or "no (reason)"."""
             
         except Exception as e:
             logger.warning(f"规划判断失败: {e}，默认不规划")
+            if plan_status_callback:
+                plan_status_callback(f"⚠️ 判断失败")
             return False, f"判断失败: {str(e)}"
     
-    def chat(self, task_message: str, output_callback: Optional[Callable[[str, bool], None]] = None) -> None:
+    def chat(self, task_message: str, output_callback: Optional[Callable[[str, bool], None]] = None, plan_status_callback: Optional[Callable[[str], None]] = None) -> None:
         """
         处理用户任务
 
@@ -398,6 +421,8 @@ Respond with: "yes (reason)" or "no (reason)"."""
             task_message: 用户任务消息
             output_callback: 可选的输出回调函数，接受 (text, end_newline) 参数
                             如果提供，将使用回调而不是 print
+            plan_status_callback: 可选的规划状态回调函数，接受 (status_text) 参数
+                                 用于更新 header 中的规划状态显示
         """
         # 重置中断标志
         self.should_stop = False
@@ -409,18 +434,23 @@ Respond with: "yes (reason)" or "no (reason)"."""
             else:
                 print(text, end="\n" if end_newline else "", flush=True)
         
+        # 定义规划状态更新函数
+        def update_plan_status(status: str):
+            if plan_status_callback:
+                plan_status_callback(status)
+        
         # 任务规划阶段 - 显示判断结果
-        needs_planning, _reason = self._should_create_plan(task_message)
+        needs_planning, _reason = self._should_create_plan(task_message, update_plan_status)
         
         if needs_planning:
-            output(f"[Task Analysis] {task_message}")
+            update_plan_status("📋 分析任务中...")
             
             try:
-                self.current_plan = self.task_planner.create_plan(task_message)
+                self.current_plan = self.task_planner.create_plan(task_message, update_plan_status)
                 
-                # 显示计划
-                output("\n" + self.current_plan.format_plan() + "\n")
-                output(f"{'='*config.log_separator_length} 开始执行 {'='*config.log_separator_length}\n")
+                # 更新规划状态为进度显示
+                progress = self.current_plan.get_progress()
+                update_plan_status(f"📋 计划完成 ({len(self.current_plan.steps)} 步) | 进度: {progress['completed']}/{progress['total']}")
                 
                 # 将计划添加到消息中，让模型知道计划
                 plan_summary = f"\n执行计划（共 {len(self.current_plan.steps)} 步）：\n"
@@ -430,10 +460,12 @@ Respond with: "yes (reason)" or "no (reason)"."""
                 
             except Exception as e:
                 logger.error(f"规划失败: {e}")
-                output(f"⚠️ 规划失败，将直接执行任务: {e}\n")
+                update_plan_status(f"⚠️ 规划失败: {str(e)[:30]}")
                 self.current_plan = None
         else:
             logger.debug(f"直接执行任务: {task_message}")
+            # 清除规划状态
+            update_plan_status("")
         
         self.message_manager.add_user_message(task_message)
         while True:
@@ -605,7 +637,8 @@ Respond with: "yes (reason)" or "no (reason)"."""
                     if current_step and current_step.status == StepStatus.PENDING:
                         current_step.mark_started()
                         progress = self.current_plan.get_progress()
-                        output(f"\n[进度: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.1f}%)] 执行步骤 {current_step.step_number}: {current_step.description}\n")
+                        # 更新 header 中的规划状态
+                        update_plan_status(f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%) | 步骤 {current_step.step_number}")
                 
                 for tc_id, tc_data in tool_call_acc.items():
                     # logger.info(f"=== Tool Call ===")
@@ -638,10 +671,16 @@ Respond with: "yes (reason)" or "no (reason)"."""
                             # 截断过长的结果
                             result_summary = str(tool_result)[:200] + "..." if len(str(tool_result)) > 200 else str(tool_result)
                             current_step.mark_completed(result_summary)
+                            # 更新 header 中的规划状态
+                            progress = self.current_plan.get_progress()
+                            update_plan_status(f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%)")
                         else:
                             current_step.mark_failed(tool_error or "工具执行失败")
                             # 移动到下一步（即使失败也继续）
                             self.current_plan.move_to_next_step()
+                            # 更新 header 中的规划状态
+                            progress = self.current_plan.get_progress()
+                            update_plan_status(f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%) ⚠️")
                     
                     self.message_manager.add_assistant_tool_call_result(
                         tc_data["id"], result_content
@@ -650,6 +689,9 @@ Respond with: "yes (reason)" or "no (reason)"."""
                 # 如果当前步骤完成，移动到下一步
                 if self.current_plan and current_step and current_step.status == StepStatus.COMPLETED:
                     self.current_plan.move_to_next_step()
+                    # 更新 header 中的规划状态
+                    progress = self.current_plan.get_progress()
+                    update_plan_status(f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%)")
                 
                 continue
             else:
@@ -670,10 +712,11 @@ Respond with: "yes (reason)" or "no (reason)"."""
                     # 显示最终进度
                     final_progress = self.current_plan.get_progress()
                     if final_progress["total"] > 0:
-                        output(f"\n{'='*config.log_separator_length} 任务完成 {'='*config.log_separator_length}\n")
-                        output(f"✅ 已完成 {final_progress['completed']}/{final_progress['total']} 个步骤 ({final_progress['progress_percent']:.1f}%)\n")
+                        # 更新 header 中的规划状态
+                        status_text = f"✅ 完成: {final_progress['completed']}/{final_progress['total']} ({final_progress['progress_percent']:.0f}%)"
                         if final_progress["failed"] > 0:
-                            output(f"⚠️ {final_progress['failed']} 个步骤失败\n")
+                            status_text += f" ⚠️{final_progress['failed']}"
+                        update_plan_status(status_text)
                 
                 self.message_manager.add_assistant_content(content)
                 break

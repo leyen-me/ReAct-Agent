@@ -3,7 +3,7 @@
 
 import json
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 from enum import Enum
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -167,24 +167,28 @@ class TaskPlanner:
         self.client = client
         self.available_tools = available_tools
 
-    def create_plan(self, task_description: str) -> TaskPlan:
+    def create_plan(self, task_description: str, plan_status_callback: Optional[Callable[[str], None]] = None) -> TaskPlan:
         """
         创建任务计划
 
         Args:
             task_description: 任务描述
+            plan_status_callback: 可选的规划状态回调函数，用于更新 header 显示
 
         Returns:
             任务计划
         """
         logger.info(f"开始规划任务: {task_description}")
+        
+        if plan_status_callback:
+            plan_status_callback("📋 制定计划中...")
 
         # 构建规划提示词
         planning_prompt = self._build_planning_prompt(task_description)
 
         try:
-            # 调用 LLM 生成计划
-            response = self.client.chat.completions.create(
+            # 调用 LLM 生成计划（使用流式输出）
+            stream_response = self.client.chat.completions.create(
                 model=config.model,
                 messages=[
                     {"role": "system", "content": self._get_planning_system_prompt()},
@@ -192,12 +196,31 @@ class TaskPlanner:
                 ],
                 temperature=0.7,
                 max_tokens=2048,
+                stream=True,
             )
 
-            plan_content = response.choices[0].message.content
+            plan_content = ""
+            try:
+                for chunk in stream_response:
+                    if chunk.choices and len(chunk.choices) > 0:
+                        delta = chunk.choices[0].delta
+                        if hasattr(delta, "content") and delta.content:
+                            plan_content += delta.content
+                            # 更新规划状态（显示前30个字符）
+                            if plan_status_callback:
+                                preview = plan_content[:30].replace('\n', ' ')
+                                plan_status_callback(f"📋 制定计划中: {preview}...")
+            finally:
+                try:
+                    stream_response.close()
+                except:
+                    pass
+            
             logger.debug(f"规划响应: {plan_content}")
 
             # 解析计划
+            if plan_status_callback:
+                plan_status_callback("📋 解析计划中...")
             plan = self._parse_plan(task_description, plan_content)
             logger.info(f"规划完成，共 {len(plan.steps)} 个步骤")
 
@@ -205,6 +228,8 @@ class TaskPlanner:
 
         except Exception as e:
             logger.error(f"规划失败: {e}")
+            if plan_status_callback:
+                plan_status_callback(f"⚠️ 规划失败: {str(e)[:30]}")
             # 如果规划失败，创建一个简单的单步计划
             return TaskPlan(
                 task_description=task_description,
