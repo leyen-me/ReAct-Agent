@@ -218,48 +218,106 @@ class TaskPlanner:
             )
 
     def _get_planning_system_prompt(self) -> str:
-        """获取规划系统提示词"""
-        return """You are a task planning expert. Your job is to analyze user tasks and break them down into clear, executable steps.
+        """获取规划系统提示词（参考 OpenAI/Anthropic 最佳实践）"""
+        return """You are an expert task planning assistant. Your role is to analyze user requests and decompose them into clear, executable action plans.
 
-When creating a plan:
-1. Understand the user's true goal
-2. Break down complex tasks into smaller, actionable steps
-3. Identify which tools might be needed for each step
-4. Order steps logically (dependencies first)
-5. Make steps specific and measurable
+## Your Responsibilities
 
-Available tools: """ + ", ".join(self.available_tools) + """
+1. **Understand the Goal**: Identify the user's true objective, not just surface-level requirements
+2. **Decompose Tasks**: Break complex tasks into smaller, atomic steps that can be executed sequentially
+3. **Identify Dependencies**: Order steps logically, ensuring prerequisites are completed first
+4. **Tool Selection**: For each step, identify which tools from the available set might be needed
+5. **Clarity**: Make each step specific, measurable, and actionable
 
-Output your plan in JSON format:
+## Available Tools
+
+""" + ", ".join(self.available_tools) + """
+
+## Output Format
+
+You must output your plan as valid JSON with the following structure:
+
+{
+  "steps": [
+    {
+      "step_number": <integer>,
+      "description": "<clear, specific description of the action>",
+      "expected_tools": ["<tool_name1>", "<tool_name2>"]
+    }
+  ]
+}
+
+## Guidelines
+
+- Each step should be a single, focused action
+- Steps should be ordered by dependencies (prerequisites first)
+- Tool names must exactly match the available tools listed above
+- Descriptions should be clear and specific enough for execution
+- If a step doesn't require tools, use an empty array: []
+- Keep the plan concise but comprehensive
+
+## Example
+
+User request: "Create a Python web application with a database"
+
 {
   "steps": [
     {
       "step_number": 1,
-      "description": "Clear description of what to do",
-      "expected_tools": ["tool_name1", "tool_name2"]
+      "description": "Create project directory structure",
+      "expected_tools": ["create_folder"]
     },
-    ...
+    {
+      "step_number": 2,
+      "description": "Create main application file (app.py)",
+      "expected_tools": ["create_file"]
+    },
+    {
+      "step_number": 3,
+      "description": "Create requirements.txt with dependencies",
+      "expected_tools": ["create_file"]
+    },
+    {
+      "step_number": 4,
+      "description": "Create database schema file",
+      "expected_tools": ["create_file"]
+    }
   ]
-}
-
-Be concise but specific. Each step should be actionable."""
+}"""
 
     def _build_planning_prompt(self, task_description: str) -> str:
-        """构建规划提示词"""
-        return f"""Please create a detailed execution plan for the following task:
+        """构建规划提示词（参考 OpenAI/Anthropic 最佳实践）"""
+        return f"""Create a detailed execution plan for the following user request.
 
-Task: {task_description}
+## User Request
 
-Environment:
-- Operating System: {config.operating_system}
-- Working Directory: {config.work_dir}
-- Current Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+{task_description}
 
-Please break down this task into clear, executable steps. For each step, specify:
-1. What needs to be done
-2. Which tools might be needed
+## Context
 
-Output the plan in JSON format as specified."""
+- **Operating System**: {config.operating_system}
+- **Working Directory**: {config.work_dir}
+- **Current Time**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+## Instructions
+
+1. Analyze the user's request to understand their true goal
+2. Break down the task into sequential, executable steps
+3. For each step:
+   - Write a clear, specific description
+   - Identify which tools (if any) are needed
+   - Ensure steps are ordered by dependencies
+4. Output the plan as valid JSON following the specified format
+
+## Requirements
+
+- Steps must be actionable and specific
+- Each step should represent a single, focused action
+- Tool names must match exactly from the available tools list
+- Consider the environment context when planning
+- Ensure the plan is complete and covers all aspects of the request
+
+Please provide your plan in the JSON format specified in the system instructions."""
 
     def _parse_plan(self, task_description: str, plan_content: str) -> TaskPlan:
         """解析计划内容"""

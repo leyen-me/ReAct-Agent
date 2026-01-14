@@ -4,7 +4,7 @@
 import json
 import logging
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Callable, Tuple
 
 from openai import OpenAI, Stream
 from openai.types.chat import ChatCompletionChunk
@@ -312,7 +312,7 @@ You must reason and act strictly based on the above real environment.
         """设置是否启用规划功能"""
         self.enable_planning = enabled
     
-    def _should_create_plan(self, task_message: str) -> bool:
+    def _should_create_plan(self, task_message: str) -> Tuple[bool, str]:
         """
         判断是否应该创建计划（使用 LLM 智能判断）
         
@@ -320,61 +320,75 @@ You must reason and act strictly based on the above real environment.
             task_message: 任务消息
             
         Returns:
-            是否应该创建计划
+            (是否需要规划, 判断原因)
         """
         if not self.enable_planning:
-            return False
+            return False, "规划功能已禁用"
         
         # 如果已经有计划在执行，不创建新计划
         if self.current_plan and self.current_plan.get_progress()["completed"] < len(self.current_plan.steps):
-            return False
+            return False, "已有计划正在执行中"
         
         # 清理消息，去除首尾空白
         message = task_message.strip()
         
         # 空消息不需要规划
         if not message:
-            return False
+            return False, "消息为空"
         
         # 使用 LLM 智能判断是否需要规划（完全交给模型判断，不预设规则）
         try:
-            # 构建简洁的判断提示词（减少 token 使用）
-            judgment_prompt = f"""判断用户消息是否需要详细执行计划。
+            # 构建标准的判断提示词（参考 OpenAI/Anthropic 最佳实践）
+            system_prompt = """You are a task analysis assistant. Your role is to determine whether a user's request requires detailed task planning before execution.
 
-规则：
-- 简单问候/感谢 → no
-- 简单知识问题 → no  
-- 需要工具操作（文件/命令/Git） → yes
-- 多步骤复杂任务 → yes
+Task planning is needed when:
+- The request requires using tools (file operations, command execution, Git operations, etc.)
+- The request involves multiple steps or complex workflows
+- The request needs to be broken down into smaller actionable steps
 
-消息：{message}
+Task planning is NOT needed when:
+- The request is a simple greeting or expression of gratitude
+- The request is a straightforward knowledge question that can be answered directly
+- The request is a simple informational query
 
-只回答 yes 或 no。"""
+Respond with only "yes" or "no" followed by a brief reason in parentheses."""
+
+            user_prompt = f"""Analyze the following user request and determine if it requires detailed task planning:
+
+User request: "{message}"
+
+Respond with: "yes (reason)" or "no (reason)"."""
 
             response = self.client.chat.completions.create(
                 model=config.model,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": "Analyze if a task needs planning. Answer only 'yes' or 'no'."
-                    },
-                    {"role": "user", "content": judgment_prompt},
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.2,  # 低温度，更确定性的判断
-                max_tokens=5,  # 只需要 yes/no，极少的 token
+                temperature=0.1,  # Very low temperature for deterministic classification
+                max_tokens=50,  # Allow space for brief reason
             )
             
-            result = response.choices[0].message.content.strip().lower()
-            # 支持多种 yes 的表达
-            needs_planning = any(result.startswith(prefix) for prefix in ["yes", "是", "y", "需要", "need"])
+            result = response.choices[0].message.content.strip()
+            result_lower = result.lower()
             
-            logger.debug(f"规划判断: '{message}' -> {needs_planning} (LLM回答: {result})")
-            return needs_planning
+            # 解析结果：提取 yes/no 和原因
+            needs_planning = any(result_lower.startswith(prefix) for prefix in ["yes", "y"])
+            
+            # 提取原因（如果有）
+            reason = "LLM判断"
+            if "(" in result and ")" in result:
+                try:
+                    reason = result.split("(")[1].split(")")[0].strip()
+                except:
+                    pass
+            
+            logger.debug(f"规划判断: '{message}' -> {needs_planning} (原因: {reason}, LLM回答: {result})")
+            return needs_planning, reason
             
         except Exception as e:
             logger.warning(f"规划判断失败: {e}，默认不规划")
-            # 如果判断失败，保守策略：不规划（避免不必要的延迟和成本）
-            return False
+            return False, f"判断失败: {str(e)}"
     
     def chat(self, task_message: str, output_callback: Optional[Callable[[str, bool], None]] = None) -> None:
         """
@@ -395,12 +409,13 @@ You must reason and act strictly based on the above real environment.
             else:
                 print(text, end="\n" if end_newline else "", flush=True)
         
-        # 任务规划阶段
-        if self._should_create_plan(task_message):
+        # 任务规划阶段 - 显示判断结果
+        needs_planning, _reason = self._should_create_plan(task_message)
+        
+        if needs_planning:
+            output(f"[Task Analysis] {task_message}")
+            
             try:
-                output(f"\n{'='*config.log_separator_length} 任务规划 {'='*config.log_separator_length}\n")
-                output("正在分析任务并制定执行计划...\n")
-                
                 self.current_plan = self.task_planner.create_plan(task_message)
                 
                 # 显示计划
@@ -417,6 +432,8 @@ You must reason and act strictly based on the above real environment.
                 logger.error(f"规划失败: {e}")
                 output(f"⚠️ 规划失败，将直接执行任务: {e}\n")
                 self.current_plan = None
+        else:
+            logger.debug(f"直接执行任务: {task_message}")
         
         self.message_manager.add_user_message(task_message)
         while True:
