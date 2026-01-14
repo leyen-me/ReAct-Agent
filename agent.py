@@ -32,11 +32,6 @@ from tools import (
     GitCommitTool,
     GitBranchTool,
     GitLogTool,
-    AddTodoTool,
-    ListTodosTool,
-    UpdateTodoStatusTool,
-    DeleteTodoTool,
-    GetTodoStatsTool,
 )
 from tool_executor import create_tool_executor
 from task_planner import TaskPlanner, TaskPlan, PlanStep, StepStatus
@@ -198,11 +193,6 @@ class ReActAgent:
             GitCommitTool(config.work_dir),
             GitBranchTool(config.work_dir),
             GitLogTool(config.work_dir),
-            AddTodoTool(config.work_dir),
-            ListTodosTool(config.work_dir),
-            UpdateTodoStatusTool(config.work_dir),
-            DeleteTodoTool(config.work_dir),
-            GetTodoStatsTool(config.work_dir),
         ]
         
     def _get_system_prompt_by_en(self) -> str:
@@ -324,7 +314,7 @@ You must reason and act strictly based on the above real environment.
     
     def _should_create_plan(self, task_message: str) -> bool:
         """
-        判断是否应该创建计划
+        判断是否应该创建计划（使用 LLM 智能判断）
         
         Args:
             task_message: 任务消息
@@ -339,9 +329,52 @@ You must reason and act strictly based on the above real environment.
         if self.current_plan and self.current_plan.get_progress()["completed"] < len(self.current_plan.steps):
             return False
         
-        # 简单启发式：如果任务描述较长或包含多个动作，可能需要规划
-        # 这里可以根据需要调整判断逻辑
-        return True
+        # 清理消息，去除首尾空白
+        message = task_message.strip()
+        
+        # 空消息不需要规划
+        if not message:
+            return False
+        
+        # 使用 LLM 智能判断是否需要规划（完全交给模型判断，不预设规则）
+        try:
+            # 构建简洁的判断提示词（减少 token 使用）
+            judgment_prompt = f"""判断用户消息是否需要详细执行计划。
+
+规则：
+- 简单问候/感谢 → no
+- 简单知识问题 → no  
+- 需要工具操作（文件/命令/Git） → yes
+- 多步骤复杂任务 → yes
+
+消息：{message}
+
+只回答 yes 或 no。"""
+
+            response = self.client.chat.completions.create(
+                model=config.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Analyze if a task needs planning. Answer only 'yes' or 'no'."
+                    },
+                    {"role": "user", "content": judgment_prompt},
+                ],
+                temperature=0.2,  # 低温度，更确定性的判断
+                max_tokens=5,  # 只需要 yes/no，极少的 token
+            )
+            
+            result = response.choices[0].message.content.strip().lower()
+            # 支持多种 yes 的表达
+            needs_planning = any(result.startswith(prefix) for prefix in ["yes", "是", "y", "需要", "need"])
+            
+            logger.debug(f"规划判断: '{message}' -> {needs_planning} (LLM回答: {result})")
+            return needs_planning
+            
+        except Exception as e:
+            logger.warning(f"规划判断失败: {e}，默认不规划")
+            # 如果判断失败，保守策略：不规划（避免不必要的延迟和成本）
+            return False
     
     def chat(self, task_message: str, output_callback: Optional[Callable[[str, bool], None]] = None) -> None:
         """
