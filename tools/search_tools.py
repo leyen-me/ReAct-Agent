@@ -5,7 +5,9 @@ import os
 import re
 import fnmatch
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+
+from pathspec import GitIgnoreSpec
 
 from tools.base import Tool
 from utils import format_search_results, format_file_list
@@ -13,6 +15,14 @@ from utils import format_search_results, format_file_list
 
 class SearchInFilesTool(Tool):
     """在文件中搜索文本内容"""
+    
+    # 默认忽略的目录列表（当没有 .gitignore 时使用）
+    DEFAULT_IGNORE_DIRS = {
+        '__pycache__', '.git', '.svn', '.hg', '.idea', '.vscode',
+        'node_modules', 'venv', 'env', '.venv', 'ENV',
+        'build', 'dist', '.pytest_cache', '.mypy_cache',
+        '.agent_history', '.agent_config', '.agent_logs'
+    }
     
     def __init__(self, work_dir: Path, max_results: int = 50):
         """
@@ -24,6 +34,70 @@ class SearchInFilesTool(Tool):
         """
         super().__init__(work_dir)
         self.max_results = max_results
+        self._gitignore_spec: Optional[GitIgnoreSpec] = None
+    
+    def _load_gitignore(self, root_dir: str) -> Optional[GitIgnoreSpec]:
+        """
+        加载并解析 .gitignore 文件
+        
+        Args:
+            root_dir: 根目录路径
+            
+        Returns:
+            GitIgnoreSpec 对象，如果加载失败则返回 None
+        """
+        try:
+            gitignore_path = os.path.join(root_dir, '.gitignore')
+            if not os.path.exists(gitignore_path):
+                return None
+            
+            with open(gitignore_path, 'r', encoding='utf-8', errors='ignore') as f:
+                # GitIgnoreSpec.from_lines 可以直接接受文件对象
+                return GitIgnoreSpec.from_lines(f)
+        except Exception:
+            # 如果加载失败，返回 None，使用默认忽略列表
+            return None
+    
+    def _should_ignore(self, path: str, root_dir: str, is_dir: bool = False) -> bool:
+        """
+        检查路径是否应该被忽略
+        
+        Args:
+            path: 要检查的路径（绝对路径或相对路径）
+            root_dir: 根目录路径
+            is_dir: 是否为目录
+            
+        Returns:
+            如果应该忽略则返回 True
+        """
+        # 如果路径不在根目录下，不忽略
+        try:
+            rel_path = os.path.relpath(path, root_dir)
+            if rel_path.startswith('..'):
+                return False
+        except ValueError:
+            # 如果路径无法转换为相对路径，不忽略
+            return False
+        
+        # 使用 .gitignore 规则（如果可用）
+        if self._gitignore_spec:
+            try:
+                # pathspec 使用正斜杠作为路径分隔符
+                normalized_path = rel_path.replace(os.sep, '/')
+                if is_dir:
+                    normalized_path += '/'
+                return self._gitignore_spec.match_file(normalized_path)
+            except Exception:
+                pass
+        
+        # 如果没有 .gitignore 或解析失败，使用默认忽略列表
+        path_parts = Path(rel_path).parts
+        if path_parts:
+            first_part = path_parts[0]
+            if first_part in self.DEFAULT_IGNORE_DIRS:
+                return True
+        
+        return False
     
     def _get_description(self) -> str:
         return "在文件中搜索文本内容（支持正则表达式）。可以在指定目录下的所有文件中搜索，或仅在特定文件中搜索。"
@@ -51,13 +125,27 @@ class SearchInFilesTool(Tool):
         if not os.path.exists(directory):
             return f"目录 {directory} 不存在"
         
+        # 加载 .gitignore 规则
+        self._gitignore_spec = self._load_gitignore(directory)
+        
         results: List[Dict[str, Any]] = []
         
         try:
             for root, dirs, files in os.walk(directory):
+                # 排除应该忽略的目录，避免遍历 node_modules 等大型目录
+                dirs[:] = [
+                    d for d in dirs 
+                    if not self._should_ignore(os.path.join(root, d), directory, is_dir=True)
+                ]
+                
                 for file in files:
                     if fnmatch.fnmatch(file, file_pattern):
                         file_path = os.path.join(root, file)
+                        
+                        # 检查文件是否应该被忽略
+                        if self._should_ignore(file_path, directory, is_dir=False):
+                            continue
+                        
                         try:
                             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                                 for line_num, line in enumerate(f, 1):
@@ -89,6 +177,14 @@ class SearchInFilesTool(Tool):
 class FindFilesTool(Tool):
     """按文件名模式搜索文件"""
     
+    # 默认忽略的目录列表（当没有 .gitignore 时使用）
+    DEFAULT_IGNORE_DIRS = {
+        '__pycache__', '.git', '.svn', '.hg', '.idea', '.vscode',
+        'node_modules', 'venv', 'env', '.venv', 'ENV',
+        'build', 'dist', '.pytest_cache', '.mypy_cache',
+        '.agent_history', '.agent_config', '.agent_logs'
+    }
+    
     def __init__(self, work_dir: Path, max_files: int = 100):
         """
         初始化文件查找工具
@@ -99,6 +195,70 @@ class FindFilesTool(Tool):
         """
         super().__init__(work_dir)
         self.max_files = max_files
+        self._gitignore_spec: Optional[GitIgnoreSpec] = None
+    
+    def _load_gitignore(self, root_dir: str) -> Optional[GitIgnoreSpec]:
+        """
+        加载并解析 .gitignore 文件
+        
+        Args:
+            root_dir: 根目录路径
+            
+        Returns:
+            GitIgnoreSpec 对象，如果加载失败则返回 None
+        """
+        try:
+            gitignore_path = os.path.join(root_dir, '.gitignore')
+            if not os.path.exists(gitignore_path):
+                return None
+            
+            with open(gitignore_path, 'r', encoding='utf-8', errors='ignore') as f:
+                # GitIgnoreSpec.from_lines 可以直接接受文件对象
+                return GitIgnoreSpec.from_lines(f)
+        except Exception:
+            # 如果加载失败，返回 None，使用默认忽略列表
+            return None
+    
+    def _should_ignore(self, path: str, root_dir: str, is_dir: bool = False) -> bool:
+        """
+        检查路径是否应该被忽略
+        
+        Args:
+            path: 要检查的路径（绝对路径或相对路径）
+            root_dir: 根目录路径
+            is_dir: 是否为目录
+            
+        Returns:
+            如果应该忽略则返回 True
+        """
+        # 如果路径不在根目录下，不忽略
+        try:
+            rel_path = os.path.relpath(path, root_dir)
+            if rel_path.startswith('..'):
+                return False
+        except ValueError:
+            # 如果路径无法转换为相对路径，不忽略
+            return False
+        
+        # 使用 .gitignore 规则（如果可用）
+        if self._gitignore_spec:
+            try:
+                # pathspec 使用正斜杠作为路径分隔符
+                normalized_path = rel_path.replace(os.sep, '/')
+                if is_dir:
+                    normalized_path += '/'
+                return self._gitignore_spec.match_file(normalized_path)
+            except Exception:
+                pass
+        
+        # 如果没有 .gitignore 或解析失败，使用默认忽略列表
+        path_parts = Path(rel_path).parts
+        if path_parts:
+            first_part = path_parts[0]
+            if first_part in self.DEFAULT_IGNORE_DIRS:
+                return True
+        
+        return False
     
     def _get_description(self) -> str:
         return "按文件名模式搜索文件（支持通配符，如 '*.py', 'test*.js'）。"
@@ -122,20 +282,38 @@ class FindFilesTool(Tool):
         if not os.path.exists(directory):
             return f"目录 {directory} 不存在"
         
+        # 加载 .gitignore 规则
+        self._gitignore_spec = self._load_gitignore(directory)
+        
         try:
             files: List[str] = []
             if recursive:
                 for root, dirs, filenames in os.walk(directory):
+                    # 排除应该忽略的目录，避免遍历 node_modules 等大型目录
+                    dirs[:] = [
+                        d for d in dirs 
+                        if not self._should_ignore(os.path.join(root, d), directory, is_dir=True)
+                    ]
+                    
                     for filename in filenames:
+                        file_path = os.path.join(root, filename)
+                        
+                        # 检查文件是否应该被忽略
+                        if self._should_ignore(file_path, directory, is_dir=False):
+                            continue
+                        
                         if fnmatch.fnmatch(filename, pattern):
-                            files.append(os.path.join(root, filename))
+                            files.append(file_path)
             else:
                 for filename in os.listdir(directory):
                     file_path = os.path.join(directory, filename)
-                    if os.path.isfile(file_path) and fnmatch.fnmatch(filename, pattern):
-                        files.append(file_path)
+                    if os.path.isfile(file_path):
+                        # 检查文件是否应该被忽略
+                        if self._should_ignore(file_path, directory, is_dir=False):
+                            continue
+                        if fnmatch.fnmatch(filename, pattern):
+                            files.append(file_path)
             
             return format_file_list(files, self.max_files)
         except Exception as e:
             return f"搜索文件失败: {e}"
-

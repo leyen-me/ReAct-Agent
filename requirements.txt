@@ -1,4 +1,5 @@
 openai>=1.0.0
 rich>=13.0.0
 textual>=0.40.0
+pathspec>=0.11.0
 
