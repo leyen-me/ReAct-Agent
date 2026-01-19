@@ -540,7 +540,7 @@ Respond with: "yes (reason)" or "no (reason)"."""
                 # 添加系统消息说明用户中断了对话
                 self.message_manager.messages.append({
                     "role": "system",
-                    "content": "[用户在对话开始前中断了任务]"
+                    "content": "[对话已被用户中断]"
                 })
                 output("\n\n[对话已被用户中断]", end_newline=True)
                 break
