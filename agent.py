@@ -784,6 +784,18 @@ Respond with: "yes (reason)" or "no (reason)"."""
                                             "arguments"
                                         ] += tc.function.arguments
                                         output(tc.function.arguments, end_newline=False)
+                                    
+                                    # 实时更新估算的 token（工具调用也会消耗 tokens）
+                                    # 构建工具调用的完整文本用于估算
+                                    tool_call_text = ""
+                                    for acc_tc_id, acc_tc_data in tool_call_acc.items():
+                                        tool_call_text += acc_tc_data.get("name", "") + acc_tc_data.get("arguments", "")
+                                    # 估算时考虑 reasoning、content 和 tool_calls
+                                    total_completion = (self._current_reasoning if hasattr(self, '_current_reasoning') else "") + content + tool_call_text
+                                    self.message_manager.update_estimated_tokens(total_completion)
+                                    # 通知UI更新状态（实时更新token显示）
+                                    if status_callback:
+                                        status_callback()
             except Exception as e:
                 # 如果在处理流时发生异常（包括关闭流），记录日志
                 logger.debug(f"流处理异常: {e}")
