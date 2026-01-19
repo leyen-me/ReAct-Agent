@@ -1064,6 +1064,8 @@ class ReActAgentApp(App):
         self._programmatic_value_set = False  # 标记是否是程序设置的文本
         self.chat_start_time = None  # 对话开始时间
         self.last_chat_duration = None  # 上一轮对话耗时（秒）
+        self.current_chat_title: str | None = None  # 当前对话的标题
+        self.is_generating_title = False  # 是否正在生成标题
     
     def compose(self) -> ComposeResult:
         """组合应用界面"""
@@ -1093,7 +1095,12 @@ class ReActAgentApp(App):
     
     def _get_title(self) -> str:
         """获取标题"""
-        return "[bold]ReAct Agent[/]"
+        if self.current_chat_title:
+            return f"[bold]{self.current_chat_title}[/]"
+        elif self.is_generating_title:
+            return "[bold]ReAct Agent[/] [dim]生成标题中...[/]"
+        else:
+            return "[bold]ReAct Agent[/]"
     
     def _get_stats(self) -> str:
         """获取统计信息"""
@@ -1162,6 +1169,8 @@ class ReActAgentApp(App):
     def refresh_header(self) -> None:
         """刷新 Header"""
         try:
+            # 刷新标题
+            self.query_one("#header-title", Static).update(self._get_title())
             # 刷新统计信息（现在在 setting-left 中）
             self.query_one("#setting-left", Static).update(self._get_status_info_with_stats())
         except Exception:
@@ -1675,6 +1684,10 @@ class ReActAgentApp(App):
         self.add_user_message(message)
         refresh_file_list(config.work_dir)
         
+        # 如果是新对话（没有标题），异步生成标题
+        if self.current_chat_title is None:
+            self._generate_chat_title_async(message)
+        
         # 记录对话开始时间
         import time
         self.chat_start_time = time.time()
@@ -1886,6 +1899,9 @@ class ReActAgentApp(App):
             system_message = self.agent.message_manager.messages[0]
             self.agent.message_manager.messages = [system_message]
             self.agent.message_manager.current_tokens = 0
+        # 重置对话标题
+        self.current_chat_title = None
+        self.is_generating_title = False
         # 刷新 header 和状态
         self.refresh_header()
         self.refresh_status()
@@ -1895,7 +1911,82 @@ class ReActAgentApp(App):
     def action_clear(self) -> None:
         chat_container = self.query_one("#chat-log", Vertical)
         chat_container.remove_children()
+        # 重置对话标题，以便下次发送消息时生成新标题
+        self.current_chat_title = None
+        self.is_generating_title = False
+        self.refresh_header()
         self.query_one("#user-input", ChatInput).focus()
     
     def action_quit(self) -> None:
         self.exit()
+    
+    def _generate_chat_title_async(self, first_message: str) -> None:
+        """异步生成对话标题"""
+        if self.is_generating_title:
+            return
+        
+        self.is_generating_title = True
+        self.refresh_header()  # 更新显示"生成标题中..."
+        
+        def generate_title():
+            """在后台线程中生成标题"""
+            app = self.app
+            try:
+                from config import config
+                
+                # 构建生成标题的提示词
+                prompt = f"""请为以下用户消息生成一个简洁的对话标题。
+
+要求：
+- 标题长度不超过15个字符
+- 简洁明了，能概括对话主题
+- 只返回标题文本，不要包含引号、标点符号或其他内容
+
+用户消息：{first_message[:200]}
+
+标题："""
+                
+                # 调用 AI 生成标题
+                response = self.agent.client.chat.completions.create(
+                    model=config.model,
+                    messages=[
+                        {"role": "system", "content": "你是一个专业的标题生成助手，能够根据用户消息生成简洁明了的对话标题。"},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.7,
+                    max_tokens=50,
+                )
+                
+                # 提取标题
+                title = response.choices[0].message.content.strip()
+                # 清理标题（移除可能的引号、换行、多余空格等）
+                title = title.replace('"', '').replace("'", '').replace('\n', ' ').replace('\r', ' ')
+                # 移除多余空格
+                title = ' '.join(title.split())
+                # 限制长度
+                if len(title) > 15:
+                    title = title[:15].strip()
+                # 如果标题为空，使用回退标题
+                if not title:
+                    title = first_message[:15] if len(first_message) > 0 else "新对话"
+                
+                # 在主线程中更新标题
+                app.call_from_thread(lambda: self._update_chat_title(title))
+                
+            except Exception as e:
+                # 如果生成失败，使用默认标题或用户消息的前几个字
+                fallback_title = first_message[:15] if len(first_message) > 0 else "新对话"
+                app.call_from_thread(lambda: self._update_chat_title(fallback_title))
+        
+        # 在后台线程中执行
+        self.run_worker(
+            generate_title,
+            thread=True,
+            name="title_generator",
+        )
+    
+    def _update_chat_title(self, title: str) -> None:
+        """更新对话标题"""
+        self.current_chat_title = title
+        self.is_generating_title = False
+        self.refresh_header()
