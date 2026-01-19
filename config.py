@@ -45,18 +45,43 @@ class Config:
         config_dir = Config.get_config_dir()
         return config_dir / "config.json"
     
+    @staticmethod
+    def get_default_config() -> Dict[str, Any]:
+        """获取默认配置字典
+        
+        Returns:
+            Dict[str, Any]: 包含所有默认配置的字典
+        """
+        return {
+            "model": "qwen/qwen3-coder-480b-a35b-instruct",
+            "api_key": None,
+            "base_url": "https://integrate.api.nvidia.com/v1",
+            "operating_system": None,  # None 表示自动检测
+            "work_dir": None,  # None 表示使用当前工作目录
+            "command_timeout": "300",
+            "max_search_results": "50",
+            "max_find_files": "100",
+            "max_context_tokens": "128000",
+            "user_language_preference": "中文",
+            "log_separator_length": "20",
+            "enable_task_planning": "true",
+            "max_plan_steps": "6",
+        }
+    
     def _load_config_file(self) -> Dict[str, Any]:
-        """从配置文件加载配置，如果文件不存在则创建空配置文件
+        """从配置文件加载配置，如果文件不存在则创建带默认值的配置文件
         
         Returns:
             Dict[str, Any]: 配置字典，如果文件不存在或读取失败则返回空字典
         """
         config_file = self.get_config_file()
+        default_config = self.get_default_config()
+        
         if not config_file.exists():
-            # 创建空的配置文件
+            # 创建带默认值的配置文件
             try:
                 with open(config_file, 'w', encoding='utf-8') as f:
-                    json.dump({}, f, indent=2, ensure_ascii=False)
+                    json.dump(default_config, f, indent=2, ensure_ascii=False)
             except Exception as e:
                 # 如果创建失败，记录错误但继续使用环境变量
                 print(f"警告: 创建配置文件失败: {e}", file=sys.stderr)
@@ -64,7 +89,21 @@ class Config:
         
         try:
             with open(config_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                file_config = json.load(f)
+                # 合并默认值，确保配置文件中有所有配置项
+                # 如果配置文件中缺少某些项，使用默认值补充
+                merged_config = default_config.copy()
+                merged_config.update(file_config)
+                
+                # 如果配置文件缺少某些项，更新配置文件
+                if file_config != merged_config:
+                    try:
+                        with open(config_file, 'w', encoding='utf-8') as f:
+                            json.dump(merged_config, f, indent=2, ensure_ascii=False)
+                    except Exception as e:
+                        print(f"警告: 更新配置文件失败: {e}", file=sys.stderr)
+                
+                return merged_config
         except Exception as e:
             # 如果读取失败，记录错误但继续使用环境变量
             print(f"警告: 读取配置文件失败: {e}", file=sys.stderr)
