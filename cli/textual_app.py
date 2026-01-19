@@ -1714,6 +1714,8 @@ class ReActAgentApp(App):
         self.is_generating_title = False  # 是否正在生成标题
         self.is_loading_history = False  # 是否正在加载历史记录（防止重复保存）
         self.current_history_id: str | None = None  # 当前对话的历史记录 ID
+        self._quit_confirmed = False  # Ctrl+C 退出确认状态
+        self._quit_timer = None  # 退出确认定时器
         # 初始化历史记录管理器
         # 历史记录目录放在项目根目录下，而不是工作目录（workspace）
         from utils.path import get_project_root
@@ -2848,7 +2850,25 @@ class ReActAgentApp(App):
         self.query_one("#user-input", ChatInput).focus()
     
     def action_quit(self) -> None:
-        self.exit()
+        """退出应用 - 需要按两次 Ctrl+C 确认"""
+        if self._quit_confirmed:
+            # 第二次按 Ctrl+C，真正退出
+            self.exit()
+        else:
+            # 第一次按 Ctrl+C，显示提示
+            self._quit_confirmed = True
+            self.add_system_message("按 Ctrl+C 再次确认退出")
+            
+            # 取消之前的定时器（如果存在）
+            if self._quit_timer is not None:
+                self._quit_timer.stop()
+            
+            # 设置定时器，3秒后重置确认状态
+            def reset_quit_confirmed():
+                self._quit_confirmed = False
+                self._quit_timer = None
+            
+            self._quit_timer = self.set_timer(3.0, reset_quit_confirmed)
     
     def _generate_chat_title_async(self, first_message: str) -> None:
         """异步生成对话标题"""
