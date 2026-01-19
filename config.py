@@ -56,7 +56,7 @@ class Config:
             "model": "qwen/qwen3-coder-480b-a35b-instruct",
             "api_key": None,
             "base_url": "https://integrate.api.nvidia.com/v1",
-            "operating_system": None,  # None 表示自动检测
+            "operating_system": Config.detect_operating_system(),  # 自动检测操作系统
             "work_dir": None,  # None 表示使用当前工作目录
             "command_timeout": "300",
             "max_search_results": "50",
@@ -95,7 +95,11 @@ class Config:
                 merged_config = default_config.copy()
                 merged_config.update(file_config)
                 
-                # 如果配置文件缺少某些项，更新配置文件
+                # 如果 operating_system 是 null 或不存在，自动检测并更新
+                if merged_config.get("operating_system") is None:
+                    merged_config["operating_system"] = Config.detect_operating_system()
+                
+                # 如果配置文件缺少某些项或 operating_system 被更新，更新配置文件
                 if file_config != merged_config:
                     try:
                         with open(config_file, 'w', encoding='utf-8') as f:
