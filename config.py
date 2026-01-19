@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Optional, Dict, Any
 
+from utils.path import get_project_root
+
 
 class Config:
     """应用配置类"""
@@ -34,14 +36,7 @@ class Config:
     @staticmethod
     def get_config_dir() -> Path:
         """获取配置目录路径"""
-        # 如果是 PyInstaller 打包后的可执行文件
-        if getattr(sys, 'frozen', False):
-            # 使用可执行文件所在目录（而不是临时目录）
-            project_root = Path(sys.executable).parent
-        else:
-            # 开发环境：使用 config.py 所在目录
-            project_root = Path(__file__).parent
-        
+        project_root = get_project_root()
         config_dir = project_root / ".agent_config"
         return config_dir
     

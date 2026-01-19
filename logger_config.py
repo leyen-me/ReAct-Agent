@@ -8,11 +8,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from utils.path import get_project_root
+
 
 def get_log_dir() -> Path:
     """获取日志目录路径"""
-    # 获取项目根目录（logger_config.py 所在目录）
-    project_root = Path(__file__).parent
+    project_root = get_project_root()
     log_dir = project_root / ".agent_logs"
     return log_dir
 

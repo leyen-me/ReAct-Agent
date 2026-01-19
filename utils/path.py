@@ -2,8 +2,29 @@
 """路径处理工具模块"""
 
 import os
+import sys
 from pathlib import Path
 from typing import Tuple
+
+
+def get_project_root() -> Path:
+    """
+    获取项目根目录路径
+    
+    在开发环境中，返回脚本文件所在目录。
+    在 PyInstaller 打包后，返回可执行文件所在目录（而不是临时目录）。
+    
+    Returns:
+        Path: 项目根目录路径
+    """
+    # 如果是 PyInstaller 打包后的可执行文件
+    if getattr(sys, 'frozen', False):
+        # 使用可执行文件所在目录（而不是临时目录）
+        return Path(sys.executable).parent
+    else:
+        # 开发环境：使用当前模块所在目录的父目录（utils/ 的父目录）
+        # 因为 path.py 在 utils/ 目录下，所以需要向上两级到项目根目录
+        return Path(__file__).parent.parent
 
 
 def validate_path(path: str, work_dir: Path) -> Tuple[bool, str]:
