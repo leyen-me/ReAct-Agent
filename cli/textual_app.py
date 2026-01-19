@@ -2960,38 +2960,71 @@ class ReActAgentApp(App):
             try:
                 from config import config
                 
-                # 构建生成标题的提示词
-                prompt = f"""请为以下用户消息生成一个简洁的对话标题。
+                # 构建生成标题的提示词（遵循 OpenAI/Claude 官方最佳实践）
+                # 参考: https://help.openai.com/en/articles/6654000-best-practices-for-prompt-engineering-with-the-openai-api
+                # 参考: https://claude.com/blog/best-practices-for-prompt-engineering
+                system_prompt = """You are a title generator specialized in creating concise, descriptive titles for chat conversations.
 
-要求：
-- 标题长度不超过15个字符
-- 简洁明了，能概括对话主题
-- 只返回标题文本，不要包含引号、标点符号或其他内容
+Your task: Read the user's first message and generate a title that captures the main topic, problem, or intent.
 
-用户消息：{first_message[:200]}
+Requirements:
+1. Language matching: Use the same language as the user's message
+   - If user writes in English → output English title
+   - If user writes in Chinese → output Chinese title
+2. Length constraint: Maximum 15 characters (counted in the original language)
+3. Content focus: Extract the core topic, question, or request - avoid generic phrases like "Question" or "Help"
+4. Style: Clear, professional, keyword-focused, suitable for a chat title
+5. Format: Title only. Do NOT include:
+   - Quotation marks
+   - Leading or trailing punctuation
+   - Explanations or commentary
+   - Emojis or special characters
 
-标题："""
+Examples (few-shot learning):
+Input: "How do I implement authentication in Python?"
+Output: Python Authentication
+
+Input: "帮我写一个快速排序算法"
+Output: 快速排序算法
+
+Input: "What's the weather today?"
+Output: Weather Today
+
+Input: "解释一下 React Hooks 的用法"
+Output: React Hooks 用法
+
+Now generate a title for this user message:"""
+                
+                user_prompt = f"""{first_message[:200]}
+
+Title:"""
                 
                 # 调用 AI 生成标题（使用规划模型）
+                # 使用较低的 temperature 以获得更确定性的结果（最佳实践：0.3-0.5 for structured tasks）
                 response = self.agent.client.chat.completions.create(
                     model=config.planning_model,
                     messages=[
-                        {"role": "system", "content": "你是一个专业的标题生成助手，能够根据用户消息生成简洁明了的对话标题。"},
-                        {"role": "user", "content": prompt}
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
                     ],
-                    temperature=0.7,
-                    max_tokens=50,
+                    temperature=0.3,  # 降低 temperature 以获得更稳定的结果
+                    max_tokens=30,  # 标题不需要太多 tokens
                 )
                 
                 # 提取标题
                 title = response.choices[0].message.content.strip()
+                
                 # 清理标题（移除可能的引号、换行、多余空格等）
                 title = title.replace('"', '').replace("'", '').replace('\n', ' ').replace('\r', ' ')
-                # 移除多余空格
+                # 移除多余空格和标点符号
                 title = ' '.join(title.split())
+                # 移除首尾标点符号
+                title = title.strip('.,;:!?。，；：！？')
+                
                 # 限制长度
                 if len(title) > 15:
                     title = title[:15].strip()
+                
                 # 如果标题为空，使用回退标题
                 if not title:
                     title = first_message[:15] if len(first_message) > 0 else "新对话"
@@ -3001,6 +3034,9 @@ class ReActAgentApp(App):
                 
             except Exception as e:
                 # 如果生成失败，使用默认标题或用户消息的前几个字
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.debug(f"Failed to generate title: {e}")
                 fallback_title = first_message[:15] if len(first_message) > 0 else "新对话"
                 app.call_from_thread(lambda: self._update_chat_title(fallback_title))
         
