@@ -214,17 +214,22 @@ class ListFilesTool(Tool):
         gitignore_spec = load_gitignore(path)
         
         try:
-            files = []
+            items = []
             for f in os.listdir(path):
                 full_path = os.path.join(path, f)
+                is_dir = os.path.isdir(full_path)
                 
                 # 检查 gitignore 规则
-                if should_ignore(full_path, path, gitignore_spec, is_dir=os.path.isdir(full_path)):
+                if should_ignore(full_path, path, gitignore_spec, is_dir=is_dir):
                     continue
                 
-                files.append(full_path)
+                # 添加标识以区分文件和目录
+                if is_dir:
+                    items.append(f"{full_path} [DIR]")
+                else:
+                    items.append(full_path)
             
-            return "\n".join(files) if files else "目录为空"
+            return "\n".join(items) if items else "目录为空"
         except Exception as e:
             return f"列出文件失败: {e}"
 

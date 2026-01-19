@@ -122,6 +122,13 @@ def should_ignore(
         # 如果路径无法转换为相对路径，不忽略
         return False
     
+    # 先检查默认忽略列表（无论是否有 .gitignore）
+    path_parts = Path(rel_path).parts
+    if path_parts:
+        first_part = path_parts[0]
+        if first_part in DEFAULT_IGNORE_DIRS:
+            return True
+    
     # 如果没有提供 gitignore_spec，尝试加载
     if gitignore_spec is None:
         gitignore_spec = load_gitignore(root_dir)
@@ -133,16 +140,10 @@ def should_ignore(
             normalized_path = rel_path.replace(os.sep, '/')
             if is_dir:
                 normalized_path += '/'
-            return gitignore_spec.match_file(normalized_path)
+            if gitignore_spec.match_file(normalized_path):
+                return True
         except Exception:
             pass
-    
-    # 如果没有 .gitignore 或解析失败，使用默认忽略列表
-    path_parts = Path(rel_path).parts
-    if path_parts:
-        first_part = path_parts[0]
-        if first_part in DEFAULT_IGNORE_DIRS:
-            return True
     
     return False
 
