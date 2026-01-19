@@ -470,6 +470,153 @@ class FilePickerScreen(ModalScreen[str]):
                 event.prevent_default()
 
 
+class PlanViewerScreen(ModalScreen[None]):
+    """计划查看对话框"""
+    
+    BINDINGS = [
+        Binding("escape", "dismiss", "关闭"),
+    ]
+    
+    CSS = """
+    PlanViewerScreen {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.5);
+    }
+    
+    #planviewer-container {
+        width: 90%;
+        height: 85%;
+        background: #ffffff;
+        border: none;
+        padding: 0;
+    }
+    
+    #planviewer-header {
+        height: 3;
+        background: #ffffff;
+        padding: 0 2;
+        margin-top: 1;
+        border-bottom: solid #e5e7eb;
+        align-vertical: middle;
+    }
+    
+    #planviewer-title {
+        width: 1fr;
+        color: #000000;
+        text-style: bold;
+    }
+    
+    #planviewer-hint {
+        width: auto;
+        color: #7d8590;
+    }
+    
+    #planviewer-content {
+        height: 1fr;
+        padding: 1 2;
+        background: #ffffff;
+        border: none;
+        overflow-y: auto;
+        scrollbar-color: #e5e7eb;
+        scrollbar-color-hover: #d1d5db;
+        scrollbar-size: 0 1;
+    }
+    
+    #planviewer-text {
+        width: 100%;
+        height: auto;
+        background: #ffffff;
+        border: none;
+        color: #000000;
+    }
+    """
+    
+    def __init__(self, plan):
+        super().__init__()
+        self.plan = plan
+    
+    def compose(self) -> ComposeResult:
+        with Container(id="planviewer-container"):
+            with Horizontal(id="planviewer-header"):
+                yield Static("📋 任务计划详情", id="planviewer-title")
+                yield Static("[dim]ESC[/] 关闭", id="planviewer-hint")
+            with ScrollableContainer(id="planviewer-content"):
+                yield Static("", id="planviewer-text", markup=True)
+    
+    def on_mount(self) -> None:
+        plan_content = self._format_plan_content()
+        static_widget = self.query_one("#planviewer-text", Static)
+        static_widget.update(plan_content)
+    
+    def _format_plan_content(self) -> str:
+        """格式化计划内容"""
+        plan = self.plan
+        progress = plan.get_progress()
+        
+        # 构建计划显示内容
+        plan_lines = [
+            f"[bold]📋 任务计划[/bold]",
+            f"[dim]任务描述:[/] {plan.task_description}",
+            f"[dim]创建时间:[/] {plan.created_at.strftime('%Y-%m-%d %H:%M:%S')}",
+            "",
+            f"[bold]进度概览[/bold]",
+            f"  总步骤: {progress['total']}",
+            f"  ✅ 已完成: {progress['completed']}",
+            f"  🔄 执行中: {progress['in_progress']}",
+            f"  ⏳ 待执行: {progress['pending']}",
+            f"  ❌ 失败: {progress['failed']}",
+            f"  完成度: {progress['progress_percent']:.1f}%",
+            "",
+            f"[bold]执行步骤[/bold]",
+        ]
+        
+        # 添加每个步骤的详细信息
+        for step in plan.steps:
+            status_icon = {
+                StepStatus.PENDING: "⏳",
+                StepStatus.IN_PROGRESS: "🔄",
+                StepStatus.COMPLETED: "✅",
+                StepStatus.FAILED: "❌",
+                StepStatus.SKIPPED: "⏭️",
+            }.get(step.status, "❓")
+            
+            # 根据状态设置颜色
+            if step.status == StepStatus.COMPLETED:
+                step_line = f"  {status_icon} [#22c55e]步骤 {step.step_number}:[/] {step.description}"
+            elif step.status == StepStatus.FAILED:
+                step_line = f"  {status_icon} [#ef4444]步骤 {step.step_number}:[/] {step.description}"
+            elif step.status == StepStatus.IN_PROGRESS:
+                step_line = f"  {status_icon} [#3b82f6]步骤 {step.step_number}:[/] {step.description}"
+            else:
+                step_line = f"  {status_icon} [dim]步骤 {step.step_number}:[/] {step.description}"
+            
+            plan_lines.append(step_line)
+            
+            # 显示预期工具
+            if step.expected_tools:
+                plan_lines.append(f"    [dim]工具:[/] {', '.join(step.expected_tools)}")
+            
+            # 显示结果或错误
+            if step.status == StepStatus.COMPLETED and step.result:
+                result_display = step.result[:300] + "..." if len(step.result) > 300 else step.result
+                plan_lines.append(f"    [#22c55e]✓ 结果:[/] {result_display}")
+            elif step.status == StepStatus.FAILED and step.error:
+                plan_lines.append(f"    [#ef4444]✗ 错误:[/] {step.error}")
+            
+            # 显示时间信息
+            if step.start_time:
+                plan_lines.append(f"    [dim]开始:[/] {step.start_time.strftime('%H:%M:%S')}")
+            if step.end_time:
+                plan_lines.append(f"    [dim]结束:[/] {step.end_time.strftime('%H:%M:%S')}")
+                if step.start_time:
+                    duration = (step.end_time - step.start_time).total_seconds()
+                    plan_lines.append(f"    [dim]耗时:[/] {duration:.1f}s")
+            
+            plan_lines.append("")  # 空行分隔
+        
+        return "\n".join(plan_lines)
+
+
 class LogViewerScreen(ModalScreen[None]):
     """日志查看对话框"""
     
@@ -649,6 +796,15 @@ class ReActAgentApp(App):
         text-align: right;
         text-overflow: ellipsis;
         overflow: hidden;
+    }
+    
+    #header-plan-status:focus {
+        text-style: underline;
+    }
+    
+    #header-plan-status.clickable:hover {
+        color: #7c3aed;
+        text-style: underline;
     }
     
     /* ===== Main 聊天区域 ===== */
@@ -973,6 +1129,12 @@ class ReActAgentApp(App):
             if len(status) > max_length:
                 status = status[:max_length-3] + "..."
             plan_status_widget.update(status)
+            
+            # 如果有计划状态文本，添加可点击样式
+            if status:
+                plan_status_widget.add_class("clickable")
+            else:
+                plan_status_widget.remove_class("clickable")
         except Exception:
             pass
     
@@ -998,6 +1160,15 @@ class ReActAgentApp(App):
         """应用挂载"""
         self.query_one("#user-input", ChatInput).focus()
         refresh_file_list(config.work_dir)
+    
+    @on(Click, "#header-plan-status")
+    def on_plan_status_click(self, event: Click) -> None:
+        """处理计划状态点击事件"""
+        # 检查是否有计划可以显示
+        if hasattr(self.agent, "current_plan") and self.agent.current_plan is not None:
+            self._open_plan_viewer()
+            event.stop()
+            return
     
     @on(Click)
     def on_click(self, event: Click) -> None:
@@ -1069,6 +1240,26 @@ class ReActAgentApp(App):
         if input_widget.text == "/":
             input_widget.text = ""
         self.action_open_palette()
+    
+    def _open_plan_viewer(self) -> None:
+        """打开计划查看弹窗"""
+        # 如果已经有弹窗打开，不重复打开
+        if isinstance(self.screen, ModalScreen):
+            return
+        
+        # 检查是否有当前计划
+        if not hasattr(self.agent, "current_plan") or self.agent.current_plan is None:
+            return
+        
+        def handle_close(result: None) -> None:
+            # 关闭后聚焦到输入框
+            input_widget = self.query_one("#user-input", ChatInput)
+            input_widget.focus()
+        
+        # 移除 user-input 的焦点
+        input_widget = self.query_one("#user-input", ChatInput)
+        input_widget.blur()
+        self.push_screen(PlanViewerScreen(self.agent.current_plan), handle_close)
     
     def _open_log_viewer(self) -> None:
         # 如果已经有弹窗打开，不重复打开
