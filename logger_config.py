@@ -13,7 +13,7 @@ def get_log_dir() -> Path:
     """获取日志目录路径"""
     # 获取项目根目录（logger_config.py 所在目录）
     project_root = Path(__file__).parent
-    log_dir = project_root / "logs"
+    log_dir = project_root / ".agent_logs"
     return log_dir
 
 

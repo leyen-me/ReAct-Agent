@@ -1216,7 +1216,8 @@ class ConfigEditScreen(ModalScreen[bool]):
     
     #config-container {
         width: 80;
-        max-height: 40;
+        height: 50;
+        max-height: 50;
         background: #ffffff;
         border: none;
         padding: 0;
@@ -1244,11 +1245,13 @@ class ConfigEditScreen(ModalScreen[bool]):
     
     #config-content {
         height: 1fr;
+        max-height: 46;
         padding: 1 2;
+        scrollbar-gutter: stable;
     }
     
     #config-form {
-        height: 1fr;
+        height: auto;
     }
     
     .config-label {
@@ -1273,23 +1276,6 @@ class ConfigEditScreen(ModalScreen[bool]):
         height: 3;
         margin-bottom: 1;
         align-vertical: middle;
-    }
-    
-    #config-buttons {
-        height: 3;
-        margin-top: 1;
-        padding-top: 1;
-        border-top: solid #e5e7eb;
-        align-vertical: middle;
-    }
-    
-    #save-button {
-        width: auto;
-        margin-right: 1;
-    }
-    
-    #cancel-button {
-        width: auto;
     }
     """
     
@@ -1367,9 +1353,6 @@ class ConfigEditScreen(ModalScreen[bool]):
                     with Horizontal(classes="config-row config-row-max_plan_steps"):
                         yield Static("最大计划步骤", classes="config-label")
                         yield Input(value="6", classes="config-input", id="config-max_plan_steps")
-            with Horizontal(id="config-buttons"):
-                yield Button("保存", id="save-button", variant="primary")
-                yield Button("取消", id="cancel-button", variant="default")
     
     def on_mount(self) -> None:
         """挂载时加载配置"""
@@ -1446,16 +1429,6 @@ class ConfigEditScreen(ModalScreen[bool]):
     def action_dismiss(self) -> None:
         """取消编辑"""
         self.dismiss(False)
-    
-    @on(Button.Pressed, "#save-button")
-    def on_save_button(self) -> None:
-        """保存按钮点击"""
-        self.action_save()
-    
-    @on(Button.Pressed, "#cancel-button")
-    def on_cancel_button(self) -> None:
-        """取消按钮点击"""
-        self.action_dismiss()
     
     @on(Key)
     def on_key(self, event: Key) -> None:

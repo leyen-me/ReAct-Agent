@@ -35,7 +35,6 @@ ENV/
 
 # 日志
 *.log
-logs/
 
 # 操作系统
 .DS_Store
@@ -47,3 +46,6 @@ workspace/
 
 # 配置文件
 .agent_config/
+
+# 日志
+.agent_logs/
