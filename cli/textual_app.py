@@ -2137,7 +2137,7 @@ class ReActAgentApp(App):
                 self.action_clear()
                 input_widget.focus()
             elif cmd_id == "exit":
-                self.action_quit()
+                self.action_quit(skip_confirmation=True)
             else:
                 input_widget.focus()
         
@@ -2352,6 +2352,10 @@ class ReActAgentApp(App):
             return
         elif message == "/config":
             self._open_config_editor()
+            return
+        elif message.lower() == "exit":
+            # 直接输入 exit 也可以退出
+            self.action_quit(skip_confirmation=True)
             return
         
         self.chat_count += 1
@@ -2856,9 +2860,16 @@ class ReActAgentApp(App):
         self.refresh_header()
         self.query_one("#user-input", ChatInput).focus()
     
-    def action_quit(self) -> None:
-        """退出应用 - 需要按两次 Ctrl+C 确认"""
-        if self._quit_confirmed:
+    def action_quit(self, skip_confirmation: bool = False) -> None:
+        """退出应用
+        
+        Args:
+            skip_confirmation: 如果为 True，跳过确认直接退出（用于命令调用）
+        """
+        if skip_confirmation:
+            # 命令调用，直接退出
+            self.exit()
+        elif self._quit_confirmed:
             # 第二次按 Ctrl+C，真正退出
             self.exit()
         else:
