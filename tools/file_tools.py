@@ -4,9 +4,10 @@
 import os
 import shutil
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from tools.base import Tool
+from utils import load_gitignore, should_ignore, filter_dirs
 
 
 class ReadFileTool(Tool):
@@ -195,24 +196,13 @@ class ListFilesTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "文件夹路径"},
-                "ignore_patterns": {"type": "array", "items": {"type": "string"}, "description": "忽略的文件/目录模式（如 ['node_modules', '*.pyc']）", "default": []}
+                "path": {"type": "string", "description": "文件夹路径"}
             },
             "required": ["path"],
         }
     
-    def _should_ignore(self, path: str, ignore_patterns: list) -> bool:
-        """检查路径是否应该被忽略"""
-        import fnmatch
-        
-        for pattern in ignore_patterns:
-            if fnmatch.fnmatch(os.path.basename(path), pattern):
-                return True
-        return False
-    
     def run(self, parameters: Dict[str, Any]) -> str:
         path = parameters["path"]
-        ignore_patterns = parameters.get("ignore_patterns", [])
         
         if not os.path.exists(path):
             return f"目录 {path} 不存在"
@@ -220,12 +210,19 @@ class ListFilesTool(Tool):
         if not os.path.isdir(path):
             return f"{path} 不是目录"
         
+        # 加载 .gitignore 规则
+        gitignore_spec = load_gitignore(path)
+        
         try:
             files = []
             for f in os.listdir(path):
                 full_path = os.path.join(path, f)
-                if not self._should_ignore(full_path, ignore_patterns):
-                    files.append(full_path)
+                
+                # 检查 gitignore 规则
+                if should_ignore(full_path, path, gitignore_spec, is_dir=os.path.isdir(full_path)):
+                    continue
+                
+                files.append(full_path)
             
             return "\n".join(files) if files else "目录为空"
         except Exception as e:
@@ -243,26 +240,14 @@ class TreeFilesTool(Tool):
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "文件夹路径"},
-                "max_depth": {"type": "number", "description": "最大深度（默认：3）", "default": 3},
-                "ignore_patterns": {"type": "array", "items": {"type": "string"}, "description": "忽略的文件/目录模式（如 ['node_modules', '*.pyc']）", "default": []}
+                "max_depth": {"type": "number", "description": "最大深度（默认：3）", "default": 3}
             },
             "required": ["path"],
         }
     
-    def _should_ignore(self, path: str, ignore_patterns: list) -> bool:
-        """检查路径是否应该被忽略"""
-        import fnmatch
-        
-        for pattern in ignore_patterns:
-            if fnmatch.fnmatch(os.path.basename(path), pattern):
-                return True
-        return False
-    
-    def _build_tree(self, path: str, prefix: str = "", depth: int = 0, max_depth: int = 3, ignore_patterns: list = None) -> str:
+    def _build_tree(self, path: str, root_dir: str, prefix: str = "", depth: int = 0, max_depth: int = 3, 
+                    gitignore_spec: Optional[Any] = None) -> str:
         """构建目录树结构"""
-        if ignore_patterns is None:
-            ignore_patterns = []
-        
         if depth >= max_depth:
             return ""
         
@@ -271,9 +256,17 @@ class TreeFilesTool(Tool):
         
         try:
             items = []
-            for item in sorted(os.listdir(path)):
+            
+            # 获取所有文件和目录
+            all_items = sorted(os.listdir(path))
+            
+            # 过滤文件和目录（使用 gitignore 规则）
+            for item in all_items:
                 full_path = os.path.join(path, item)
-                if self._should_ignore(full_path, ignore_patterns):
+                is_dir = os.path.isdir(full_path)
+                
+                # 检查 gitignore 规则
+                if should_ignore(full_path, root_dir, gitignore_spec, is_dir=is_dir):
                     continue
                 
                 items.append(item)
@@ -288,7 +281,8 @@ class TreeFilesTool(Tool):
                 
                 if os.path.isdir(full_path):
                     new_prefix = prefix + ("    " if is_last else "│   ")
-                    subtree = self._build_tree(full_path, new_prefix, depth + 1, max_depth, ignore_patterns)
+                    subtree = self._build_tree(full_path, root_dir, new_prefix, depth + 1, max_depth, 
+                                             gitignore_spec)
                     if subtree:
                         tree_lines.append(subtree)
             
@@ -299,7 +293,6 @@ class TreeFilesTool(Tool):
     def run(self, parameters: Dict[str, Any]) -> str:
         path = parameters["path"]
         max_depth = parameters.get("max_depth", 3)
-        ignore_patterns = parameters.get("ignore_patterns", [])
         
         if not os.path.exists(path):
             return f"目录 {path} 不存在"
@@ -307,8 +300,11 @@ class TreeFilesTool(Tool):
         if not os.path.isdir(path):
             return f"{path} 不是目录"
         
+        # 加载 .gitignore 规则
+        gitignore_spec = load_gitignore(path)
+        
         try:
-            tree = self._build_tree(path, max_depth=max_depth, ignore_patterns=ignore_patterns)
+            tree = self._build_tree(path, path, max_depth=max_depth, gitignore_spec=gitignore_spec)
             if not tree:
                 return "目录为空或所有内容都被忽略"
             
