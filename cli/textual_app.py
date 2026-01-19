@@ -1826,7 +1826,7 @@ class ReActAgentApp(App):
         if planning_model == execution_model:
             return f"[#8b5cf6]■[/] Build [dim]{execution_model}[/]"
         else:
-            return f"[#8b5cf6]■[/] Build [dim]规划:{planning_model} 执行:{execution_model}[/]"
+            return f"[#8b5cf6]■[/] Build [dim]planning:{planning_model} execution:{execution_model}[/]"
     
     def _get_status_info(self) -> str:
         """获取状态信息"""
