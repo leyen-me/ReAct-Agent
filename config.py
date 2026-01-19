@@ -225,6 +225,24 @@ class Config:
         )
         self.max_plan_steps: int = int(max_plan_steps_value)
     
+    def save_config_file(self, config_dict: Dict[str, Any]) -> bool:
+        """保存配置到文件
+        
+        Args:
+            config_dict: 要保存的配置字典
+            
+        Returns:
+            bool: 是否保存成功
+        """
+        config_file = self.get_config_file()
+        try:
+            with open(config_file, 'w', encoding='utf-8') as f:
+                json.dump(config_dict, f, indent=2, ensure_ascii=False)
+            return True
+        except Exception as e:
+            print(f"警告: 保存配置文件失败: {e}", file=sys.stderr)
+            return False
+    
     def validate(self) -> None:
         """验证配置"""
         if not self.api_key:

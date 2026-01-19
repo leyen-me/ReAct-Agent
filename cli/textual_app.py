@@ -1200,6 +1200,271 @@ class HistoryScreen(ModalScreen[ChatHistory]):
             self.focus_on_input = True
 
 
+class ConfigEditScreen(ModalScreen[bool]):
+    """配置编辑界面"""
+    
+    BINDINGS = [
+        Binding("escape", "dismiss", "取消"),
+        Binding("ctrl+s", "save", "保存"),
+    ]
+    
+    CSS = """
+    ConfigEditScreen {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.5);
+    }
+    
+    #config-container {
+        width: 80;
+        max-height: 40;
+        background: #ffffff;
+        border: none;
+        padding: 0;
+    }
+    
+    #config-header {
+        height: 3;
+        background: #ffffff;
+        padding: 0 2;
+        margin-top: 1;
+        border-bottom: solid #e5e7eb;
+        align-vertical: middle;
+    }
+    
+    #config-title {
+        width: 1fr;
+        color: #000000;
+        text-style: bold;
+    }
+    
+    #config-hint {
+        width: auto;
+        color: #7d8590;
+    }
+    
+    #config-content {
+        height: 1fr;
+        padding: 1 2;
+    }
+    
+    #config-form {
+        height: 1fr;
+    }
+    
+    .config-label {
+        width: 25;
+        color: #000000;
+        text-style: bold;
+        margin-right: 1;
+    }
+    
+    .config-input {
+        width: 1fr;
+        background: #ffffff;
+        border: solid #d1d5db;
+        color: #000000;
+    }
+    
+    .config-input:focus {
+        border: solid #3b82f6;
+    }
+    
+    .config-row {
+        height: 3;
+        margin-bottom: 1;
+        align-vertical: middle;
+    }
+    
+    #config-buttons {
+        height: 3;
+        margin-top: 1;
+        padding-top: 1;
+        border-top: solid #e5e7eb;
+        align-vertical: middle;
+    }
+    
+    #save-button {
+        width: auto;
+        margin-right: 1;
+    }
+    
+    #cancel-button {
+        width: auto;
+    }
+    """
+    
+    def __init__(self):
+        super().__init__()
+        self.config_data: Dict[str, Any] = {}
+        self.input_widgets: Dict[str, Input] = {}
+    
+    def compose(self) -> ComposeResult:
+        from config import Config
+        default_os = Config.detect_operating_system()
+        
+        with Container(id="config-container"):
+            with Horizontal(id="config-header"):
+                yield Static("⚙️  配置编辑", id="config-title")
+                yield Static("[dim]ESC[/] 取消  [dim]Ctrl+S[/] 保存", id="config-hint")
+            with ScrollableContainer(id="config-content"):
+                with Vertical(id="config-form"):
+                    # 模型配置
+                    with Horizontal(classes="config-row config-row-model"):
+                        yield Static("模型", classes="config-label")
+                        yield Input(value="qwen/qwen3-coder-480b-a35b-instruct", classes="config-input", id="config-model")
+                    
+                    with Horizontal(classes="config-row config-row-api_key"):
+                        yield Static("API Key", classes="config-label")
+                        yield Input(value="", classes="config-input", id="config-api_key", password=True)
+                    
+                    with Horizontal(classes="config-row config-row-base_url"):
+                        yield Static("Base URL", classes="config-label")
+                        yield Input(value="https://integrate.api.nvidia.com/v1", classes="config-input", id="config-base_url")
+                    
+                    # 系统配置
+                    with Horizontal(classes="config-row config-row-operating_system"):
+                        yield Static("操作系统", classes="config-label")
+                        yield Input(value=default_os, classes="config-input", id="config-operating_system")
+                    
+                    with Horizontal(classes="config-row config-row-work_dir"):
+                        yield Static("工作目录", classes="config-label")
+                        yield Input(value="", classes="config-input", id="config-work_dir", placeholder="留空使用当前目录")
+                    
+                    # 命令执行配置
+                    with Horizontal(classes="config-row config-row-command_timeout"):
+                        yield Static("命令超时(秒)", classes="config-label")
+                        yield Input(value="300", classes="config-input", id="config-command_timeout")
+                    
+                    # 搜索配置
+                    with Horizontal(classes="config-row config-row-max_search_results"):
+                        yield Static("最大搜索结果", classes="config-label")
+                        yield Input(value="50", classes="config-input", id="config-max_search_results")
+                    
+                    with Horizontal(classes="config-row config-row-max_find_files"):
+                        yield Static("最大查找文件数", classes="config-label")
+                        yield Input(value="100", classes="config-input", id="config-max_find_files")
+                    
+                    # 上下文配置
+                    with Horizontal(classes="config-row config-row-max_context_tokens"):
+                        yield Static("最大上下文Token", classes="config-label")
+                        yield Input(value="128000", classes="config-input", id="config-max_context_tokens")
+                    
+                    # 用户语言偏好
+                    with Horizontal(classes="config-row config-row-user_language_preference"):
+                        yield Static("用户语言", classes="config-label")
+                        yield Input(value="中文", classes="config-input", id="config-user_language_preference")
+                    
+                    # 日志配置
+                    with Horizontal(classes="config-row config-row-log_separator_length"):
+                        yield Static("日志分隔符长度", classes="config-label")
+                        yield Input(value="20", classes="config-input", id="config-log_separator_length")
+                    
+                    # 任务规划配置
+                    with Horizontal(classes="config-row config-row-enable_task_planning"):
+                        yield Static("启用任务规划", classes="config-label")
+                        yield Input(value="true", classes="config-input", id="config-enable_task_planning")
+                    
+                    with Horizontal(classes="config-row config-row-max_plan_steps"):
+                        yield Static("最大计划步骤", classes="config-label")
+                        yield Input(value="6", classes="config-input", id="config-max_plan_steps")
+            with Horizontal(id="config-buttons"):
+                yield Button("保存", id="save-button", variant="primary")
+                yield Button("取消", id="cancel-button", variant="default")
+    
+    def on_mount(self) -> None:
+        """挂载时加载配置"""
+        self._load_config()
+        # 聚焦到第一个输入框
+        first_input = self.query_one("Input.config-input", Input)
+        if first_input:
+            first_input.focus()
+    
+    def _load_config(self) -> None:
+        """加载配置文件"""
+        from config import Config
+        config_file = Config.get_config_file()
+        
+        if config_file.exists():
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    self.config_data = json.load(f)
+            except Exception:
+                self.config_data = Config.get_default_config()
+        else:
+            self.config_data = Config.get_default_config()
+        
+        # 更新所有输入框的值
+        for key, value in self.config_data.items():
+            input_widget = self.query_one(f"#config-{key}", Input)
+            if input_widget:
+                if value is None:
+                    input_widget.value = ""
+                else:
+                    input_widget.value = str(value)
+    
+    def _collect_config(self) -> Dict[str, Any]:
+        """收集所有配置值"""
+        config = {}
+        for key in self.config_data.keys():
+            input_widget = self.query_one(f"#config-{key}", Input)
+            if input_widget:
+                value = input_widget.value.strip()
+                if not value:
+                    # 空值根据配置项类型处理
+                    if key in ["api_key", "work_dir"]:
+                        config[key] = None
+                    else:
+                        # 其他配置项使用默认值
+                        from config import Config
+                        default_config = Config.get_default_config()
+                        config[key] = default_config.get(key)
+                else:
+                    config[key] = value
+        return config
+    
+    def action_save(self) -> None:
+        """保存配置"""
+        config = self._collect_config()
+        
+        # 验证 user_language_preference
+        if config.get("user_language_preference") not in ["中文", "English"]:
+            self.notify("用户语言必须为 '中文' 或 'English'", severity="error")
+            return
+        
+        # 如果 operating_system 为空，自动检测
+        from config import Config
+        if not config.get("operating_system"):
+            config["operating_system"] = Config.detect_operating_system()
+        
+        # 保存到文件
+        if Config().save_config_file(config):
+            self.notify("配置已保存", severity="success")
+            self.dismiss(True)
+        else:
+            self.notify("保存配置失败", severity="error")
+    
+    def action_dismiss(self) -> None:
+        """取消编辑"""
+        self.dismiss(False)
+    
+    @on(Button.Pressed, "#save-button")
+    def on_save_button(self) -> None:
+        """保存按钮点击"""
+        self.action_save()
+    
+    @on(Button.Pressed, "#cancel-button")
+    def on_cancel_button(self) -> None:
+        """取消按钮点击"""
+        self.action_dismiss()
+    
+    @on(Key)
+    def on_key(self, event: Key) -> None:
+        """处理按键事件"""
+        if event.key == "escape":
+            self.action_dismiss()
+            event.prevent_default()
+
+
 class ReActAgentApp(App):
     """ReAct Agent Textual 应用 - 简洁风格"""
     
@@ -1848,6 +2113,7 @@ class ReActAgentApp(App):
             ("messages", "Messages", "消息历史"),
             ("history", "History", "历史记录"),
             ("logs", "Logs", "查看日志"),
+            ("config", "Config", "编辑配置"),
             ("clear", "Clear", "清空聊天"),
             ("exit", "Exit", "退出应用"),
         ]
@@ -1878,6 +2144,8 @@ class ReActAgentApp(App):
                 self._open_history_screen()
             elif cmd_id == "logs":
                 self._open_log_viewer()
+            elif cmd_id == "config":
+                self._open_config_editor()
             elif cmd_id == "clear":
                 self.action_clear()
                 input_widget.focus()
@@ -2095,6 +2363,9 @@ class ReActAgentApp(App):
         elif message == "/history":
             self._open_history_screen()
             return
+        elif message == "/config":
+            self._open_config_editor()
+            return
         
         self.chat_count += 1
         self.add_user_message(message)
@@ -2266,6 +2537,29 @@ class ReActAgentApp(App):
             import logging
             logger = logging.getLogger(__name__)
             logger.debug(f"保存历史记录失败: {e}")
+    
+    def _open_config_editor(self) -> None:
+        """打开配置编辑界面"""
+        # 如果已经有弹窗打开，不重复打开
+        if isinstance(self.screen, ModalScreen):
+            return
+        
+        def handle_config_save(saved: bool) -> None:
+            input_widget = self.query_one("#user-input", ChatInput)
+            
+            if saved:
+                # 配置已保存，显示提示消息
+                chat_container = self.query_one("#chat-log", Vertical)
+                success_msg = ContentMessage("[dim]配置已保存，重启应用后生效[/]", allow_markup=True)
+                chat_container.mount(success_msg)
+                self._scroll_to_bottom()
+            
+            input_widget.focus()
+        
+        # 移除 user-input 的焦点
+        input_widget = self.query_one("#user-input", ChatInput)
+        input_widget.blur()
+        self.push_screen(ConfigEditScreen(), handle_config_save)
     
     def _open_history_screen(self) -> None:
         """打开历史记录选择弹窗"""
