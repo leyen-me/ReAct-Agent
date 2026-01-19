@@ -44,3 +44,6 @@ workspace/
 
 # 历史记录
 .agent_history/
+
+# 配置文件
+.agent_config/
