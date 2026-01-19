@@ -1550,7 +1550,7 @@ class ReActAgentApp(App):
         height: auto;
         min-height: 3;
         background: #1e1e1e;
-        padding: 0 2;
+        padding: 1 2;
         border-left: solid #404040;
         margin: 0 2 1 2;
         align-vertical: middle;

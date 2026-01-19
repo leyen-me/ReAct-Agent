@@ -42,7 +42,7 @@ class ThinkingMessage(ChatMessage):
     """
     
     def _format_content(self) -> str:
-        return f"[italic #7d8590]{escape(self.content)}[/]"
+        return f"[bold yellow]Thinking:[/] [italic #7d8590]{escape(self.content)}[/]"
 
 
 class ContentMessage(ChatMessage):
