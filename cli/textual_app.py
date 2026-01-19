@@ -1177,7 +1177,7 @@ class ReActAgentApp(App):
         min-height: 3;
         background: #f9f9f9;
         border-left: ascii #ef4444;
-        margin: 0 2;
+        margin: 0 2 1 2;
         align-vertical: middle;
     }
     
