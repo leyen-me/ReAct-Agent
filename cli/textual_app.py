@@ -1803,9 +1803,17 @@ class ReActAgentApp(App):
         try:
             if hasattr(self.agent, "message_manager") and self.agent.message_manager is not None:
                 mm = self.agent.message_manager
-                usage = mm.get_token_usage_percent()
-                used = mm.max_context_tokens - mm.get_remaining_tokens()
-                stats = f"  Token: {used:,} ({usage:.0f}%)"
+                # 如果正在处理中，使用估算值；否则使用实际值
+                if self.is_processing:
+                    # 使用估算值（实时更新）
+                    usage = mm.get_estimated_token_usage_percent()
+                    used = mm.max_context_tokens - mm.get_estimated_remaining_tokens()
+                    stats = f"  Token: {used:,} ({usage:.0f}%) [估算]"
+                else:
+                    # 使用实际值
+                    usage = mm.get_token_usage_percent()
+                    used = mm.max_context_tokens - mm.get_remaining_tokens()
+                    stats = f"  Token: {used:,} ({usage:.0f}%)"
             else:
                 # 如果 message_manager 不存在，显示默认值
                 stats = "  Token: --"

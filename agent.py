@@ -60,6 +60,8 @@ class MessageManager:
         ]
         # 当前实际使用的 token 数（从 API 响应获取）
         self.current_tokens: int = 0
+        # 估算的 token 数（用于实时显示，在流式过程中更新）
+        self.estimated_tokens: int = 0
 
     def update_token_usage(self, prompt_tokens: int) -> None:
         """
@@ -69,7 +71,89 @@ class MessageManager:
             prompt_tokens: API 返回的 prompt_tokens
         """
         self.current_tokens = prompt_tokens
+        self.estimated_tokens = prompt_tokens  # 同步更新估算值
         self._manage_context()
+    
+    def estimate_tokens(self, text: str) -> int:
+        """
+        估算文本的 token 数量（简单估算：中文约 1.5 字符/token，英文约 4 字符/token）
+        
+        Args:
+            text: 要估算的文本
+            
+        Returns:
+            估算的 token 数
+        """
+        if not text:
+            return 0
+        
+        # 简单估算：统计中文字符和英文字符
+        chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+        other_chars = len(text) - chinese_chars
+        
+        # 中文字符：约 1.5 字符/token
+        # 其他字符（英文、数字、标点等）：约 4 字符/token
+        estimated = int(chinese_chars / 1.5 + other_chars / 4)
+        return max(1, estimated)  # 至少返回 1
+    
+    def update_estimated_tokens(self, completion_content: str = "") -> None:
+        """
+        更新估算的 token 使用量（用于实时显示）
+        
+        Args:
+            completion_content: 当前已生成的 completion 内容
+        """
+        # 估算 prompt tokens（基于消息历史）
+        prompt_text = ""
+        for msg in self.messages:
+            if msg.get("role") == "system":
+                prompt_text += msg.get("content", "")
+            elif msg.get("role") == "user":
+                prompt_text += msg.get("content", "")
+            elif msg.get("role") == "assistant":
+                # 如果是工具调用，估算工具调用的 token
+                if "tool_calls" in msg:
+                    for tc in msg.get("tool_calls", []):
+                        if "function" in tc:
+                            func = tc["function"]
+                            prompt_text += func.get("name", "") + func.get("arguments", "")
+                else:
+                    # 如果是普通回复，不计算到 prompt 中（因为这是 completion）
+                    pass
+            elif msg.get("role") == "tool":
+                prompt_text += msg.get("content", "")
+        
+        # 估算 completion tokens（基于已生成的内容）
+        completion_tokens = self.estimate_tokens(completion_content)
+        
+        # 总估算 = prompt tokens + completion tokens
+        # 如果已经有实际的 current_tokens（来自上次 API 响应），使用它作为基础
+        if self.current_tokens > 0:
+            # 基于上次的实际值，加上新增的 completion tokens
+            # 减去上次的 completion tokens（如果有的话）
+            self.estimated_tokens = self.current_tokens + completion_tokens
+        else:
+            # 如果还没有实际值，完全基于估算
+            prompt_tokens = self.estimate_tokens(prompt_text)
+            self.estimated_tokens = prompt_tokens + completion_tokens
+    
+    def get_estimated_token_usage_percent(self) -> float:
+        """
+        获取估算的 token 使用百分比（用于实时显示）
+        
+        Returns:
+            使用百分比（0-100）
+        """
+        return (self.estimated_tokens / self.max_context_tokens) * 100
+    
+    def get_estimated_remaining_tokens(self) -> int:
+        """
+        获取估算的剩余可用 token 数（用于实时显示）
+        
+        Returns:
+            剩余 token 数
+        """
+        return max(0, self.max_context_tokens - self.estimated_tokens)
 
     def _manage_context(self) -> None:
         """管理上下文，当超过限制时删除旧消息（保留系统消息）"""
@@ -536,6 +620,9 @@ Respond with: "yes (reason)" or "no (reason)"."""
             update_plan_status("")
         
         self.message_manager.add_user_message(task_message)
+        # 重置 reasoning content 追踪（每次新的对话轮次）
+        if hasattr(self, '_current_reasoning'):
+            delattr(self, '_current_reasoning')
         while True:
             # 检查是否需要中断（在主循环开始时）
             if self.should_stop:
@@ -615,6 +702,9 @@ Respond with: "yes (reason)" or "no (reason)"."""
             start_content = False
             start_tool_call = False
             
+            # 初始化 reasoning content 追踪
+            self._current_reasoning = ""
+            
             # 定义输出函数（已在方法开始处定义，这里不需要重复定义）
 
             try:
@@ -636,7 +726,20 @@ Respond with: "yes (reason)" or "no (reason)"."""
                             if not start_reasoning_content:
                                 output(f"\n{'='*config.log_separator_length} 模型思考 {'='*config.log_separator_length}\n")
                                 start_reasoning_content = True
-                            output(delta.reasoning_content, end_newline=False)
+                            reasoning_content = delta.reasoning_content
+                            output(reasoning_content, end_newline=False)
+                            # 实时更新估算的 token（reasoning content 也会消耗 tokens）
+                            # 这里我们简单地将 reasoning content 也计入 completion
+                            # 注意：reasoning 和 content 是分开的，但都计入 completion tokens
+                            if not hasattr(self, '_current_reasoning'):
+                                self._current_reasoning = ""
+                            self._current_reasoning += reasoning_content
+                            # 估算时考虑 reasoning 和 content
+                            total_completion = (self._current_reasoning if hasattr(self, '_current_reasoning') else "") + content
+                            self.message_manager.update_estimated_tokens(total_completion)
+                            # 通知UI更新状态（实时更新token显示）
+                            if status_callback:
+                                status_callback()
 
                         if hasattr(delta, "content") and delta.content:
                             if not start_content:
@@ -645,6 +748,11 @@ Respond with: "yes (reason)" or "no (reason)"."""
                             chunk_content = delta.content
                             content += chunk_content
                             output(chunk_content, end_newline=False)
+                            # 实时更新估算的 token（基于已生成的内容）
+                            self.message_manager.update_estimated_tokens(content)
+                            # 通知UI更新状态（实时更新token显示）
+                            if status_callback:
+                                status_callback()
 
                         if hasattr(delta, "tool_calls") and delta.tool_calls:
                             if not start_tool_call:
@@ -712,13 +820,19 @@ Respond with: "yes (reason)" or "no (reason)"."""
                     logger.debug(
                         f"\nToken 使用: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}"
                     )
-                    # 通知UI更新状态（实时更新token显示）
+                    # 清除临时变量
+                    if hasattr(self, '_current_reasoning'):
+                        delattr(self, '_current_reasoning')
+                    # 通知UI更新状态（更新为实际值）
                     if status_callback:
                         status_callback()
                 else:
                     logger.warning("\nAPI 响应中未找到 prompt_tokens")
             else:
                 logger.warning("\n流式响应中未找到 usage 信息")
+                # 即使没有 usage，也清除临时变量
+                if hasattr(self, '_current_reasoning'):
+                    delattr(self, '_current_reasoning')
 
             if tool_call_acc:
                 # 如果有任务计划，更新UI显示（但不自动更新计划状态，由大模型自己管理）
