@@ -1261,28 +1261,38 @@ class ConfigEditScreen(ModalScreen[bool]):
         border: none;
     }
     
+    .config-row {
+        height: 3;
+        margin-bottom: 1;
+        align: left middle;
+    }
+    
     .config-label {
         width: 25;
+        height: 3;
         color: #000000;
         text-style: bold;
         margin-right: 1;
+        padding: 0;
+        content-align: left middle;
+        text-align: left;
+        align-vertical: middle;
     }
     
     .config-input {
         width: 1fr;
+        height: 3;
         background: #ffffff;
         border: solid #d1d5db;
         color: #000000;
+        padding: 0 1;
+        margin: 0;
+        text-align: left;
+        align-vertical: middle;
     }
     
     .config-input:focus {
         border: solid #3b82f6;
-    }
-    
-    .config-row {
-        height: 3;
-        margin-bottom: 1;
-        align-vertical: middle;
     }
     """
     
