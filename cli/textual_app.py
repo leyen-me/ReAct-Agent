@@ -9,6 +9,8 @@ from textual.widgets import (
     Input,
     TextArea,
     OptionList,
+    DirectoryTree,
+    Button,
 )
 from textual.widgets.option_list import Option
 from textual.containers import (
@@ -290,11 +292,11 @@ class CommandPaletteScreen(ModalScreen[str]):
 
 
 class FilePickerScreen(ModalScreen[str]):
-    """文件选择对话框"""
+    """文件选择对话框 - 使用 DirectoryTree"""
     
     BINDINGS = [
         Binding("escape", "dismiss", "关闭"),
-        Binding("tab", "toggle_focus", "切换焦点"),
+        Binding("enter", "select_file", "选择文件", show=False),
     ]
     
     CSS = """
@@ -305,7 +307,7 @@ class FilePickerScreen(ModalScreen[str]):
     
     #filepicker-container {
         width: 80;
-        max-height: 24;
+        height: 24;
         background: #ffffff;
         border: none;
         padding: 0;
@@ -332,142 +334,103 @@ class FilePickerScreen(ModalScreen[str]):
     }
     
     #filepicker-content {
-        padding: 1 2;
+        height: 1fr;
+        padding: 1;
     }
     
-    #filepicker-search {
-        width: 100%;
-        height: 1;
-        margin-bottom: 1;
-        background: #ffffff;
-        border: none;
-        color: #000000;
+    #filepicker-footer {
+        height: 3;
+        padding: 0 2;
+        border-top: solid #e5e7eb;
         align-vertical: middle;
     }
     
-    #filepicker-search:focus {
-        border: none;
+    #directory-tree {
+        height: 100%;
+        width: 100%;
     }
     
-    #filepicker-list {
-        height: auto;
-        max-height: 18;
-        background: #ffffff;
-        border: none;
-    }
-    
-    #filepicker-list > .option-list--option-highlighted {
-        background: #f3f3f3;
-    }
-    
-    #filepicker-list > .option-list--option {
-        color: #000000;
+    #select-button {
+        margin-left: 1;
     }
     """
     
     def __init__(self, work_dir: str):
         super().__init__()
         self.work_dir = work_dir
-        self.files: List[str] = []
-        self.focus_on_input = True
+        self.selected_path: str | None = None
     
     def compose(self) -> ComposeResult:
+        from pathlib import Path
+        work_path = Path(self.work_dir).resolve()
+        
         with Container(id="filepicker-container"):
             with Horizontal(id="filepicker-header"):
                 yield Static("选择文件", id="filepicker-title")
-                yield Static("[dim]ESC[/] 退出", id="filepicker-hint")
+                yield Static("[dim]ESC[/] 退出  [dim]双击/Enter[/] 选择", id="filepicker-hint")
             with Container(id="filepicker-content"):
-                yield Input(placeholder="输入文件名搜索...", id="filepicker-search")
-                yield OptionList(id="filepicker-list")
+                yield DirectoryTree(str(work_path), id="directory-tree")
+            with Horizontal(id="filepicker-footer"):
+                yield Static("", id="selected-path")
+                yield Button("选择", id="select-button", variant="primary")
     
     def on_mount(self) -> None:
-        self._load_files("")
-        # 默认让搜索框获得焦点，方便用户直接输入
-        option_list = self.query_one("#filepicker-list", OptionList)
-        if self.files:
-            option_list.highlighted = 0
-        self.query_one("#filepicker-search", Input).focus()
-        self.focus_on_input = True
+        """挂载时聚焦到 DirectoryTree"""
+        directory_tree = self.query_one("#directory-tree", DirectoryTree)
+        directory_tree.focus()
     
-    def action_toggle_focus(self) -> None:
-        """切换焦点"""
-        if self.focus_on_input:
-            option_list = self.query_one("#filepicker-list", OptionList)
-            if self.files:
-                option_list.focus()
-                if option_list.highlighted is None:
-                    option_list.highlighted = 0
-                self.focus_on_input = False
-        else:
-            self.query_one("#filepicker-search", Input).focus()
-            self.focus_on_input = True
+    @on(DirectoryTree.FileSelected)
+    def on_file_selected(self, event: DirectoryTree.FileSelected) -> None:
+        """处理文件选择事件（双击文件时直接选择并关闭）"""
+        from pathlib import Path
+        try:
+            work_dir_path = Path(self.work_dir).resolve()
+            file_path = Path(event.path).resolve()
+            # 如果是文件，直接选择并关闭弹窗
+            if file_path.is_file():
+                self.selected_path = event.path
+                self._dismiss_with_path(event.path)
+            else:
+                # 如果是目录，只更新显示，不关闭
+                self.selected_path = event.path
+                selected_path_widget = self.query_one("#selected-path", Static)
+                selected_path_widget.update(f"[dim]已选择目录:[/] {event.path}")
+        except Exception:
+            # 如果出错，也尝试关闭
+            self.selected_path = event.path
+            self._dismiss_with_path(event.path)
     
-    def _load_files(self, query: str) -> None:
-        option_list = self.query_one("#filepicker-list", OptionList)
-        option_list.clear_options()
-        
-        if query.strip():
-            self.files = search_files(self.work_dir, query, limit=50)
-        else:
-            self.files = get_file_list(self.work_dir)[:30]
-        
-        for file_path in self.files:
-            option_list.add_option(Option(file_path, id=file_path))
-        
-        # 如果有结果，默认选中第一个
-        if self.files:
-            option_list.highlighted = 0
+    @on(Button.Pressed, "#select-button")
+    def on_select_button_pressed(self) -> None:
+        """处理选择按钮点击"""
+        if self.selected_path:
+            self._dismiss_with_path(self.selected_path)
     
-    @on(Input.Changed, "#filepicker-search")
-    def filter_files(self, event: Input.Changed) -> None:
-        self._load_files(event.value)
+    def action_select_file(self) -> None:
+        """处理 Enter 键选择文件"""
+        if self.selected_path:
+            self._dismiss_with_path(self.selected_path)
     
-    @on(OptionList.OptionSelected, "#filepicker-list")
-    def on_option_selected(self, event: OptionList.OptionSelected) -> None:
-        if event.option.id:
-            self.dismiss(event.option.id)
-    
-    @on(Input.Submitted, "#filepicker-search")
-    def on_search_submitted(self, event: Input.Submitted) -> None:
-        if self.files:
-            self.dismiss(self.files[0])
-    
-    @on(Key)
-    def on_key(self, event: Key) -> None:
-        """处理按键事件"""
-        focused = self.focused
-        option_list = self.query_one("#filepicker-list", OptionList)
-        
-        if isinstance(focused, Input):
-            # 输入框获得焦点时，上下键操作列表
-            if event.key == "up":
-                if self.files:
-                    option_list.focus()
-                    current = option_list.highlighted or 0
-                    option_list.highlighted = max(0, current - 1)
-                    self.focus_on_input = False
-                    event.prevent_default()
-            elif event.key == "down":
-                if self.files:
-                    option_list.focus()
-                    current = option_list.highlighted or 0
-                    option_list.highlighted = min(len(self.files) - 1, current + 1)
-                    self.focus_on_input = False
-                    event.prevent_default()
-            elif event.key == "tab":
-                # Tab 键切换焦点
-                self.action_toggle_focus()
-                event.prevent_default()
-        elif isinstance(focused, OptionList):
-            if event.key == "enter":
-                highlighted = option_list.highlighted
-                if highlighted is not None and self.files:
-                    self.dismiss(self.files[highlighted])
-                    event.prevent_default()
-            elif event.key == "tab":
-                # Tab 键切换焦点
-                self.action_toggle_focus()
-                event.prevent_default()
+    def _dismiss_with_path(self, path: str) -> None:
+        """使用路径关闭对话框"""
+        from pathlib import Path
+        try:
+            work_dir_path = Path(self.work_dir).resolve()
+            file_path = Path(path).resolve()
+            if file_path.is_file():
+                # 计算相对路径
+                try:
+                    relative_path = file_path.relative_to(work_dir_path)
+                    self.dismiss(str(relative_path))
+                except ValueError:
+                    # 如果文件不在工作目录内，使用绝对路径
+                    self.dismiss(str(file_path))
+            else:
+                # 如果是目录，不关闭对话框，让用户继续选择
+                pass
+        except Exception:
+            # 如果出错，直接使用原始路径
+            self.dismiss(path)
 
 
 class PlanViewerScreen(ModalScreen[None]):
