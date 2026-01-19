@@ -60,6 +60,8 @@ class Config:
         """
         return {
             "model": "qwen/qwen3-coder-480b-a35b-instruct",
+            "planning_model": "qwen/qwen3-coder-480b-a35b-instruct",  # 用于规划和判断的智能模型
+            "execution_model": "qwen/qwen3-coder-480b-a35b-instruct",  # 用于执行计划的小模型
             "api_key": None,
             "base_url": "https://integrate.api.nvidia.com/v1",
             "operating_system": Config.detect_operating_system(),  # 自动检测操作系统
@@ -156,6 +158,16 @@ class Config:
         self.model: str = self._get_config_value(
             config_dict, "model", "MODEL", "qwen/qwen3-coder-480b-a35b-instruct"
         )
+        # 规划模型：用于判断是否需要规划和创建计划（默认使用主模型）
+        planning_model_value = self._get_config_value(
+            config_dict, "planning_model", "PLANNING_MODEL", None
+        )
+        self.planning_model: str = planning_model_value if planning_model_value else self.model
+        # 执行模型：用于执行计划（默认使用主模型）
+        execution_model_value = self._get_config_value(
+            config_dict, "execution_model", "EXECUTION_MODEL", None
+        )
+        self.execution_model: str = execution_model_value if execution_model_value else self.model
         self.api_key: Optional[str] = self._get_config_value(
             config_dict, "api_key", "OPENAI_API_KEY", None
         )

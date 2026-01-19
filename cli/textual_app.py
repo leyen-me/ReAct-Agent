@@ -1306,6 +1306,14 @@ class ConfigEditScreen(ModalScreen[bool]):
                         yield Static("模型", classes="config-label")
                         yield Input(value="qwen/qwen3-coder-480b-a35b-instruct", classes="config-input", id="config-model")
                     
+                    with Horizontal(classes="config-row config-row-planning_model"):
+                        yield Static("规划模型", classes="config-label")
+                        yield Input(value="qwen/qwen3-coder-480b-a35b-instruct", classes="config-input", id="config-planning_model")
+                    
+                    with Horizontal(classes="config-row config-row-execution_model"):
+                        yield Static("执行模型", classes="config-label")
+                        yield Input(value="qwen/qwen3-coder-480b-a35b-instruct", classes="config-input", id="config-execution_model")
+                    
                     with Horizontal(classes="config-row config-row-api_key"):
                         yield Static("API Key", classes="config-label")
                         yield Input(value="", classes="config-input", id="config-api_key", password=True)
@@ -1806,8 +1814,13 @@ class ReActAgentApp(App):
     
     def _get_model_info(self) -> str:
         """获取模型信息"""
-        model = getattr(config, 'model', 'unknown')
-        return f"[#8b5cf6]■[/] Build [dim]{model}[/]"
+        execution_model = getattr(config, 'execution_model', None) or getattr(config, 'model', 'unknown')
+        planning_model = getattr(config, 'planning_model', None) or getattr(config, 'model', 'unknown')
+        # 如果规划模型和执行模型相同，只显示一个
+        if planning_model == execution_model:
+            return f"[#8b5cf6]■[/] Build [dim]{execution_model}[/]"
+        else:
+            return f"[#8b5cf6]■[/] Build [dim]规划:{planning_model} 执行:{execution_model}[/]"
     
     def _get_status_info(self) -> str:
         """获取状态信息"""
@@ -2914,9 +2927,9 @@ class ReActAgentApp(App):
 
 标题："""
                 
-                # 调用 AI 生成标题
+                # 调用 AI 生成标题（使用规划模型）
                 response = self.agent.client.chat.completions.create(
-                    model=config.model,
+                    model=config.planning_model,
                     messages=[
                         {"role": "system", "content": "你是一个专业的标题生成助手，能够根据用户消息生成简洁明了的对话标题。"},
                         {"role": "user", "content": prompt}

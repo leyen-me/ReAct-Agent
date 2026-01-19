@@ -188,9 +188,9 @@ class TaskPlanner:
         planning_prompt = self._build_planning_prompt(task_description)
 
         try:
-            # 调用 LLM 生成计划（使用流式输出）
+            # 调用 LLM 生成计划（使用流式输出，使用规划模型）
             stream_response = self.client.chat.completions.create(
-                model=config.model,
+                model=config.planning_model,
                 messages=[
                     {"role": "system", "content": self._get_planning_system_prompt()},
                     {"role": "user", "content": planning_prompt},

@@ -406,9 +406,9 @@ User request: "{message}"
 
 Respond with: "yes (reason)" or "no (reason)"."""
 
-            # 使用流式输出
+            # 使用流式输出（使用规划模型）
             stream_response = self.client.chat.completions.create(
-                model=config.model,
+                model=config.planning_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
@@ -578,7 +578,7 @@ Respond with: "yes (reason)" or "no (reason)"."""
                 try:
                     stream_response: Stream[ChatCompletionChunk] = (
                         self.client.chat.completions.create(
-                            model=config.model,
+                            model=config.execution_model,  # 使用执行模型
                             messages=messages_with_plan,  # 使用包含计划状态的消息
                             stream=True,
                             temperature=0.7,
