@@ -31,12 +31,12 @@ def initialize_application() -> Tuple[ReActAgent, CommandProcessor]:
     # 设置日志
     log_file_path = setup_logging()
     
-    # 启动时检查更新（后台，不阻塞）
-    try:
-        from update import check_update
-        check_update()
-    except Exception:
-        pass  # 更新检查失败不影响主程序运行
+    # 启动时检查更新（已禁用）
+    # try:
+    #     from update import check_update
+    #     check_update()
+    # except Exception:
+    #     pass  # 更新检查失败不影响主程序运行
     
     # 创建 Agent
     agent = ReActAgent()
