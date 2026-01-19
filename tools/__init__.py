@@ -15,6 +15,7 @@ from tools.file_tools import (
     DeleteFolderTool,
     MoveFileTool,
     CopyFileTool,
+    ReadCodeBlockTool,
 )
 from tools.command_tools import RunCommandTool
 from tools.search_tools import SearchInFilesTool, FindFilesTool
@@ -45,6 +46,7 @@ __all__ = [
     "DeleteFolderTool",
     "MoveFileTool",
     "CopyFileTool",
+    "ReadCodeBlockTool",
     "RunCommandTool",
     "SearchInFilesTool",
     "FindFilesTool",

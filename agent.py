@@ -24,6 +24,7 @@ from tools import (
     DeleteFolderTool,
     MoveFileTool,
     CopyFileTool,
+    ReadCodeBlockTool,
     RunCommandTool,
     SearchInFilesTool,
     FindFilesTool,
@@ -181,6 +182,7 @@ class ReActAgent:
         
         tools = [
             ReadFileTool(config.work_dir),
+            ReadCodeBlockTool(config.work_dir),
             WriteFileTool(config.work_dir),
             DeleteFileTool(config.work_dir),
             CreateFileTool(config.work_dir),

@@ -513,3 +513,67 @@ class CopyFileTool(Tool):
         except Exception as e:
             return f"复制文件失败: {e}"
 
+
+class ReadCodeBlockTool(Tool):
+    """读取文件指定行周围的代码块"""
+    
+    def _get_description(self) -> str:
+        return "读取文件指定行周围的代码块（包含前后上下文）。这对于查看搜索结果中特定行的代码上下文非常有用，可以避免读取整个文件，节省上下文空间。"
+    
+    def _get_parameters(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "文件绝对路径"},
+                "line": {"type": "number", "description": "目标行号（从1开始）"},
+                "context_lines": {"type": "number", "description": "前后各包含多少行上下文（默认：10行）", "default": 10},
+            },
+            "required": ["path", "line"],
+        }
+    
+    def run(self, parameters: Dict[str, Any]) -> str:
+        path = parameters["path"]
+        line_num = parameters["line"]
+        context_lines = parameters.get("context_lines", 10)
+        
+        is_valid, error = self.validate_path(path)
+        if not is_valid:
+            return f"文件路径错误: {error}"
+        
+        if not os.path.exists(path):
+            return f"文件 {path} 不存在"
+        
+        if not os.path.isfile(path):
+            return f"{path} 不是文件"
+        
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as file:
+                lines = file.readlines()
+            
+            total_lines = len(lines)
+            
+            # 验证行号
+            if line_num < 1 or line_num > total_lines:
+                return f"行号 {line_num} 超出范围（文件共有 {total_lines} 行）"
+            
+            # 计算起始和结束行号（从0开始索引）
+            start_line = max(0, line_num - 1 - context_lines)
+            end_line = min(total_lines, line_num + context_lines)
+            
+            # 提取代码块
+            code_block = lines[start_line:end_line]
+            
+            # 格式化输出
+            result_lines = [f"文件: {path}"]
+            result_lines.append(f"行号范围: {start_line + 1}-{end_line} (目标行: {line_num})")
+            result_lines.append("")
+            
+            # 添加代码行，带行号
+            for i, line_content in enumerate(code_block, start=start_line + 1):
+                # 标记目标行
+                marker = ">>> " if i == line_num else "    "
+                result_lines.append(f"{marker}{i:4d} | {line_content.rstrip()}")
+            
+            return "\n".join(result_lines)
+        except Exception as e:
+            return f"读取代码块失败: {e}"
