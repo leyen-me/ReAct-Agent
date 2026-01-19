@@ -458,7 +458,7 @@ Respond with: "yes (reason)" or "no (reason)"."""
                 plan_status_callback(f"⚠️ 判断失败")
             return False, f"判断失败: {str(e)}"
     
-    def chat(self, task_message: str, output_callback: Optional[Callable[[str, bool], None]] = None, plan_status_callback: Optional[Callable[[str], None]] = None) -> None:
+    def chat(self, task_message: str, output_callback: Optional[Callable[[str, bool], None]] = None, plan_status_callback: Optional[Callable[[str], None]] = None, status_callback: Optional[Callable[[], None]] = None) -> None:
         """
         处理用户任务
 
@@ -468,6 +468,7 @@ Respond with: "yes (reason)" or "no (reason)"."""
                             如果提供，将使用回调而不是 print
             plan_status_callback: 可选的规划状态回调函数，接受 (status_text) 参数
                                  用于更新 header 中的规划状态显示
+            status_callback: 可选的状态更新回调函数，用于实时更新UI状态（如token使用量）
         """
         # 重置中断标志
         self.should_stop = False
@@ -711,6 +712,9 @@ Respond with: "yes (reason)" or "no (reason)"."""
                     logger.debug(
                         f"\nToken 使用: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}"
                     )
+                    # 通知UI更新状态（实时更新token显示）
+                    if status_callback:
+                        status_callback()
                 else:
                     logger.warning("\nAPI 响应中未找到 prompt_tokens")
             else:

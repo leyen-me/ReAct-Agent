@@ -1730,6 +1730,7 @@ class ReActAgentApp(App):
         self.current_history_id: str | None = None  # 当前对话的历史记录 ID
         self._quit_confirmed = False  # Ctrl+C 退出确认状态
         self._quit_timer = None  # 退出确认定时器
+        self.status_update_timer = None  # 状态更新定时器（用于实时显示token和耗时）
         # 初始化历史记录管理器
         # 历史记录目录放在项目根目录下，而不是工作目录（workspace）
         import sys
@@ -1812,7 +1813,13 @@ class ReActAgentApp(App):
             # 如果获取 token 信息出错，显示默认值
             stats = "  Token: --"
         
-        if self.last_chat_duration is not None:
+        # 实时显示当前对话耗时（如果正在对话中）
+        if self.is_processing and self.chat_start_time is not None:
+            import time
+            current_duration = time.time() - self.chat_start_time
+            duration = f"  [dim]本轮耗时: {current_duration:.1f}s[/]"
+            return f"{status}{stats}{duration}"
+        elif self.last_chat_duration is not None:
             duration = f"  [dim]上轮耗时: {self.last_chat_duration:.1f}s[/]"
             return f"{status}{stats}{duration}"
         else:
@@ -2390,6 +2397,19 @@ class ReActAgentApp(App):
         self.is_processing = True
         self.refresh_status()
         
+        # 启动状态更新定时器（在主线程中，每0.5秒更新一次）
+        def update_status_periodically() -> None:
+            """定期更新状态（实时显示耗时）"""
+            if self.is_processing:
+                self.refresh_status()
+                # 继续设置下一个定时器
+                self.status_update_timer = self.set_timer(0.5, update_status_periodically)
+            else:
+                # 如果对话已结束，停止定时器
+                self.status_update_timer = None
+        
+        self.status_update_timer = self.set_timer(0.5, update_status_periodically)
+        
         self.worker = self.run_worker(
             lambda: self.handle_chat(message),
             thread=True,
@@ -2450,10 +2470,14 @@ class ReActAgentApp(App):
                 """规划状态回调，更新 header 显示"""
                 app.call_from_thread(lambda: app.update_plan_status(status))
             
+            def status_callback() -> None:
+                """状态更新回调，实时更新token和耗时显示"""
+                app.call_from_thread(lambda: app.refresh_status())
+            
             # 清空规划状态
             app.call_from_thread(lambda: app.update_plan_status(""))
             
-            self.agent.chat(message, output_callback, plan_status_callback)
+            self.agent.chat(message, output_callback, plan_status_callback, status_callback)
             
             # 最后确保当前消息已更新（如果还有内容且消息组件存在，已经通过流式更新显示过了）
             # 只有在没有消息组件的情况下才需要 flush（这种情况应该不会发生）
@@ -2478,6 +2502,14 @@ class ReActAgentApp(App):
             app.call_from_thread(lambda: app._finish_chat())
     
     def _finish_chat(self) -> None:
+        # 停止状态更新定时器
+        if self.status_update_timer is not None:
+            try:
+                self.status_update_timer.stop()
+                self.status_update_timer = None
+            except:
+                pass
+        
         # 计算对话耗时
         import time
         if self.chat_start_time is not None:
