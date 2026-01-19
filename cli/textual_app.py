@@ -1113,13 +1113,20 @@ class ReActAgentApp(App):
         else:
             status = "[#7d8590]○[/] 空闲"
         
-        # 添加统计信息
+        # 添加统计信息，确保始终显示
         stats = ""
-        if hasattr(self.agent, "message_manager"):
-            mm = self.agent.message_manager
-            usage = mm.get_token_usage_percent()
-            used = mm.max_context_tokens - mm.get_remaining_tokens()
-            stats = f"  Token: {used:,} ({usage:.0f}%)"
+        try:
+            if hasattr(self.agent, "message_manager") and self.agent.message_manager is not None:
+                mm = self.agent.message_manager
+                usage = mm.get_token_usage_percent()
+                used = mm.max_context_tokens - mm.get_remaining_tokens()
+                stats = f"  Token: {used:,} ({usage:.0f}%)"
+            else:
+                # 如果 message_manager 不存在，显示默认值
+                stats = "  Token: --"
+        except Exception:
+            # 如果获取 token 信息出错，显示默认值
+            stats = "  Token: --"
         
         if self.last_chat_duration is not None:
             duration = f"  [dim]上轮耗时: {self.last_chat_duration:.1f}s[/]"
@@ -1181,7 +1188,8 @@ class ReActAgentApp(App):
     def refresh_status(self) -> None:
         """刷新状态栏"""
         try:
-            self.query_one("#setting-left", Static).update(self._get_status_info())
+            # 统一使用包含 token 信息的版本，确保 token 信息一直显示
+            self.query_one("#setting-left", Static).update(self._get_status_info_with_stats())
             self.query_one("#setting-right", Static).update(self._get_shortcuts_info())
         except Exception:
             pass
@@ -1200,6 +1208,8 @@ class ReActAgentApp(App):
         """应用挂载"""
         self.query_one("#user-input", ChatInput).focus()
         refresh_file_list(config.work_dir)
+        # 延迟刷新状态，确保 token 信息显示（等待 message_manager 初始化）
+        self.set_timer(0.2, lambda: self.refresh_status())
     
     @on(Click, "#header-plan-status")
     def on_plan_status_click(self, event: Click) -> None:
