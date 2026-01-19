@@ -1298,6 +1298,7 @@ class ReActAgentApp(App):
         self.last_chat_duration = None  # 上一轮对话耗时（秒）
         self.current_chat_title: str | None = None  # 当前对话的标题
         self.is_generating_title = False  # 是否正在生成标题
+        self.is_loading_history = False  # 是否正在加载历史记录（防止重复保存）
         # 初始化历史记录管理器
         from pathlib import Path
         history_dir = Path(config.work_dir) / ".agent_history"
@@ -2044,6 +2045,10 @@ class ReActAgentApp(App):
     def _save_chat_history(self) -> None:
         """保存当前对话历史"""
         try:
+            # 如果正在加载历史记录，不保存（避免重复保存）
+            if self.is_loading_history:
+                return
+            
             # 检查是否有对话内容（至少有一条用户消息）
             if not hasattr(self.agent, "message_manager"):
                 return
@@ -2071,6 +2076,17 @@ class ReActAgentApp(App):
             current_plan = None
             if hasattr(self.agent, "current_plan") and self.agent.current_plan is not None:
                 current_plan = self.agent.current_plan.to_dict()
+            
+            # 检查是否与最近保存的历史记录相同（避免重复保存）
+            recent_histories = self.history_manager.get_all_histories()
+            if recent_histories:
+                latest_history = recent_histories[0]  # 最新的历史记录
+                # 比较消息内容是否相同
+                if (latest_history.title == title and
+                    len(latest_history.messages) == len(messages) and
+                    latest_history.messages == messages):
+                    # 如果完全相同，不保存（避免重复）
+                    return
             
             # 保存历史记录
             self.history_manager.save_chat(
@@ -2117,13 +2133,20 @@ class ReActAgentApp(App):
                 self.add_system_message("无法加载历史记录：记录不存在")
                 return
             
+            # 设置加载标志，防止在加载过程中触发保存
+            self.is_loading_history = True
+            
             # 如果当前有未保存的对话，先保存
             if hasattr(self.agent, "message_manager"):
                 messages = self.agent.message_manager.get_messages()
                 user_messages = [m for m in messages if m.get("role") == "user"]
                 assistant_messages = [m for m in messages if m.get("role") == "assistant"]
                 if user_messages and assistant_messages:
+                    # 临时清除加载标志以允许保存当前对话
+                    was_loading = self.is_loading_history
+                    self.is_loading_history = False
                     self._save_chat_history()
+                    self.is_loading_history = was_loading
             
             # 清空当前聊天记录
             chat_container = self.query_one("#chat-log", Vertical)
@@ -2200,10 +2223,15 @@ class ReActAgentApp(App):
             # 显示加载成功消息
             self.add_system_message(f"已加载历史记录：{history.title}")
             
+            # 清除加载标志，允许后续保存
+            self.is_loading_history = False
+            
         except Exception as e:
             import traceback
             error_msg = f"加载历史记录失败: {e}\n\n{traceback.format_exc()}"
             self.add_system_message(error_msg)
+            # 确保在异常情况下也清除加载标志
+            self.is_loading_history = False
     
     def _restore_chat_display(self, messages: List[Dict[str, Any]]) -> None:
         """恢复聊天界面显示"""
