@@ -127,7 +127,7 @@ class CommandPaletteScreen(ModalScreen[str]):
     #palette-container {
         width: 70;
         max-height: 20;
-        background: #1e1e1e;
+        background: #2d2d2d;
         border: none;
         padding: 0;
     }
@@ -475,7 +475,7 @@ class FilePickerScreen(ModalScreen[str]):
     #filepicker-container {
         width: 80;
         height: 24;
-        background: #1e1e1e;
+        background: #2d2d2d;
         border: none;
         padding: 0;
     }
@@ -696,7 +696,7 @@ class PlanViewerScreen(ModalScreen[None]):
     #planviewer-container {
         width: 90%;
         height: 85%;
-        background: #1e1e1e;
+        background: #2d2d2d;
         border: none;
         padding: 0;
     }
@@ -844,7 +844,7 @@ class LogViewerScreen(ModalScreen[None]):
     #logviewer-container {
         width: 90%;
         height: 85%;
-        background: #1e1e1e;
+        background: #2d2d2d;
         border: none;
         padding: 0;
     }
@@ -986,7 +986,7 @@ class HistoryScreen(ModalScreen[ChatHistory]):
     #history-container {
         width: 80;
         height: 24;
-        background: #1e1e1e;
+        background: #2d2d2d;
         border: none;
         padding: 0;
     }
@@ -1218,7 +1218,7 @@ class ConfigEditScreen(ModalScreen[bool]):
         width: 80;
         height: 85%;
         max-height: 85%;
-        background: #1e1e1e;
+        background: #2d2d2d;
         border: none;
         padding: 0;
     }
