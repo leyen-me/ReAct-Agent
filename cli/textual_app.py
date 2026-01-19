@@ -1216,8 +1216,8 @@ class ConfigEditScreen(ModalScreen[bool]):
     
     #config-container {
         width: 80;
-        height: 50;
-        max-height: 50;
+        height: 85%;
+        max-height: 85%;
         background: #ffffff;
         border: none;
         padding: 0;
@@ -1245,13 +1245,20 @@ class ConfigEditScreen(ModalScreen[bool]):
     
     #config-content {
         height: 1fr;
-        max-height: 46;
         padding: 1 2;
-        scrollbar-gutter: stable;
+        background: #ffffff;
+        border: none;
+        overflow-y: auto;
+        scrollbar-color: #e5e7eb;
+        scrollbar-color-hover: #d1d5db;
+        scrollbar-size: 0 1;
     }
     
     #config-form {
+        width: 100%;
         height: auto;
+        background: #ffffff;
+        border: none;
     }
     
     .config-label {
