@@ -7,7 +7,6 @@ from typing import Tuple
 from config import config
 from logger_config import setup_logging
 from agent import ReActAgent
-from utils import refresh_file_list, get_file_count
 from cli import (
     ArgumentHandler,
     CommandProcessor,
@@ -41,9 +40,6 @@ def initialize_application() -> Tuple[ReActAgent, CommandProcessor]:
     
     # 创建 Agent
     agent = ReActAgent()
-    
-    # 初始化文件列表缓存（启动时自动扫描）
-    refresh_file_list(config.work_dir)
     
     # 创建指令处理器
     command_processor = CommandProcessor(agent)

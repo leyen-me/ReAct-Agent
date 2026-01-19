@@ -36,7 +36,6 @@ from cli.chat_widgets import (
     HistoryMessage,
 )
 from config import config
-from utils import refresh_file_list, get_file_list, search_files
 from utils.history_manager import HistoryManager, ChatHistory
 from logger_config import get_all_log_files
 from task_planner import StepStatus
@@ -1458,7 +1457,6 @@ class ReActAgentApp(App):
     def on_mount(self) -> None:
         """应用挂载"""
         self.query_one("#user-input", ChatInput).focus()
-        refresh_file_list(config.work_dir)
         # 延迟刷新状态，确保 token 信息显示（等待 message_manager 初始化）
         self.set_timer(0.2, lambda: self.refresh_status())
     
@@ -1930,7 +1928,6 @@ class ReActAgentApp(App):
         
         self.chat_count += 1
         self.add_user_message(message)
-        refresh_file_list(config.work_dir)
         
         # 如果是新对话（没有标题），异步生成标题
         if self.current_chat_title is None:
