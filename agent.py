@@ -581,9 +581,10 @@ Respond with: "yes (reason)" or "no (reason)"."""
                             model=config.model,
                             messages=messages_with_plan,  # 使用包含计划状态的消息
                             stream=True,
-                            temperature=1,
-                            top_p=1,
+                            temperature=0.7,
+                            top_p=0.8,
                             max_tokens=4096,
+                            presence_penalty=1.05,
                             tools=self._get_tools(),
                             tool_choice="auto",
                         )
