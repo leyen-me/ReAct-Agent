@@ -1299,6 +1299,7 @@ class ReActAgentApp(App):
         self.current_chat_title: str | None = None  # 当前对话的标题
         self.is_generating_title = False  # 是否正在生成标题
         self.is_loading_history = False  # 是否正在加载历史记录（防止重复保存）
+        self.current_history_id: str | None = None  # 当前对话的历史记录 ID
         # 初始化历史记录管理器
         from pathlib import Path
         history_dir = Path(config.work_dir) / ".agent_history"
@@ -2077,26 +2078,18 @@ class ReActAgentApp(App):
             if hasattr(self.agent, "current_plan") and self.agent.current_plan is not None:
                 current_plan = self.agent.current_plan.to_dict()
             
-            # 检查是否与最近保存的历史记录相同（避免重复保存）
-            recent_histories = self.history_manager.get_all_histories()
-            if recent_histories:
-                latest_history = recent_histories[0]  # 最新的历史记录
-                # 比较消息内容是否相同
-                if (latest_history.title == title and
-                    len(latest_history.messages) == len(messages) and
-                    latest_history.messages == messages):
-                    # 如果完全相同，不保存（避免重复）
-                    return
-            
-            # 保存历史记录
-            self.history_manager.save_chat(
+            # 保存或更新历史记录（如果有 current_history_id 则更新，否则创建新的）
+            saved_id = self.history_manager.save_chat(
                 title=title,
                 messages=messages,
                 token_usage=token_usage,
+                history_id=self.current_history_id,  # 如果有当前 ID 则更新，否则创建新的
                 chat_count=self.chat_count,
                 last_chat_duration=self.last_chat_duration,
                 current_plan=current_plan,
             )
+            # 更新当前历史记录 ID
+            self.current_history_id = saved_id
         except Exception as e:
             # 保存失败不影响正常使用
             import logging
@@ -2176,6 +2169,9 @@ class ReActAgentApp(App):
             
             # 恢复最后一轮对话耗时
             self.last_chat_duration = history.last_chat_duration
+            
+            # 恢复历史记录 ID（后续更新会使用这个 ID）
+            self.current_history_id = history.history_id
             
             # 恢复任务计划（如果有）
             if history.current_plan and hasattr(self.agent, "task_planner"):
@@ -2391,6 +2387,8 @@ class ReActAgentApp(App):
         self.chat_count = 0
         # 重置任务计划
         self.agent.current_plan = None
+        # 重置历史记录 ID（新建对话时生成新的 ID）
+        self.current_history_id = None
         # 刷新 header 和状态
         self.refresh_header()
         self.refresh_status()

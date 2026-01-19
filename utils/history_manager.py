@@ -3,6 +3,7 @@
 
 import json
 import logging
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -18,6 +19,7 @@ class ChatHistory:
         title: str,
         messages: List[Dict[str, Any]],
         token_usage: Dict[str, int],
+        history_id: Optional[str] = None,
         created_at: Optional[str] = None,
         updated_at: Optional[str] = None,
         chat_count: int = 0,
@@ -31,12 +33,14 @@ class ChatHistory:
             title: 对话标题
             messages: 消息列表
             token_usage: token 使用情况 {"used": int, "max": int, "percent": float}
+            history_id: 历史记录唯一 ID（如果不提供则自动生成）
             created_at: 创建时间（ISO 格式字符串）
             updated_at: 更新时间（ISO 格式字符串）
             chat_count: 对话轮数
             last_chat_duration: 最后一轮对话耗时（秒）
             current_plan: 当前任务计划（如果有）
         """
+        self.history_id = history_id or str(uuid.uuid4())
         self.title = title
         self.messages = messages
         self.token_usage = token_usage
@@ -49,6 +53,7 @@ class ChatHistory:
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {
+            "history_id": self.history_id,
             "title": self.title,
             "messages": self.messages,
             "token_usage": self.token_usage,
@@ -66,6 +71,7 @@ class ChatHistory:
             title=data.get("title", "未命名对话"),
             messages=data.get("messages", []),
             token_usage=data.get("token_usage", {"used": 0, "max": 0, "percent": 0.0}),
+            history_id=data.get("history_id"),  # 如果没有 ID，会自动生成
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at"),
             chat_count=data.get("chat_count", 0),
@@ -124,46 +130,73 @@ class HistoryManager:
         title: str,
         messages: List[Dict[str, Any]],
         token_usage: Dict[str, int],
+        history_id: Optional[str] = None,
         chat_count: int = 0,
         last_chat_duration: Optional[float] = None,
         current_plan: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
-        保存对话历史
+        保存或更新对话历史
         
         Args:
             title: 对话标题
             messages: 消息列表
             token_usage: token 使用情况 {"used": int, "max": int, "percent": float}
+            history_id: 历史记录唯一 ID（如果提供则更新现有记录，否则创建新记录）
             chat_count: 对话轮数
             last_chat_duration: 最后一轮对话耗时（秒）
             current_plan: 当前任务计划（如果有）
             
         Returns:
-            历史记录 ID（时间戳）
+            历史记录 ID
         """
-        history_id = datetime.now().isoformat()
+        # 如果提供了 history_id，尝试更新现有记录
+        if history_id:
+            for i, existing_history in enumerate(self._histories):
+                if existing_history.history_id == history_id:
+                    # 更新现有记录
+                    existing_history.title = title
+                    existing_history.messages = messages
+                    existing_history.token_usage = token_usage
+                    existing_history.updated_at = datetime.now().isoformat()
+                    existing_history.chat_count = chat_count
+                    existing_history.last_chat_duration = last_chat_duration
+                    existing_history.current_plan = current_plan
+                    # 移动到列表开头（最新的在前）
+                    self._histories.pop(i)
+                    self._histories.insert(0, existing_history)
+                    self._save_histories()
+                    return history_id
         
-        history = ChatHistory(
+        # 创建新记录
+        new_history = ChatHistory(
             title=title,
             messages=messages,
             token_usage=token_usage,
-            created_at=history_id,
-            updated_at=history_id,
+            history_id=history_id,  # 如果没有提供，ChatHistory 会自动生成
+            created_at=datetime.now().isoformat(),
+            updated_at=datetime.now().isoformat(),
             chat_count=chat_count,
             last_chat_duration=last_chat_duration,
             current_plan=current_plan,
         )
         
         # 添加到列表开头（最新的在前）
-        self._histories.insert(0, history)
+        self._histories.insert(0, new_history)
         
         # 限制历史记录数量（最多保留 100 条）
         if len(self._histories) > 100:
             self._histories = self._histories[:100]
         
         self._save_histories()
-        return history_id
+        return new_history.history_id
+    
+    def get_history_by_id(self, history_id: str) -> Optional[ChatHistory]:
+        """根据 ID 获取历史记录"""
+        for history in self._histories:
+            if history.history_id == history_id:
+                return history
+        return None
     
     def get_all_histories(self) -> List[ChatHistory]:
         """获取所有历史记录（按时间倒序）"""
