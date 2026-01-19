@@ -1718,8 +1718,15 @@ class ReActAgentApp(App):
         self._quit_timer = None  # 退出确认定时器
         # 初始化历史记录管理器
         # 历史记录目录放在项目根目录下，而不是工作目录（workspace）
-        from utils.path import get_project_root
-        project_root = get_project_root()
+        import sys
+        from pathlib import Path
+        # 如果是 PyInstaller 打包后的可执行文件
+        if getattr(sys, 'frozen', False):
+            # 使用可执行文件所在目录（而不是临时目录）
+            project_root = Path(sys.executable).parent
+        else:
+            # 开发环境：textual_app.py 在 cli/ 目录下，所以需要向上两级到项目根目录
+            project_root = Path(__file__).parent.parent
         history_dir = project_root / ".agent_history"
         self.history_manager = HistoryManager(history_dir)
     

@@ -8,12 +8,17 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from utils.path import get_project_root
-
 
 def get_log_dir() -> Path:
     """获取日志目录路径"""
-    project_root = get_project_root()
+    # 如果是 PyInstaller 打包后的可执行文件
+    if getattr(sys, 'frozen', False):
+        # 使用可执行文件所在目录（而不是临时目录）
+        project_root = Path(sys.executable).parent
+    else:
+        # 开发环境：使用 logger_config.py 所在目录
+        project_root = Path(__file__).parent
+    
     log_dir = project_root / ".agent_logs"
     return log_dir
 
