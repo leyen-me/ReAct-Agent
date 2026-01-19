@@ -41,3 +41,6 @@ logs/
 .DS_Store
 Thumbs.db
 workspace/
+
+# 历史记录
+.agent_history/

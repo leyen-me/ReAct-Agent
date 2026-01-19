@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """基于 Textual 的界面应用 - 简洁风格"""
 
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Any
 
 from textual.app import App, ComposeResult
 from textual.widgets import (
@@ -37,6 +37,7 @@ from cli.chat_widgets import (
 )
 from config import config
 from utils import refresh_file_list, get_file_list, search_files
+from utils.history_manager import HistoryManager, ChatHistory
 from logger_config import get_all_log_files
 from task_planner import StepStatus
 
@@ -799,6 +800,237 @@ class LogViewerScreen(ModalScreen[None]):
             self._load_log_content(log_file)
 
 
+class HistoryScreen(ModalScreen[ChatHistory]):
+    """历史记录选择对话框"""
+    
+    BINDINGS = [
+        Binding("escape", "dismiss", "关闭"),
+        Binding("tab", "toggle_focus", "切换焦点"),
+    ]
+    
+    CSS = """
+    HistoryScreen {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.5);
+    }
+    
+    #history-container {
+        width: 80;
+        height: 24;
+        background: #ffffff;
+        border: none;
+        padding: 0;
+    }
+    
+    #history-header {
+        height: 3;
+        background: #ffffff;
+        padding: 0 2;
+        margin-top: 1;
+        border-bottom: solid #e5e7eb;
+        align-vertical: middle;
+    }
+    
+    #history-title {
+        width: 1fr;
+        color: #000000;
+        text-style: bold;
+    }
+    
+    #history-hint {
+        width: auto;
+        color: #7d8590;
+    }
+    
+    #history-content {
+        height: 1fr;
+        padding: 1 2;
+    }
+    
+    #history-search {
+        width: 100%;
+        height: 1;
+        margin-bottom: 1;
+        background: #ffffff;
+        border: none;
+        color: #000000;
+        align-vertical: middle;
+    }
+    
+    #history-search:focus {
+        border: none;
+    }
+    
+    #history-list {
+        height: auto;
+        max-height: 16;
+        background: #ffffff;
+        border: none;
+    }
+    
+    #history-list > .option-list--option-highlighted {
+        background: #f3f3f3;
+    }
+    
+    #history-list > .option-list--option {
+        color: #000000;
+    }
+    """
+    
+    def __init__(self, history_manager: HistoryManager):
+        super().__init__()
+        self.history_manager = history_manager
+        self.histories: List[ChatHistory] = []
+        self.filtered_histories: List[ChatHistory] = []
+        self.focus_on_input = True
+    
+    def compose(self) -> ComposeResult:
+        with Container(id="history-container"):
+            with Horizontal(id="history-header"):
+                yield Static("📚 历史记录", id="history-title")
+                yield Static("[dim]ESC[/] 退出  [dim]Enter[/] 加载", id="history-hint")
+            with Container(id="history-content"):
+                yield Input(placeholder="搜索历史记录...", id="history-search")
+                yield OptionList(id="history-list")
+    
+    def on_mount(self) -> None:
+        self._load_histories()
+        option_list = self.query_one("#history-list", OptionList)
+        # 不自动高亮第一项，让用户明确选择
+        # 只在有历史记录时设置 highlighted，但不触发选择事件
+        if self.filtered_histories:
+            # 延迟设置 highlighted，避免立即触发选择
+            def set_highlight():
+                option_list.highlighted = 0
+            self.set_timer(0.1, set_highlight)
+        self.query_one("#history-search", Input).focus()
+        self.focus_on_input = True
+    
+    def _load_histories(self) -> None:
+        """加载历史记录"""
+        self.histories = self.history_manager.get_all_histories()
+        self.filtered_histories = self.histories.copy()
+        self._update_list()
+    
+    def _update_list(self) -> None:
+        """更新列表显示"""
+        option_list = self.query_one("#history-list", OptionList)
+        option_list.clear_options()
+        
+        if not self.filtered_histories:
+            option_list.add_option(Option("无历史记录", id="empty"))
+            return
+        
+        for i, history in enumerate(self.filtered_histories):
+            # 格式化显示：标题 | 时间 | Token使用
+            from datetime import datetime
+            try:
+                created_time = datetime.fromisoformat(history.created_at)
+                time_str = created_time.strftime("%m-%d %H:%M")
+            except:
+                time_str = history.created_at[:10] if history.created_at else "未知"
+            
+            token_info = f"{history.token_usage.get('used', 0):,}/{history.token_usage.get('max', 0):,}"
+            token_percent = history.token_usage.get('percent', 0.0)
+            
+            display_text = f"{history.title}  [dim]| {time_str} | Token: {token_info} ({token_percent:.0f}%)[/]"
+            # 使用历史记录对象作为 id（通过序列化）
+            import json
+            history_id = json.dumps({"index": i}, ensure_ascii=False)
+            option_list.add_option(Option(display_text, id=history_id))
+        
+        if self.filtered_histories:
+            option_list.highlighted = 0
+    
+    @on(Input.Changed, "#history-search")
+    def filter_histories(self, event: Input.Changed) -> None:
+        query = event.value.lower().strip()
+        
+        if not query:
+            self.filtered_histories = self.histories.copy()
+        else:
+            self.filtered_histories = [
+                h for h in self.histories
+                if query in h.title.lower() or query in h.created_at.lower()
+            ]
+        
+        self._update_list()
+    
+    @on(OptionList.OptionSelected, "#history-list")
+    def on_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """处理列表项选择（双击时触发）"""
+        if event.option.id and event.option.id != "empty":
+            try:
+                import json
+                data = json.loads(event.option.id)
+                index = data.get("index", 0)
+                if 0 <= index < len(self.filtered_histories):
+                    # 用户明确选择了记录，加载它
+                    self.dismiss(self.filtered_histories[index])
+            except (ValueError, json.JSONDecodeError, KeyError):
+                pass
+    
+    @on(Input.Submitted, "#history-search")
+    def on_search_submitted(self, event: Input.Submitted) -> None:
+        # 搜索框提交时，将焦点切换到列表，让用户选择
+        # 不要自动选择第一条，让用户明确选择
+        option_list = self.query_one("#history-list", OptionList)
+        if self.filtered_histories:
+            option_list.focus()
+            if option_list.highlighted is None:
+                option_list.highlighted = 0
+            self.focus_on_input = False
+            event.prevent_default()
+    
+    @on(Key)
+    def on_key(self, event: Key) -> None:
+        """处理按键事件"""
+        focused = self.focused
+        option_list = self.query_one("#history-list", OptionList)
+        
+        if isinstance(focused, Input):
+            # 输入框获得焦点时，上下键操作列表
+            if event.key == "up":
+                if self.filtered_histories:
+                    option_list.focus()
+                    current = option_list.highlighted or 0
+                    option_list.highlighted = max(0, current - 1)
+                    self.focus_on_input = False
+                    event.prevent_default()
+            elif event.key == "down":
+                if self.filtered_histories:
+                    option_list.focus()
+                    current = option_list.highlighted or 0
+                    option_list.highlighted = min(len(self.filtered_histories) - 1, current + 1)
+                    self.focus_on_input = False
+                    event.prevent_default()
+            elif event.key == "tab":
+                self.action_toggle_focus()
+                event.prevent_default()
+        elif isinstance(focused, OptionList):
+            if event.key == "enter":
+                highlighted = option_list.highlighted
+                if highlighted is not None and self.filtered_histories:
+                    self.dismiss(self.filtered_histories[highlighted])
+                    event.prevent_default()
+            elif event.key == "tab":
+                self.action_toggle_focus()
+                event.prevent_default()
+    
+    def action_toggle_focus(self) -> None:
+        """切换焦点"""
+        if self.focus_on_input:
+            option_list = self.query_one("#history-list", OptionList)
+            if self.filtered_histories:
+                option_list.focus()
+                if option_list.highlighted is None:
+                    option_list.highlighted = 0
+                self.focus_on_input = False
+        else:
+            self.query_one("#history-search", Input).focus()
+            self.focus_on_input = True
+
+
 class ReActAgentApp(App):
     """ReAct Agent Textual 应用 - 简洁风格"""
     
@@ -1066,6 +1298,10 @@ class ReActAgentApp(App):
         self.last_chat_duration = None  # 上一轮对话耗时（秒）
         self.current_chat_title: str | None = None  # 当前对话的标题
         self.is_generating_title = False  # 是否正在生成标题
+        # 初始化历史记录管理器
+        from pathlib import Path
+        history_dir = Path(config.work_dir) / ".agent_history"
+        self.history_manager = HistoryManager(history_dir)
     
     def compose(self) -> ComposeResult:
         """组合应用界面"""
@@ -1436,6 +1672,7 @@ class ReActAgentApp(App):
             ("status", "Status", "上下文使用情况"),
             ("plan", "Plan", "查看任务计划进度"),
             ("messages", "Messages", "消息历史"),
+            ("history", "History", "历史记录"),
             ("logs", "Logs", "查看日志"),
             ("clear", "Clear", "清空聊天"),
             ("exit", "Exit", "退出应用"),
@@ -1463,6 +1700,8 @@ class ReActAgentApp(App):
             elif cmd_id == "messages":
                 self._show_messages()
                 input_widget.focus()
+            elif cmd_id == "history":
+                self._open_history_screen()
             elif cmd_id == "logs":
                 self._open_log_viewer()
             elif cmd_id == "clear":
@@ -1679,6 +1918,9 @@ class ReActAgentApp(App):
         if message == "/plan":
             self._show_plan()
             return
+        elif message == "/history":
+            self._open_history_screen()
+            return
         
         self.chat_count += 1
         self.add_user_message(message)
@@ -1788,6 +2030,9 @@ class ReActAgentApp(App):
             self.last_chat_duration = time.time() - self.chat_start_time
             self.chat_start_time = None
         
+        # 保存历史记录（如果有对话内容）
+        self._save_chat_history()
+        
         self.is_processing = False
         self.refresh_header()
         self.refresh_status()
@@ -1795,6 +2040,213 @@ class ReActAgentApp(App):
         if not input_widget.text:
             input_widget._show_placeholder()
         input_widget.focus()
+    
+    def _save_chat_history(self) -> None:
+        """保存当前对话历史"""
+        try:
+            # 检查是否有对话内容（至少有一条用户消息）
+            if not hasattr(self.agent, "message_manager"):
+                return
+            
+            messages = self.agent.message_manager.get_messages()
+            # 只保存有实际对话内容的记录（至少有一条用户消息和一条助手消息）
+            user_messages = [m for m in messages if m.get("role") == "user"]
+            assistant_messages = [m for m in messages if m.get("role") == "assistant"]
+            
+            if not user_messages or not assistant_messages:
+                return
+            
+            # 获取 token 使用情况
+            mm = self.agent.message_manager
+            token_usage = {
+                "used": mm.max_context_tokens - mm.get_remaining_tokens(),
+                "max": mm.max_context_tokens,
+                "percent": mm.get_token_usage_percent(),
+            }
+            
+            # 获取标题（如果没有则使用第一条用户消息的前15个字符）
+            title = self.current_chat_title or (user_messages[0].get("content", "")[:15] if user_messages else "未命名对话")
+            
+            # 获取任务计划（如果有）
+            current_plan = None
+            if hasattr(self.agent, "current_plan") and self.agent.current_plan is not None:
+                current_plan = self.agent.current_plan.to_dict()
+            
+            # 保存历史记录
+            self.history_manager.save_chat(
+                title=title,
+                messages=messages,
+                token_usage=token_usage,
+                chat_count=self.chat_count,
+                last_chat_duration=self.last_chat_duration,
+                current_plan=current_plan,
+            )
+        except Exception as e:
+            # 保存失败不影响正常使用
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"保存历史记录失败: {e}")
+    
+    def _open_history_screen(self) -> None:
+        """打开历史记录选择弹窗"""
+        # 如果已经有弹窗打开，不重复打开
+        if isinstance(self.screen, ModalScreen):
+            return
+        
+        def handle_history_selection(history: ChatHistory | None) -> None:
+            input_widget = self.query_one("#user-input", ChatInput)
+            
+            if history is None:
+                # 取消选择，聚焦到 user-input
+                input_widget.focus()
+                return
+            
+            # 加载选中的历史记录
+            self._load_history(history)
+            input_widget.focus()
+        
+        # 移除 user-input 的焦点
+        input_widget = self.query_one("#user-input", ChatInput)
+        input_widget.blur()
+        self.push_screen(HistoryScreen(self.history_manager), handle_history_selection)
+    
+    def _load_history(self, history: ChatHistory) -> None:
+        """加载历史记录并恢复对话状态"""
+        try:
+            if not history:
+                self.add_system_message("无法加载历史记录：记录不存在")
+                return
+            
+            # 如果当前有未保存的对话，先保存
+            if hasattr(self.agent, "message_manager"):
+                messages = self.agent.message_manager.get_messages()
+                user_messages = [m for m in messages if m.get("role") == "user"]
+                assistant_messages = [m for m in messages if m.get("role") == "assistant"]
+                if user_messages and assistant_messages:
+                    self._save_chat_history()
+            
+            # 清空当前聊天记录
+            chat_container = self.query_one("#chat-log", Vertical)
+            chat_container.remove_children()
+            
+            # 恢复消息历史
+            if hasattr(self.agent, "message_manager"):
+                # 保留系统消息，替换其他消息
+                system_message = self.agent.message_manager.messages[0] if self.agent.message_manager.messages else None
+                self.agent.message_manager.messages = history.messages.copy()
+                # 如果原系统消息存在且历史记录中没有系统消息，则添加
+                if system_message and not any(m.get("role") == "system" for m in history.messages):
+                    self.agent.message_manager.messages.insert(0, system_message)
+                
+                # 恢复 token 使用情况（使用历史记录中的值）
+                used_tokens = history.token_usage.get("used", 0)
+                max_tokens = history.token_usage.get("max", self.agent.message_manager.max_context_tokens)
+                # 注意：这里我们只能设置 current_tokens，无法直接设置 remaining_tokens
+                self.agent.message_manager.current_tokens = used_tokens
+            
+            # 恢复对话标题
+            self.current_chat_title = history.title
+            self.is_generating_title = False
+            
+            # 恢复对话轮数
+            self.chat_count = history.chat_count
+            
+            # 恢复最后一轮对话耗时
+            self.last_chat_duration = history.last_chat_duration
+            
+            # 恢复任务计划（如果有）
+            if history.current_plan and hasattr(self.agent, "task_planner"):
+                try:
+                    from task_planner import TaskPlan, PlanStep, StepStatus
+                    from datetime import datetime
+                    
+                    plan_data = history.current_plan
+                    steps = []
+                    for step_data in plan_data.get("steps", []):
+                        step = PlanStep(
+                            step_number=step_data["step_number"],
+                            description=step_data["description"],
+                            expected_tools=step_data.get("expected_tools", []),
+                            status=StepStatus(step_data.get("status", "pending")),
+                            result=step_data.get("result"),
+                            error=step_data.get("error"),
+                            start_time=datetime.fromisoformat(step_data["start_time"]) if step_data.get("start_time") else None,
+                            end_time=datetime.fromisoformat(step_data["end_time"]) if step_data.get("end_time") else None,
+                        )
+                        steps.append(step)
+                    
+                    plan = TaskPlan(
+                        task_description=plan_data["task_description"],
+                        steps=steps,
+                        created_at=datetime.fromisoformat(plan_data["created_at"]),
+                        current_step=plan_data.get("current_step", 0),
+                    )
+                    self.agent.current_plan = plan
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.debug(f"恢复任务计划失败: {e}")
+                    self.agent.current_plan = None
+            else:
+                self.agent.current_plan = None
+            
+            # 恢复聊天界面显示
+            self._restore_chat_display(history.messages)
+            
+            # 刷新界面
+            self.refresh_header()
+            self.refresh_status()
+            
+            # 显示加载成功消息
+            self.add_system_message(f"已加载历史记录：{history.title}")
+            
+        except Exception as e:
+            import traceback
+            error_msg = f"加载历史记录失败: {e}\n\n{traceback.format_exc()}"
+            self.add_system_message(error_msg)
+    
+    def _restore_chat_display(self, messages: List[Dict[str, Any]]) -> None:
+        """恢复聊天界面显示"""
+        chat_container = self.query_one("#chat-log", Vertical)
+        
+        for message in messages:
+            role = message.get("role", "unknown")
+            content = message.get("content", "")
+            tool_calls = message.get("tool_calls", [])
+            
+            if role == "user":
+                # 用户消息
+                if content:
+                    msg = UserMessage(content)
+                    chat_container.mount(msg)
+            elif role == "assistant":
+                # 助手消息
+                if tool_calls:
+                    # 工具调用消息
+                    tool_info = []
+                    for tool_call in tool_calls:
+                        if "function" in tool_call:
+                            func = tool_call["function"]
+                            name = func.get("name", "unknown")
+                            args = func.get("arguments", "")
+                            tool_info.append(f"工具: {name}\n参数: {args}")
+                    if tool_info:
+                        msg = ToolMessage("\n".join(tool_info))
+                        chat_container.mount(msg)
+                elif content:
+                    # 普通助手消息
+                    msg = ContentMessage(content)
+                    chat_container.mount(msg)
+            elif role == "tool":
+                # 工具结果消息
+                if content:
+                    msg = ToolMessage(f"工具结果: {content[:500]}{'...' if len(content) > 500 else ''}")
+                    chat_container.mount(msg)
+            elif role == "system":
+                # 系统消息（跳过，不显示在聊天界面）
+                pass
+        
+        self._scroll_to_bottom()
     
     def _flush_content(self, section: str, content: str) -> None:
         self.flush_current_content(section, content)
@@ -1890,18 +2342,27 @@ class ReActAgentApp(App):
         """新建对话"""
         if self.is_processing:
             return
+        
+        # 保存当前对话历史（如果有内容）
+        self._save_chat_history()
+        
         # 清空聊天记录
         chat_container = self.query_one("#chat-log", Vertical)
         chat_container.remove_children()
         # 重置 agent 的消息历史
         if hasattr(self.agent, "message_manager"):
             # 保留系统消息，清空其他消息
-            system_message = self.agent.message_manager.messages[0]
-            self.agent.message_manager.messages = [system_message]
+            if self.agent.message_manager.messages:
+                system_message = self.agent.message_manager.messages[0]
+                self.agent.message_manager.messages = [system_message]
             self.agent.message_manager.current_tokens = 0
         # 重置对话标题
         self.current_chat_title = None
         self.is_generating_title = False
+        # 重置对话轮数
+        self.chat_count = 0
+        # 重置任务计划
+        self.agent.current_plan = None
         # 刷新 header 和状态
         self.refresh_header()
         self.refresh_status()
