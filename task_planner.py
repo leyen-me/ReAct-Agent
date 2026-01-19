@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """任务规划模块"""
 
+import math
 import json
 import logging
 from typing import List, Dict, Any, Optional, Callable
@@ -222,6 +223,7 @@ class TaskPlanner:
             if plan_status_callback:
                 plan_status_callback("📋 解析计划中...")
             plan = self._parse_plan(task_description, plan_content)
+            plan = self._compact_plan(plan)
             logger.info(f"规划完成，共 {len(plan.steps)} 个步骤")
 
             return plan
@@ -280,6 +282,8 @@ You must output your plan as valid JSON with the following structure:
 - Descriptions should be clear and specific enough for execution
 - If a step doesn't require tools, use an empty array: []
 - Keep the plan concise but comprehensive
+- Avoid over-decomposition; prefer grouping related actions
+- Simple tasks should be 1–3 steps; complex tasks should usually stay within 3–6 steps
 
 ## Example
 
@@ -341,6 +345,8 @@ User request: "Create a Python web application with a database"
 - Tool names must match exactly from the available tools list
 - Consider the environment context when planning
 - Ensure the plan is complete and covers all aspects of the request
+- Avoid over-decomposition; group related actions where possible
+- For simple tasks, limit to 1–3 steps; for complex tasks, aim for 3–6 steps
 
 Please provide your plan in the JSON format specified in the system instructions."""
 
@@ -373,6 +379,35 @@ Please provide your plan in the JSON format specified in the system instructions
         
         # 如果 JSON 解析失败，尝试文本解析
         return self._parse_plan_from_text(task_description, plan_content)
+
+    def _compact_plan(self, plan: TaskPlan) -> TaskPlan:
+        """压缩过长的计划，避免过度拆分"""
+        max_steps = max(1, int(getattr(config, "max_plan_steps", 6)))
+        if len(plan.steps) <= max_steps:
+            return plan
+
+        chunk_size = int(math.ceil(len(plan.steps) / max_steps))
+        compacted_steps: List[PlanStep] = []
+        step_number = 1
+        for i in range(0, len(plan.steps), chunk_size):
+            chunk = plan.steps[i:i + chunk_size]
+            descriptions = [s.description for s in chunk if s.description]
+            merged_description = " / ".join(descriptions) if descriptions else "合并步骤"
+            expected_tools: List[str] = []
+            for s in chunk:
+                for tool in s.expected_tools:
+                    if tool not in expected_tools:
+                        expected_tools.append(tool)
+            compacted_steps.append(PlanStep(
+                step_number=step_number,
+                description=merged_description,
+                expected_tools=expected_tools,
+            ))
+            step_number += 1
+
+        plan.steps = compacted_steps
+        plan.current_step = 0
+        return plan
 
     def _parse_plan_from_text(self, task_description: str, plan_content: str) -> TaskPlan:
         """从文本解析计划（备用方法）"""

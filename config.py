@@ -74,6 +74,7 @@ class Config:
         
         # 任务规划配置
         self.enable_task_planning: bool = os.getenv("ENABLE_TASK_PLANNING", "true").lower() == "true"
+        self.max_plan_steps: int = int(os.getenv("MAX_PLAN_STEPS", "6"))
     
     def validate(self) -> None:
         """验证配置"""
