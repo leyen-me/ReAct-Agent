@@ -1258,21 +1258,44 @@ class ReActAgentApp(App):
             # 设置新值（此时没有焦点，不会选中）
             input_widget.text = new_value
             
-            # 延迟恢复焦点并清除选中状态
+            # 立即尝试设置光标位置到文本末尾（即使没有焦点）
+            def set_cursor_immediately():
+                try:
+                    # 使用 document.end 获取文档末尾位置
+                    end_location = input_widget.document.end
+                    input_widget.cursor_location = end_location
+                except Exception:
+                    # 如果失败，尝试使用 move_cursor
+                    try:
+                        end_location = input_widget.document.end
+                        input_widget.move_cursor(end_location, select=False)
+                    except Exception:
+                        pass
+            
+            # 延迟设置光标位置，确保文档已更新
+            self.set_timer(0.05, set_cursor_immediately)
+            
+            # 延迟恢复焦点
             def restore_focus():
                 input_widget.focus()
-                # 延迟清除选中状态
-                def clear_selection():
+                # 再次确保光标在末尾（因为恢复焦点可能会重置光标）
+                def ensure_cursor_end():
                     if input_widget.has_focus and self._programmatic_value_set:
-                        # 设置光标位置到文本末尾，这会取消选中
                         try:
-                            input_widget.action_end()
-                        except AttributeError:
-                            # 如果 action_end 不存在，尝试其他方法
-                            pass
+                            end_location = input_widget.document.end
+                            input_widget.cursor_location = end_location
+                        except Exception:
+                            try:
+                                end_location = input_widget.document.end
+                                input_widget.move_cursor(end_location, select=False)
+                            except Exception:
+                                try:
+                                    input_widget.action_end()
+                                except AttributeError:
+                                    pass
                         self._programmatic_value_set = False
-                self.set_timer(0.05, clear_selection)
-            self.set_timer(0.05, restore_focus)
+                self.set_timer(0.05, ensure_cursor_end)
+            self.set_timer(0.1, restore_focus)
         self._open_file_picker()
     
     def _open_palette_from_slash(self) -> None:
@@ -1336,20 +1359,43 @@ class ReActAgentApp(App):
                 # 设置新值（此时没有焦点，不会选中）
                 input_widget.text = new_value
                 
-                # 延迟恢复焦点并清除选中状态
+                # 立即尝试设置光标位置到文本末尾（即使没有焦点）
+                def set_cursor_immediately():
+                    try:
+                        # 使用 document.end 获取文档末尾位置
+                        end_location = input_widget.document.end
+                        input_widget.cursor_location = end_location
+                    except Exception:
+                        # 如果失败，尝试使用 move_cursor
+                        try:
+                            end_location = input_widget.document.end
+                            input_widget.move_cursor(end_location, select=False)
+                        except Exception:
+                            pass
+                
+                # 延迟设置光标位置，确保文档已更新
+                self.set_timer(0.05, set_cursor_immediately)
+                
+                # 延迟恢复焦点
                 def restore_focus():
                     input_widget.focus()
-                    # 延迟清除选中状态
-                    def clear_selection():
+                    # 再次确保光标在末尾（因为恢复焦点可能会重置光标）
+                    def ensure_cursor_end():
                         if input_widget.has_focus and self._programmatic_value_set:
-                            # 设置光标位置到文本末尾，这会取消选中
                             try:
-                                input_widget.action_end()
-                            except AttributeError:
-                                # 如果 action_end 不存在，尝试其他方法
-                                pass
+                                end_location = input_widget.document.end
+                                input_widget.cursor_location = end_location
+                            except Exception:
+                                try:
+                                    end_location = input_widget.document.end
+                                    input_widget.move_cursor(end_location, select=False)
+                                except Exception:
+                                    try:
+                                        input_widget.action_end()
+                                    except AttributeError:
+                                        pass
                             self._programmatic_value_set = False
-                    self.set_timer(0.05, clear_selection)
+                    self.set_timer(0.05, ensure_cursor_end)
                 self.set_timer(0.1, restore_focus)
             else:
                 # 无论是否选择文件，关闭弹窗后都聚焦到 user-input
