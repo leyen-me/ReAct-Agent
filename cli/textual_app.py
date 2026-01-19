@@ -1301,8 +1301,12 @@ class ReActAgentApp(App):
         self.is_loading_history = False  # 是否正在加载历史记录（防止重复保存）
         self.current_history_id: str | None = None  # 当前对话的历史记录 ID
         # 初始化历史记录管理器
+        # 历史记录目录放在项目根目录下，而不是工作目录（workspace）
         from pathlib import Path
-        history_dir = Path(config.work_dir) / ".agent_history"
+        # 获取项目根目录（与 logger_config.py 相同的逻辑）
+        # textual_app.py 在 cli/ 目录下，所以需要向上两级到项目根目录
+        project_root = Path(__file__).parent.parent
+        history_dir = project_root / ".agent_history"
         self.history_manager = HistoryManager(history_dir)
     
     def compose(self) -> ComposeResult:
