@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """基于 Textual 的界面应用 - 简洁风格"""
 
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Set
+import json
+from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.widgets import (
@@ -11,8 +13,10 @@ from textual.widgets import (
     OptionList,
     DirectoryTree,
     Button,
+    Tree,
 )
 from textual.widgets.option_list import Option
+from textual.widgets.tree import TreeNode
 from textual.containers import (
     Horizontal,
     Vertical,
@@ -291,8 +295,171 @@ class CommandPaletteScreen(ModalScreen[str]):
                 event.prevent_default()
 
 
+class DirectoryTreeCache:
+    """DirectoryTree 展开状态缓存管理器（内存缓存）"""
+    
+    def __init__(self):
+        """初始化缓存管理器"""
+        self.cache: Dict[str, Set[str]] = {}  # {work_dir: {expanded_paths}}
+    
+    def get_expanded_paths(self, work_dir: str) -> Set[str]:
+        """获取指定工作目录的展开路径集合"""
+        work_dir = str(Path(work_dir).resolve())
+        return self.cache.get(work_dir, set()).copy()
+    
+    def set_expanded_paths(self, work_dir: str, expanded_paths: Set[str]) -> None:
+        """设置指定工作目录的展开路径集合"""
+        work_dir = str(Path(work_dir).resolve())
+        self.cache[work_dir] = expanded_paths
+    
+    def add_expanded_path(self, work_dir: str, path: str) -> None:
+        """添加一个展开的路径"""
+        work_dir = str(Path(work_dir).resolve())
+        if work_dir not in self.cache:
+            self.cache[work_dir] = set()
+        self.cache[work_dir].add(str(Path(path).resolve()))
+    
+    def remove_expanded_path(self, work_dir: str, path: str) -> None:
+        """移除一个展开的路径"""
+        work_dir = str(Path(work_dir).resolve())
+        if work_dir in self.cache:
+            self.cache[work_dir].discard(str(Path(path).resolve()))
+
+
+class CachedDirectoryTree(DirectoryTree):
+    """带缓存功能的 DirectoryTree，可以记住展开状态"""
+    
+    def __init__(self, path: str, cache: DirectoryTreeCache | None = None, **kwargs):
+        """
+        初始化带缓存的 DirectoryTree
+        
+        Args:
+            path: 目录路径
+            cache: 缓存管理器实例，如果为 None 则创建新的实例
+            **kwargs: 传递给 DirectoryTree 的其他参数
+        """
+        super().__init__(path, **kwargs)
+        self.cache = cache or DirectoryTreeCache()
+        self.work_dir = str(Path(path).resolve())
+        self._restoring_expanded = False  # 标记是否正在恢复展开状态
+    
+    def on_mount(self) -> None:
+        """挂载时恢复展开状态"""
+        super().on_mount()
+        # 延迟恢复展开状态，确保树已完全加载
+        self.set_timer(0.1, self._restore_expanded_state)
+    
+    def _restore_expanded_state(self) -> None:
+        """恢复展开状态"""
+        if self._restoring_expanded:
+            return
+        
+        self._restoring_expanded = True
+        try:
+            expanded_paths = self.cache.get_expanded_paths(self.work_dir)
+            if not expanded_paths:
+                return
+            
+            # 遍历所有节点，展开缓存的路径
+            def expand_nodes(node: TreeNode) -> None:
+                try:
+                    # DirectoryTree 的节点数据是 Path 对象
+                    if hasattr(node.data, 'path'):
+                        node_path = str(Path(node.data.path).resolve())
+                    elif isinstance(node.data, Path):
+                        node_path = str(node.data.resolve())
+                    else:
+                        return
+                    
+                    if node_path in expanded_paths:
+                        if not node.is_expanded:
+                            node.expand()
+                    
+                    # 递归处理子节点（需要等待子节点加载）
+                    # 延迟处理子节点，因为展开节点后子节点可能还没加载
+                    if node.is_expanded:
+                        def expand_children_delayed():
+                            self._expand_children(node, expanded_paths)
+                        self.set_timer(0.05, expand_children_delayed)
+                except Exception:
+                    pass
+            
+            # 从根节点开始恢复
+            root = self.root
+            if root:
+                expand_nodes(root)
+        finally:
+            # 延迟清除标记，确保所有节点都已处理
+            def clear_restoring_flag():
+                self._restoring_expanded = False
+            self.set_timer(0.5, clear_restoring_flag)
+    
+    def _expand_children(self, node: TreeNode, expanded_paths: Set[str]) -> None:
+        """递归展开子节点"""
+        try:
+            for child in node.children:
+                if hasattr(child.data, 'path'):
+                    child_path = str(Path(child.data.path).resolve())
+                elif isinstance(child.data, Path):
+                    child_path = str(child.data.resolve())
+                else:
+                    continue
+                
+                if child_path in expanded_paths:
+                    if not child.is_expanded:
+                        child.expand()
+                    # 继续递归处理子节点
+                    if child.is_expanded:
+                        def expand_child_delayed():
+                            self._expand_children(child, expanded_paths)
+                        self.set_timer(0.05, expand_child_delayed)
+        except Exception:
+            pass
+    
+    @on(Tree.NodeExpanded)
+    def on_tree_node_expanded(self, event: Tree.NodeExpanded) -> None:
+        """处理树节点展开事件"""
+        if self._restoring_expanded:
+            return
+        
+        try:
+            node = event.node
+            if hasattr(node.data, 'path'):
+                path = str(Path(node.data.path).resolve())
+            elif isinstance(node.data, Path):
+                path = str(node.data.resolve())
+            else:
+                return
+            
+            self.cache.add_expanded_path(self.work_dir, path)
+        except Exception:
+            pass
+    
+    @on(Tree.NodeCollapsed)
+    def on_tree_node_collapsed(self, event: Tree.NodeCollapsed) -> None:
+        """处理树节点折叠事件"""
+        if self._restoring_expanded:
+            return
+        
+        try:
+            node = event.node
+            if hasattr(node.data, 'path'):
+                path = str(Path(node.data.path).resolve())
+            elif isinstance(node.data, Path):
+                path = str(node.data.resolve())
+            else:
+                return
+            
+            self.cache.remove_expanded_path(self.work_dir, path)
+        except Exception:
+            pass
+
+
 class FilePickerScreen(ModalScreen[str]):
-    """文件选择对话框 - 使用 DirectoryTree"""
+    """文件选择对话框 - 使用带缓存的 DirectoryTree"""
+    
+    # 共享的缓存管理器实例
+    _cache: DirectoryTreeCache | None = None
     
     BINDINGS = [
         Binding("escape", "dismiss", "关闭"),
@@ -436,6 +603,9 @@ class FilePickerScreen(ModalScreen[str]):
         super().__init__()
         self.work_dir = work_dir
         self.selected_path: str | None = None
+        # 使用共享的缓存管理器
+        if FilePickerScreen._cache is None:
+            FilePickerScreen._cache = DirectoryTreeCache()
     
     def compose(self) -> ComposeResult:
         from pathlib import Path
@@ -446,18 +616,18 @@ class FilePickerScreen(ModalScreen[str]):
                 yield Static("选择文件", id="filepicker-title")
                 yield Static("[dim]ESC[/] 退出  [dim]双击/Enter[/] 选择", id="filepicker-hint")
             with Container(id="filepicker-content"):
-                yield DirectoryTree(str(work_path), id="directory-tree")
+                yield CachedDirectoryTree(str(work_path), cache=FilePickerScreen._cache, id="directory-tree")
             with Horizontal(id="filepicker-footer"):
                 yield Static("", id="selected-path")
                 yield Button("选择", id="select-button", variant="primary")
     
     def on_mount(self) -> None:
         """挂载时聚焦到 DirectoryTree"""
-        directory_tree = self.query_one("#directory-tree", DirectoryTree)
+        directory_tree = self.query_one("#directory-tree", CachedDirectoryTree)
         directory_tree.focus()
     
-    @on(DirectoryTree.FileSelected)
-    def on_file_selected(self, event: DirectoryTree.FileSelected) -> None:
+    @on(CachedDirectoryTree.FileSelected)
+    def on_file_selected(self, event: CachedDirectoryTree.FileSelected) -> None:
         """处理文件选择事件（双击文件时直接选择并关闭）"""
         from pathlib import Path
         try:
