@@ -121,35 +121,35 @@ class CommandPaletteScreen(ModalScreen[str]):
     CSS = """
     CommandPaletteScreen {
         align: center middle;
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(0, 0, 0, 0.7);
     }
     
     #palette-container {
         width: 70;
         max-height: 20;
-        background: #ffffff;
+        background: #1e1e1e;
         border: none;
         padding: 0;
     }
     
     #palette-header {
         height: 3;
-        background: #ffffff;
+        background: #2d2d2d;
         padding: 0 2;
         margin-top: 1;
-        border-bottom: solid #e5e7eb;
+        border-bottom: solid #404040;
         align-vertical: middle;
     }
     
     #palette-title {
         width: 1fr;
-        color: #000000;
+        color: #ffffff;
         text-style: bold;
     }
     
     #palette-hint {
         width: auto;
-        color: #7d8590;
+        color: #a0a0a0;
     }
     
     #palette-content {
@@ -160,9 +160,9 @@ class CommandPaletteScreen(ModalScreen[str]):
         width: 100%;
         height: 1;
         margin-bottom: 1;
-        background: #ffffff;
+        background: #2d2d2d;
         border: none;
-        color: #000000;
+        color: #ffffff;
         align-vertical: middle;
     }
     
@@ -173,16 +173,16 @@ class CommandPaletteScreen(ModalScreen[str]):
     #palette-list {
         height: auto;
         max-height: 14;
-        background: #ffffff;
+        background: #1e1e1e;
         border: none;
     }
     
     #palette-list > .option-list--option-highlighted {
-        background: #f3f3f3;
+        background: #404040;
     }
     
     #palette-list > .option-list--option {
-        color: #000000;
+        color: #ffffff;
     }
     """
     
@@ -469,35 +469,35 @@ class FilePickerScreen(ModalScreen[str]):
     CSS = """
     FilePickerScreen {
         align: center middle;
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(0, 0, 0, 0.7);
     }
     
     #filepicker-container {
         width: 80;
         height: 24;
-        background: #ffffff;
+        background: #1e1e1e;
         border: none;
         padding: 0;
     }
     
     #filepicker-header {
         height: 3;
-        background: #ffffff;
+        background: #2d2d2d;
         padding: 0 2;
         margin-top: 1;
-        border-bottom: solid #e5e7eb;
+        border-bottom: solid #404040;
         align-vertical: middle;
     }
     
     #filepicker-title {
         width: 1fr;
-        color: #000000;
+        color: #ffffff;
         text-style: bold;
     }
     
     #filepicker-hint {
         width: auto;
-        color: #7d8590;
+        color: #a0a0a0;
     }
     
     #filepicker-content {
@@ -508,7 +508,7 @@ class FilePickerScreen(ModalScreen[str]):
     #filepicker-footer {
         height: 3;
         padding: 0 2;
-        border-top: solid #e5e7eb;
+        border-top: solid #404040;
         align-vertical: middle;
     }
     
@@ -516,11 +516,11 @@ class FilePickerScreen(ModalScreen[str]):
     #directory-tree {
         height: 100%;
         width: 100%;
-        background: #ffffff;
+        background: #1e1e1e;
         border: none;
         padding: 1;
-        scrollbar-color: #e5e7eb;
-        scrollbar-color-hover: #d1d5db;
+        scrollbar-color: #404040;
+        scrollbar-color-hover: #505050;
         scrollbar-size: 0 1;
     }
     
@@ -531,28 +531,28 @@ class FilePickerScreen(ModalScreen[str]):
     
     /* 文件样式 */
     #directory-tree .directory-tree--file {
-        color: #000000;
+        color: #ffffff;
     }
     
     /* 文件扩展名样式 */
     #directory-tree .directory-tree--extension {
-        color: #7d8590;
+        color: #a0a0a0;
     }
     
     /* 隐藏文件样式 */
     #directory-tree .directory-tree--hidden {
-        color: #9ca3af;
+        color: #808080;
         opacity: 0.7;
     }
     
     /* 选中/光标所在节点的高亮背景 */
     #directory-tree .tree--highlight-line {
-        background: #f3f4f6;
+        background: #404040;
     }
     
     /* 选中/光标所在节点的文字样式 */
     #directory-tree .tree--cursor {
-        background: #f3f4f6;
+        background: #404040;
     }
     
     #directory-tree .tree--cursor .tree--label {
@@ -569,14 +569,14 @@ class FilePickerScreen(ModalScreen[str]):
         color: #8b5cf6;
     }
     
-    /* 引导线样式 - 使用浅灰色 */
+    /* 引导线样式 - 使用深灰色 */
     #directory-tree .tree--guides {
-        color: #d1d5db;
+        color: #404040;
     }
     
     /* 悬停时的引导线 */
     #directory-tree .tree--guides-hover {
-        color: #9ca3af;
+        color: #505050;
     }
     
     /* 选中项的引导线 */
@@ -586,12 +586,12 @@ class FilePickerScreen(ModalScreen[str]):
     
     /* 标签文字基础样式 */
     #directory-tree .tree--label {
-        color: #000000;
+        color: #ffffff;
     }
     
     /* 高亮节点样式 */
     #directory-tree .tree--highlight {
-        background: #f9fafb;
+        background: #2d2d2d;
     }
     
     #select-button {
@@ -690,54 +690,54 @@ class PlanViewerScreen(ModalScreen[None]):
     CSS = """
     PlanViewerScreen {
         align: center middle;
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(0, 0, 0, 0.7);
     }
     
     #planviewer-container {
         width: 90%;
         height: 85%;
-        background: #ffffff;
+        background: #1e1e1e;
         border: none;
         padding: 0;
     }
     
     #planviewer-header {
         height: 3;
-        background: #ffffff;
+        background: #2d2d2d;
         padding: 0 2;
         margin-top: 1;
-        border-bottom: solid #e5e7eb;
+        border-bottom: solid #404040;
         align-vertical: middle;
     }
     
     #planviewer-title {
         width: 1fr;
-        color: #000000;
+        color: #ffffff;
         text-style: bold;
     }
     
     #planviewer-hint {
         width: auto;
-        color: #7d8590;
+        color: #a0a0a0;
     }
     
     #planviewer-content {
         height: 1fr;
         padding: 1 2;
-        background: #ffffff;
+        background: #1e1e1e;
         border: none;
         overflow-y: auto;
-        scrollbar-color: #e5e7eb;
-        scrollbar-color-hover: #d1d5db;
+        scrollbar-color: #404040;
+        scrollbar-color-hover: #505050;
         scrollbar-size: 0 1;
     }
     
     #planviewer-text {
         width: 100%;
         height: auto;
-        background: #ffffff;
+        background: #1e1e1e;
         border: none;
-        color: #000000;
+        color: #ffffff;
     }
     """
     
@@ -838,35 +838,35 @@ class LogViewerScreen(ModalScreen[None]):
     CSS = """
     LogViewerScreen {
         align: center middle;
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(0, 0, 0, 0.7);
     }
     
     #logviewer-container {
         width: 90%;
         height: 85%;
-        background: #ffffff;
+        background: #1e1e1e;
         border: none;
         padding: 0;
     }
     
     #logviewer-header {
         height: 3;
-        background: #ffffff;
+        background: #2d2d2d;
         padding: 0 2;
         margin-top: 1;
-        border-bottom: solid #e5e7eb;
+        border-bottom: solid #404040;
         align-vertical: middle;
     }
     
     #logviewer-title {
         width: 1fr;
-        color: #000000;
+        color: #ffffff;
         text-style: bold;
     }
     
     #logviewer-hint {
         width: auto;
-        color: #7d8590;
+        color: #a0a0a0;
     }
     
     #logviewer-content {
@@ -877,23 +877,23 @@ class LogViewerScreen(ModalScreen[None]):
     #logviewer-file-list {
         width: 28;
         height: 100%;
-        background: #ffffff;
+        background: #1e1e1e;
         border: none;
         padding: 1 2;
     }
     
     #logviewer-file-list > .option-list--option-highlighted {
-        background: #f3f3f3;
+        background: #404040;
     }
     
     #logviewer-file-list > .option-list--option {
-        color: #000000;
+        color: #ffffff;
     }
     
     #logviewer-text {
         width: 1fr;
         height: 100%;
-        background: #ffffff;
+        background: #1e1e1e;
         padding: 1 2;
         border: none;
     }
@@ -980,35 +980,35 @@ class HistoryScreen(ModalScreen[ChatHistory]):
     CSS = """
     HistoryScreen {
         align: center middle;
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(0, 0, 0, 0.7);
     }
     
     #history-container {
         width: 80;
         height: 24;
-        background: #ffffff;
+        background: #1e1e1e;
         border: none;
         padding: 0;
     }
     
     #history-header {
         height: 3;
-        background: #ffffff;
+        background: #2d2d2d;
         padding: 0 2;
         margin-top: 1;
-        border-bottom: solid #e5e7eb;
+        border-bottom: solid #404040;
         align-vertical: middle;
     }
     
     #history-title {
         width: 1fr;
-        color: #000000;
+        color: #ffffff;
         text-style: bold;
     }
     
     #history-hint {
         width: auto;
-        color: #7d8590;
+        color: #a0a0a0;
     }
     
     #history-content {
@@ -1020,9 +1020,9 @@ class HistoryScreen(ModalScreen[ChatHistory]):
         width: 100%;
         height: 1;
         margin-bottom: 1;
-        background: #ffffff;
+        background: #2d2d2d;
         border: none;
-        color: #000000;
+        color: #ffffff;
         align-vertical: middle;
     }
     
@@ -1033,16 +1033,16 @@ class HistoryScreen(ModalScreen[ChatHistory]):
     #history-list {
         height: auto;
         max-height: 16;
-        background: #ffffff;
+        background: #1e1e1e;
         border: none;
     }
     
     #history-list > .option-list--option-highlighted {
-        background: #f3f3f3;
+        background: #404040;
     }
     
     #history-list > .option-list--option {
-        color: #000000;
+        color: #ffffff;
     }
     """
     
@@ -1211,53 +1211,53 @@ class ConfigEditScreen(ModalScreen[bool]):
     CSS = """
     ConfigEditScreen {
         align: center middle;
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(0, 0, 0, 0.7);
     }
     
     #config-container {
         width: 80;
         height: 85%;
         max-height: 85%;
-        background: #ffffff;
+        background: #1e1e1e;
         border: none;
         padding: 0;
     }
     
     #config-header {
         height: 3;
-        background: #ffffff;
+        background: #2d2d2d;
         padding: 0 2;
         margin-top: 1;
-        border-bottom: solid #e5e7eb;
+        border-bottom: solid #404040;
         align-vertical: middle;
     }
     
     #config-title {
         width: 1fr;
-        color: #000000;
+        color: #ffffff;
         text-style: bold;
     }
     
     #config-hint {
         width: auto;
-        color: #7d8590;
+        color: #a0a0a0;
     }
     
     #config-content {
         height: 1fr;
         padding: 1 2;
-        background: #ffffff;
+        background: #1e1e1e;
         border: none;
         overflow-y: auto;
-        scrollbar-color: #e5e7eb;
-        scrollbar-color-hover: #d1d5db;
+        scrollbar-color: #404040;
+        scrollbar-color-hover: #505050;
         scrollbar-size: 0 1;
     }
     
     #config-form {
         width: 100%;
         height: auto;
-        background: #ffffff;
+        background: #1e1e1e;
         border: none;
     }
     
@@ -1270,7 +1270,7 @@ class ConfigEditScreen(ModalScreen[bool]):
     .config-label {
         width: 25;
         height: 3;
-        color: #000000;
+        color: #ffffff;
         text-style: bold;
         margin-right: 1;
         padding: 0;
@@ -1282,9 +1282,9 @@ class ConfigEditScreen(ModalScreen[bool]):
     .config-input {
         width: 1fr;
         height: 3;
-        background: #ffffff;
-        border: solid #d1d5db;
-        color: #000000;
+        background: #2d2d2d;
+        border: solid #404040;
+        color: #ffffff;
         padding: 0 1;
         margin: 0;
         text-align: left;
@@ -1465,7 +1465,7 @@ class ReActAgentApp(App):
     CSS = """
     /* ===== 全局 - 深色简洁主题 ===== */
     Screen {
-        background: #FFF;
+        background: #121212;
     }
     
     /* ===== 主布局 ===== */
@@ -1477,16 +1477,16 @@ class ReActAgentApp(App):
     /* ===== Header ===== */
     #app-header {
         height: 3;
-        background: #f9f9f9;
+        background: #1e1e1e;
         padding: 0 2;
-        border-left: ascii #b5b5b5;
+        border-left: ascii #404040;
         margin: 1 2 1 2;
         align-vertical: middle;
     }
     
     #header-title {
         width: auto;
-        color: #000000;
+        color: #ffffff;
         text-style: bold;
     }
     
@@ -1512,18 +1512,18 @@ class ReActAgentApp(App):
         height: 1fr;
         width: 100%;
         overflow-y: auto;
-        scrollbar-color: #e5e7eb;
-        scrollbar-color-hover: #d1d5db;
+        scrollbar-color: #404040;
+        scrollbar-color-hover: #505050;
         scrollbar-size: 0 1;
     }
     
     #chat-log {
         width: 100%;
         height: auto;
-        scrollbar-color: #e5e7eb;
-        scrollbar-color-hover: #d1d5db;
+        scrollbar-color: #404040;
+        scrollbar-color-hover: #505050;
         scrollbar-size: 0 1;
-        background: #ffffff;
+        background: #121212;
     }
     
     /* ===== 聊天消息组件样式 ===== */
@@ -1531,15 +1531,15 @@ class ReActAgentApp(App):
         width: 100%;
         height: auto;
         min-height: 3;
-        background: #f9f9f9;
+        background: #2d2d2d;
         border-left: ascii #8b5cf6;
-        margin: 0 2;
+        margin: 0 2 1 2;
         align-vertical: middle;
     }
     
     UserMessage > Static {
         width: 100%;
-        color: #000000;
+        color: #ffffff;
         text-align: left;
         background: transparent;
         padding: 0 2;
@@ -1549,16 +1549,16 @@ class ReActAgentApp(App):
         width: 100%;
         height: auto;
         min-height: 3;
-        background: #ffffff;
+        background: #1e1e1e;
         padding: 0 2;
-        border-left: solid #f3f3f3;
-        margin: 1 2 1 2;
+        border-left: solid #404040;
+        margin: 0 2 1 2;
         align-vertical: middle;
     }
     
     ThinkingMessage > Static {
         width: 100%;
-        color: #7d8590;
+        color: #a0a0a0;
         text-style: italic;
         text-align: left;
         background: transparent;
@@ -1568,15 +1568,15 @@ class ReActAgentApp(App):
         width: 100%;
         height: auto;
         min-height: 1;
-        background: #ffffff;
-        padding: 0 2;
-        margin: 1 2 1 2;
+        background: #1e1e1e;
+        padding: 1 2;
+        margin: 0 2 1 2;
         align-vertical: middle;
     }
     
     ContentMessage > Static {
         width: 100%;
-        color: #000000;
+        color: #ffffff;
         text-align: left;
         background: transparent;
     }
@@ -1585,16 +1585,16 @@ class ReActAgentApp(App):
         width: 100%;
         height: auto;
         min-height: 1;
-        background: #ffffff;
-        padding: 0 2;
+        background: #1e1e1e;
+        padding: 1 2;
         border-left: ascii #22c55e;
-        margin: 1 2 1 2;
+        margin: 0 2 1 2;
         align-vertical: middle;
     }
     
     ToolMessage > Static {
         width: 100%;
-        color: #000000;
+        color: #ffffff;
         text-align: left;
         background: transparent;
     }
@@ -1603,7 +1603,7 @@ class ReActAgentApp(App):
         width: 100%;
         height: auto;
         min-height: 3;
-        background: #f9f9f9;
+        background: #2d2d2d;
         border-left: ascii #ef4444;
         margin: 0 2 1 2;
         align-vertical: middle;
@@ -1620,16 +1620,16 @@ class ReActAgentApp(App):
         width: 100%;
         height: auto;
         min-height: 1;
-        background: #ffffff;
+        background: #1e1e1e;
         padding: 0 2;
-        margin: 1 2 1 2;
+        margin: 0 2 1 2;
         align-vertical: middle;
         border-left: solid #ef4444;
     }
     
     HistoryMessage > Static {
         width: 100%;
-        color: #000000;
+        color: #ffffff;
         text-align: left;
         background: transparent;
     }
@@ -1638,7 +1638,7 @@ class ReActAgentApp(App):
     #input-container {
         height: auto;
         min-height: 3;
-        background: #f3f3f3;
+        background: #2d2d2d;
         margin: 1 2 1 2;
         border-left: heavy #8b5cf6;
         padding: 0;
@@ -1649,24 +1649,24 @@ class ReActAgentApp(App):
         height: auto;
         min-height: 1;
         max-height: 10;
-        background: #f3f3f3;
+        background: #2d2d2d;
         border: none;
-        color: #303030;
+        color: #ffffff;
         padding: 0 1;
         margin: 1 0 0 0;
     }
     
     #user-input.placeholder {
-        color: #9ca3af;
+        color: #808080;
     }
     
     #input-model-info {
         width: 100%;
         height: 1;
-        background: #f3f3f3;
+        background: #2d2d2d;
         padding: 0 1;
         margin: 1 0 1 0;
-        color: #7d8590;
+        color: #a0a0a0;
         align-vertical: middle;
     }
     
@@ -1677,7 +1677,6 @@ class ReActAgentApp(App):
     /* ===== Setting 底栏 ===== */
     #setting-bar {
         height: 1;
-        background: #ffffff;
         padding: 0 2;
         margin: 0 2 1 2;
         align-vertical: middle;
@@ -1685,16 +1684,16 @@ class ReActAgentApp(App):
     
     #setting-left {
         width: 1fr;
-        color: #7d8590;
+        color: #a0a0a0;
     }
     
     #setting-left > Static {
-        color: #7d8590;
+        color: #a0a0a0;
     }
     
     #setting-right {
         width: auto;
-        color: #7d8590;
+        color: #a0a0a0;
     }
     
     #setting-right.chatting {
