@@ -345,9 +345,86 @@ class FilePickerScreen(ModalScreen[str]):
         align-vertical: middle;
     }
     
+    /* DirectoryTree 基础样式 */
     #directory-tree {
         height: 100%;
         width: 100%;
+        background: #ffffff;
+        border: none;
+        padding: 1;
+        scrollbar-color: #e5e7eb;
+        scrollbar-color-hover: #d1d5db;
+        scrollbar-size: 0 1;
+    }
+    
+    /* 文件夹样式 - 使用紫色主题色 */
+    #directory-tree .directory-tree--folder {
+        color: #8b5cf6;
+    }
+    
+    /* 文件样式 */
+    #directory-tree .directory-tree--file {
+        color: #000000;
+    }
+    
+    /* 文件扩展名样式 */
+    #directory-tree .directory-tree--extension {
+        color: #7d8590;
+    }
+    
+    /* 隐藏文件样式 */
+    #directory-tree .directory-tree--hidden {
+        color: #9ca3af;
+        opacity: 0.7;
+    }
+    
+    /* 选中/光标所在节点的高亮背景 */
+    #directory-tree .tree--highlight-line {
+        background: #f3f4f6;
+    }
+    
+    /* 选中/光标所在节点的文字样式 */
+    #directory-tree .tree--cursor {
+        background: #f3f4f6;
+    }
+    
+    #directory-tree .tree--cursor .tree--label {
+        color: #8b5cf6;
+        text-style: bold;
+    }
+    
+    /* 选中项中的文件夹和文件样式 */
+    #directory-tree .tree--cursor.directory-tree--folder {
+        color: #7c3aed;
+    }
+    
+    #directory-tree .tree--cursor.directory-tree--file {
+        color: #8b5cf6;
+    }
+    
+    /* 引导线样式 - 使用浅灰色 */
+    #directory-tree .tree--guides {
+        color: #d1d5db;
+    }
+    
+    /* 悬停时的引导线 */
+    #directory-tree .tree--guides-hover {
+        color: #9ca3af;
+    }
+    
+    /* 选中项的引导线 */
+    #directory-tree .tree--guides-selected {
+        color: #8b5cf6;
+    }
+    
+    /* 标签文字基础样式 */
+    #directory-tree .tree--label {
+        color: #000000;
+    }
+    
+    /* 高亮节点样式 */
+    #directory-tree .tree--highlight {
+        background: #f9fafb;
     }
     
     #select-button {
