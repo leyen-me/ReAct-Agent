@@ -4,6 +4,7 @@
 from typing import List, Tuple, Dict, Any, Set
 import json
 from pathlib import Path
+from datetime import datetime
 
 from textual.app import App, ComposeResult
 from textual.widgets import (
@@ -2134,6 +2135,7 @@ class ReActAgentApp(App):
             ("history", "History", "历史记录"),
             ("logs", "Logs", "查看日志"),
             ("config", "Config", "编辑配置"),
+            ("export", "Export", "导出消息为 Markdown"),
             ("clear", "Clear", "清空聊天"),
             ("exit", "Exit", "退出应用"),
         ]
@@ -2166,6 +2168,9 @@ class ReActAgentApp(App):
                 self._open_log_viewer()
             elif cmd_id == "config":
                 self._open_config_editor()
+            elif cmd_id == "export":
+                self._export_messages()
+                input_widget.focus()
             elif cmd_id == "clear":
                 self.action_clear()
                 input_widget.focus()
@@ -2361,6 +2366,109 @@ class ReActAgentApp(App):
         
         self._scroll_to_bottom()
         self.query_one("#user-input", ChatInput).focus()
+    
+    def _export_messages(self) -> None:
+        """导出当前消息为 Markdown 文件"""
+        chat_container = self.query_one("#chat-log", Vertical)
+        
+        if not hasattr(self.agent, "message_manager"):
+            error_msg = ContentMessage("[#ef4444]错误: 消息管理器不可用[/]", allow_markup=True)
+            chat_container.mount(error_msg)
+            self._scroll_to_bottom()
+            return
+        
+        messages = self.agent.message_manager.get_messages()
+        
+        if not messages:
+            error_msg = ContentMessage("[#ef4444]错误: 没有消息可导出[/]", allow_markup=True)
+            chat_container.mount(error_msg)
+            self._scroll_to_bottom()
+            return
+        
+        try:
+            # 生成文件名（基于时间戳）
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"chat_export_{timestamp}.md"
+            export_path = Path(config.work_dir) / filename
+            
+            # 构建 Markdown 内容
+            md_lines = []
+            md_lines.append("# 对话导出\n")
+            md_lines.append(f"**导出时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            md_lines.append(f"**消息总数**: {len(messages)}\n")
+            md_lines.append("\n---\n\n")
+            
+            # 遍历消息并格式化
+            for i, message in enumerate(messages, 1):
+                role = message.get("role", "unknown")
+                content = message.get("content", "")
+                tool_calls = message.get("tool_calls", [])
+                tool_call_id = message.get("tool_call_id", "")
+                
+                # 根据角色添加标题
+                if role == "system":
+                    md_lines.append(f"## {i}. [系统消息]\n\n")
+                elif role == "user":
+                    md_lines.append(f"## {i}. [用户]\n\n")
+                elif role == "assistant":
+                    if tool_calls:
+                        md_lines.append(f"## {i}. [助手 - 工具调用]\n\n")
+                    else:
+                        md_lines.append(f"## {i}. [助手]\n\n")
+                elif role == "tool":
+                    md_lines.append(f"## {i}. [工具结果]\n\n")
+                    if tool_call_id:
+                        md_lines.append(f"**工具调用 ID**: `{tool_call_id}`\n\n")
+                else:
+                    md_lines.append(f"## {i}. [{role.upper()}]\n\n")
+                
+                # 添加工具调用信息
+                if tool_calls:
+                    md_lines.append("**工具调用**:\n\n")
+                    for tool_call in tool_calls:
+                        if "function" in tool_call:
+                            func = tool_call["function"]
+                            name = func.get("name", "unknown")
+                            args = func.get("arguments", "")
+                            md_lines.append(f"- **函数名**: `{name}`\n")
+                            md_lines.append(f"- **参数**:\n")
+                            md_lines.append(f"```json\n{args}\n```\n\n")
+                
+                # 添加消息内容
+                if content:
+                    md_lines.append("**内容**:\n\n")
+                    # 如果内容已经包含代码块标记，直接使用
+                    if "```" in content:
+                        md_lines.append(f"{content}\n\n")
+                    else:
+                        # 对于普通文本，直接添加（Markdown 会自动处理）
+                        # 如果内容很长或包含特殊格式，可以考虑使用代码块
+                        md_lines.append(f"{content}\n\n")
+                
+                md_lines.append("---\n\n")
+            
+            # 写入文件
+            export_path.write_text("".join(md_lines), encoding="utf-8")
+            
+            # 显示成功消息
+            success_msg = ContentMessage(
+                f"[#22c55e]✓ 消息已导出到:[/] `{filename}`\n[dim]路径: {export_path}[/]",
+                allow_markup=True
+            )
+            chat_container.mount(success_msg)
+            self._scroll_to_bottom()
+            
+        except Exception as e:
+            # 显示错误消息
+            error_msg = ContentMessage(
+                f"[#ef4444]错误: 导出失败 - {str(e)}[/]",
+                allow_markup=True
+            )
+            chat_container.mount(error_msg)
+            self._scroll_to_bottom()
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"导出消息失败: {e}", exc_info=True)
     
     @on(ChatInput.Submitted)
     def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
