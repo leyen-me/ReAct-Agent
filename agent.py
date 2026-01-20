@@ -500,7 +500,6 @@ Respond with: "yes (reason)" or "no (reason)"."""
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.1,  # Very low temperature for deterministic classification
-                max_tokens=50,  # Allow space for brief reason
                 stream=True,
             )
             

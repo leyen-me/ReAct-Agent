@@ -1314,7 +1314,7 @@ class ConfigEditScreen(ModalScreen[bool]):
                     # 模型配置
                     with Horizontal(classes="config-row config-row-planning_model"):
                         yield Static("规划模型", classes="config-label")
-                        yield Input(value="qwen/qwen3-coder-480b-a35b-instruct", classes="config-input", id="config-planning_model")
+                        yield Input(value="openai/gpt-oss-120b", classes="config-input", id="config-planning_model")
                     
                     with Horizontal(classes="config-row config-row-execution_model"):
                         yield Static("执行模型", classes="config-label")

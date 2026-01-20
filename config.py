@@ -59,7 +59,7 @@ class Config:
             Dict[str, Any]: 包含所有默认配置的字典
         """
         return {
-            "planning_model": "qwen/qwen3-coder-480b-a35b-instruct",  # 用于规划和判断的智能模型
+            "planning_model": "openai/gpt-oss-120b",  # 用于规划和判断的智能模型
             "execution_model": "openai/gpt-oss-120b",  # 用于执行计划的小模型
             "api_key": None,
             "base_url": "https://integrate.api.nvidia.com/v1",
@@ -168,7 +168,7 @@ class Config:
         # 模型配置
         # 规划模型：用于判断是否需要规划和创建计划
         self.planning_model: str = self._get_config_value(
-            config_dict, "planning_model", "PLANNING_MODEL", "qwen/qwen3-coder-480b-a35b-instruct"
+            config_dict, "planning_model", "PLANNING_MODEL", "openai/gpt-oss-120b"
         )
         # 执行模型：用于执行计划
         self.execution_model: str = self._get_config_value(
