@@ -73,33 +73,33 @@ class MessageManager:
         self.current_tokens = prompt_tokens
         self.estimated_tokens = prompt_tokens  # 同步更新估算值
         self._manage_context()
-    
+
     def estimate_tokens(self, text: str) -> int:
         """
         估算文本的 token 数量（简单估算：中文约 1.5 字符/token，英文约 4 字符/token）
-        
+
         Args:
             text: 要估算的文本
-            
+
         Returns:
             估算的 token 数
         """
         if not text:
             return 0
-        
+
         # 简单估算：统计中文字符和英文字符
-        chinese_chars = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+        chinese_chars = sum(1 for c in text if "\u4e00" <= c <= "\u9fff")
         other_chars = len(text) - chinese_chars
-        
+
         # 中文字符：约 1.5 字符/token
         # 其他字符（英文、数字、标点等）：约 4 字符/token
         estimated = int(chinese_chars / 1.5 + other_chars / 4)
         return max(1, estimated)  # 至少返回 1
-    
+
     def update_estimated_tokens(self, completion_content: str = "") -> None:
         """
         更新估算的 token 使用量（用于实时显示）
-        
+
         Args:
             completion_content: 当前已生成的 completion 内容
         """
@@ -116,16 +116,18 @@ class MessageManager:
                     for tc in msg.get("tool_calls", []):
                         if "function" in tc:
                             func = tc["function"]
-                            prompt_text += func.get("name", "") + func.get("arguments", "")
+                            prompt_text += func.get("name", "") + func.get(
+                                "arguments", ""
+                            )
                 else:
                     # 如果是普通回复，不计算到 prompt 中（因为这是 completion）
                     pass
             elif msg.get("role") == "tool":
                 prompt_text += msg.get("content", "")
-        
+
         # 估算 completion tokens（基于已生成的内容）
         completion_tokens = self.estimate_tokens(completion_content)
-        
+
         # 总估算 = prompt tokens + completion tokens
         # 如果已经有实际的 current_tokens（来自上次 API 响应），使用它作为基础
         if self.current_tokens > 0:
@@ -136,20 +138,20 @@ class MessageManager:
             # 如果还没有实际值，完全基于估算
             prompt_tokens = self.estimate_tokens(prompt_text)
             self.estimated_tokens = prompt_tokens + completion_tokens
-    
+
     def get_estimated_token_usage_percent(self) -> float:
         """
         获取估算的 token 使用百分比（用于实时显示）
-        
+
         Returns:
             使用百分比（0-100）
         """
         return (self.estimated_tokens / self.max_context_tokens) * 100
-    
+
     def get_estimated_remaining_tokens(self) -> int:
         """
         获取估算的剩余可用 token 数（用于实时显示）
-        
+
         Returns:
             剩余 token 数
         """
@@ -232,15 +234,15 @@ class ReActAgent:
         # 禁用 OpenAI 客户端的 HTTP 日志输出
         import httpx
         import logging
-        
+
         # 禁用 httpx 的日志
         httpx_logger = logging.getLogger("httpx")
         httpx_logger.setLevel(logging.WARNING)
-        
+
         # 禁用 httpcore 的日志（httpx 的底层库）
         httpcore_logger = logging.getLogger("httpcore")
         httpcore_logger.setLevel(logging.WARNING)
-        
+
         self.client = OpenAI(
             api_key=config.api_key,
             base_url=config.base_url,
@@ -260,10 +262,11 @@ class ReActAgent:
 
     def _create_tools(self) -> List[Tool]:
         """创建工具列表"""
+
         # 创建任务计划工具的回调函数
         def get_plan() -> Optional[TaskPlan]:
             return self.current_plan
-        
+
         tools = [
             ReadFileTool(config.work_dir),
             ReadCodeBlockTool(config.work_dir),
@@ -292,7 +295,7 @@ class ReActAgent:
             GetPlanStatusTool(config.work_dir, get_plan),
         ]
         return tools
-        
+
     def _get_system_prompt_by_en(self) -> str:
         """Generate system prompt"""
         return f"""
@@ -357,7 +360,6 @@ You must reason and act strictly based on the above real environment.
 - Do not claim task completion without verification
 - Do not output irrelevant or verbose explanatory content
 """
-
 
     def _get_system_prompt_by_cn(self) -> str:
         """生成系统提示词"""
@@ -435,41 +437,47 @@ You must reason and act strictly based on the above real environment.
     def stop_chat(self) -> None:
         """停止当前对话"""
         self.should_stop = True
-    
+
     def set_planning_enabled(self, enabled: bool) -> None:
         """设置是否启用规划功能"""
         self.enable_planning = enabled
-    
-    def _should_create_plan(self, task_message: str, plan_status_callback: Optional[Callable[[str], None]] = None) -> Tuple[bool, str]:
+
+    def _should_create_plan(
+        self,
+        task_message: str,
+        plan_status_callback: Optional[Callable[[str], None]] = None,
+    ) -> Tuple[bool, str]:
         """
         判断是否应该创建计划（使用 LLM 智能判断）
-        
+
         Args:
             task_message: 任务消息
             plan_status_callback: 可选的规划状态回调函数，用于更新 header 显示
-            
+
         Returns:
             (是否需要规划, 判断原因)
         """
         if not self.enable_planning:
             return False, "规划功能已禁用"
-        
+
         # 如果已经有计划在执行，不创建新计划
-        if self.current_plan and self.current_plan.get_progress()["completed"] < len(self.current_plan.steps):
+        if self.current_plan and self.current_plan.get_progress()["completed"] < len(
+            self.current_plan.steps
+        ):
             return False, "已有计划正在执行中"
-        
+
         # 清理消息，去除首尾空白
         message = task_message.strip()
-        
+
         # 空消息不需要规划
         if not message:
             return False, "消息为空"
-        
+
         # 使用 LLM 智能判断是否需要规划（完全交给模型判断，不预设规则）
         try:
             if plan_status_callback:
                 plan_status_callback("🔍 判断是否需要规划...")
-            
+
             # 构建标准的判断提示词（参考 OpenAI/Anthropic 最佳实践）
             system_prompt = """You are a task analysis assistant. Your role is to determine whether a user's request requires detailed task planning before execution.
 
@@ -501,8 +509,9 @@ Respond with: "yes (reason)" or "no (reason)"."""
                 ],
                 temperature=0.1,  # Very low temperature for deterministic classification
                 stream=True,
+                extra_body={"thinking": {"type": "disabled"}},
             )
-            
+
             result = ""
             try:
                 for chunk in stream_response:
@@ -517,13 +526,15 @@ Respond with: "yes (reason)" or "no (reason)"."""
                     stream_response.close()
                 except:
                     pass
-            
+
             result = result.strip()
             result_lower = result.lower()
-            
+
             # 解析结果：提取 yes/no 和原因
-            needs_planning = any(result_lower.startswith(prefix) for prefix in ["yes", "y"])
-            
+            needs_planning = any(
+                result_lower.startswith(prefix) for prefix in ["yes", "y"]
+            )
+
             # 提取原因（如果有）
             reason = "LLM判断"
             if "(" in result and ")" in result:
@@ -531,17 +542,25 @@ Respond with: "yes (reason)" or "no (reason)"."""
                     reason = result.split("(")[1].split(")")[0].strip()
                 except:
                     pass
-            
-            logger.debug(f"规划判断: '{message}' -> {needs_planning} (原因: {reason}, LLM回答: {result})")
+
+            logger.debug(
+                f"规划判断: '{message}' -> {needs_planning} (原因: {reason}, LLM回答: {result})"
+            )
             return needs_planning, reason
-            
+
         except Exception as e:
             logger.warning(f"规划判断失败: {e}，默认不规划")
             if plan_status_callback:
                 plan_status_callback(f"⚠️ 判断失败")
             return False, f"判断失败: {str(e)}"
-    
-    def chat(self, task_message: str, output_callback: Optional[Callable[[str, bool], None]] = None, plan_status_callback: Optional[Callable[[str], None]] = None, status_callback: Optional[Callable[[], None]] = None) -> None:
+
+    def chat(
+        self,
+        task_message: str,
+        output_callback: Optional[Callable[[str, bool], None]] = None,
+        plan_status_callback: Optional[Callable[[str], None]] = None,
+        status_callback: Optional[Callable[[], None]] = None,
+    ) -> None:
         """
         处理用户任务
 
@@ -555,35 +574,43 @@ Respond with: "yes (reason)" or "no (reason)"."""
         """
         # 重置中断标志
         self.should_stop = False
-        
+
         # 定义输出函数
         def output(text: str, end_newline: bool = True):
             if output_callback:
                 output_callback(text, end_newline)
             else:
                 print(text, end="\n" if end_newline else "", flush=True)
-        
+
         # 定义规划状态更新函数
         def update_plan_status(status: str):
             if plan_status_callback:
                 plan_status_callback(status)
-        
+
         # 任务规划阶段 - 显示判断结果
-        needs_planning, _reason = self._should_create_plan(task_message, update_plan_status)
-        
+        needs_planning, _reason = self._should_create_plan(
+            task_message, update_plan_status
+        )
+
         if needs_planning:
             update_plan_status("📋 分析任务中...")
-            
+
             try:
-                self.current_plan = self.task_planner.create_plan(task_message, update_plan_status)
-                
+                self.current_plan = self.task_planner.create_plan(
+                    task_message, update_plan_status
+                )
+
                 # 更新规划状态为进度显示
                 progress = self.current_plan.get_progress()
-                update_plan_status(f"📋 计划完成 ({len(self.current_plan.steps)} 步) | 进度: {progress['completed']}/{progress['total']}")
-                
+                update_plan_status(
+                    f"📋 计划完成 ({len(self.current_plan.steps)} 步) | 进度: {progress['completed']}/{progress['total']}"
+                )
+
                 # 将完整的计划信息添加到消息中，让模型知道计划并可以管理它
                 plan_info = f"\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                plan_info += f"📋 任务执行计划（共 {len(self.current_plan.steps)} 步）\n"
+                plan_info += (
+                    f"📋 任务执行计划（共 {len(self.current_plan.steps)} 步）\n"
+                )
                 plan_info += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 plan_info += f"任务描述：{self.current_plan.task_description}\n\n"
                 plan_info += f"当前进度：{progress['completed']}/{progress['total']} 已完成 ({progress['progress_percent']:.1f}%)\n"
@@ -597,7 +624,9 @@ Respond with: "yes (reason)" or "no (reason)"."""
                         StepStatus.FAILED: "❌",
                         StepStatus.SKIPPED: "⏭️",
                     }.get(step.status, "❓")
-                    plan_info += f"{status_icon} 步骤 {step.step_number}: {step.description}"
+                    plan_info += (
+                        f"{status_icon} 步骤 {step.step_number}: {step.description}"
+                    )
                     if step.expected_tools:
                         plan_info += f" [预期工具: {', '.join(step.expected_tools)}]"
                     plan_info += f"\n"
@@ -608,7 +637,7 @@ Respond with: "yes (reason)" or "no (reason)"."""
                 plan_info += f"\n重要提示：你需要使用任务计划管理工具（update_step_status, move_to_next_step, get_plan_status）来主动管理计划的执行进度。\n"
                 plan_info += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 task_message = f"{task_message}{plan_info}"
-                
+
             except Exception as e:
                 logger.error(f"规划失败: {e}")
                 update_plan_status(f"⚠️ 规划失败: {str(e)[:30]}")
@@ -617,20 +646,19 @@ Respond with: "yes (reason)" or "no (reason)"."""
             logger.debug(f"直接执行任务: {task_message}")
             # 清除规划状态
             update_plan_status("")
-        
+
         self.message_manager.add_user_message(task_message)
         # 重置 reasoning content 追踪（每次新的对话轮次）
-        if hasattr(self, '_current_reasoning'):
-            delattr(self, '_current_reasoning')
+        if hasattr(self, "_current_reasoning"):
+            delattr(self, "_current_reasoning")
         while True:
             # 检查是否需要中断（在主循环开始时）
             if self.should_stop:
                 logger.info("对话在主循环被用户中断")
                 # 添加系统消息说明用户中断了对话
-                self.message_manager.messages.append({
-                    "role": "system",
-                    "content": "[对话已被用户中断]"
-                })
+                self.message_manager.messages.append(
+                    {"role": "system", "content": "[对话已被用户中断]"}
+                )
                 output("\n\n[对话已被用户中断]", end_newline=True)
                 break
             self.chat_count += 1
@@ -647,10 +675,9 @@ Respond with: "yes (reason)" or "no (reason)"."""
                 plan_status_info += f"提示: 使用任务计划管理工具（update_step_status, move_to_next_step, get_plan_status）来管理计划进度。\n"
                 # 将计划状态作为系统消息添加到消息列表中（只在当前循环中使用）
                 # 注意：这里不直接修改message_manager.messages，而是在API调用时临时添加
-                messages_with_plan = self.message_manager.get_messages() + [{
-                    "role": "system",
-                    "content": plan_status_info
-                }]
+                messages_with_plan = self.message_manager.get_messages() + [
+                    {"role": "system", "content": plan_status_info}
+                ]
             else:
                 messages_with_plan = self.message_manager.get_messages()
 
@@ -672,10 +699,10 @@ Respond with: "yes (reason)" or "no (reason)"."""
                             stream=True,
                             temperature=0.7,
                             top_p=0.8,
-                            max_tokens=4096,
-                            presence_penalty=1.05,
+                            max_tokens=65535,
                             tools=self._get_tools(),
                             tool_choice="auto",
+                            extra_body={"thinking": {"type": "disabled"}},
                         )
                     )
                     break  # 成功则跳出重试循环
@@ -696,14 +723,14 @@ Respond with: "yes (reason)" or "no (reason)"."""
             last_tool_call_id = None
             tool_call_acc = {}
             usage = None
-            
+
             start_reasoning_content = False
             start_content = False
             start_tool_call = False
-            
+
             # 初始化 reasoning content 追踪
             self._current_reasoning = ""
-            
+
             # 定义输出函数（已在方法开始处定义，这里不需要重复定义）
 
             try:
@@ -713,7 +740,7 @@ Respond with: "yes (reason)" or "no (reason)"."""
                         logger.info("流式响应被中断，正在关闭流...")
                         stream_response.close()  # 关闭流，停止后端继续生成
                         break
-                    
+
                     # 获取 usage 信息（通常在最后一个 chunk 中）
                     if hasattr(chunk, "usage") and chunk.usage is not None:
                         usage = chunk.usage
@@ -721,28 +748,41 @@ Respond with: "yes (reason)" or "no (reason)"."""
                     if chunk.choices and len(chunk.choices) > 0:
                         delta = chunk.choices[0].delta
 
-                        if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                        if (
+                            hasattr(delta, "reasoning_content")
+                            and delta.reasoning_content
+                        ):
                             if not start_reasoning_content:
-                                output(f"\n{'='*config.log_separator_length} 模型思考 {'='*config.log_separator_length}\n")
+                                output(
+                                    f"\n{'='*config.log_separator_length} 模型思考 {'='*config.log_separator_length}\n"
+                                )
                                 start_reasoning_content = True
                             reasoning_content = delta.reasoning_content
                             output(reasoning_content, end_newline=False)
                             # 实时更新估算的 token（reasoning content 也会消耗 tokens）
                             # 这里我们简单地将 reasoning content 也计入 completion
                             # 注意：reasoning 和 content 是分开的，但都计入 completion tokens
-                            if not hasattr(self, '_current_reasoning'):
+                            if not hasattr(self, "_current_reasoning"):
                                 self._current_reasoning = ""
                             self._current_reasoning += reasoning_content
                             # 估算时考虑 reasoning 和 content
-                            total_completion = (self._current_reasoning if hasattr(self, '_current_reasoning') else "") + content
-                            self.message_manager.update_estimated_tokens(total_completion)
+                            total_completion = (
+                                self._current_reasoning
+                                if hasattr(self, "_current_reasoning")
+                                else ""
+                            ) + content
+                            self.message_manager.update_estimated_tokens(
+                                total_completion
+                            )
                             # 通知UI更新状态（实时更新token显示）
                             if status_callback:
                                 status_callback()
 
                         if hasattr(delta, "content") and delta.content:
                             if not start_content:
-                                output(f"\n{'='*config.log_separator_length} 最终回复 {'='*config.log_separator_length}\n")
+                                output(
+                                    f"\n{'='*config.log_separator_length} 最终回复 {'='*config.log_separator_length}\n"
+                                )
                                 start_content = True
                             chunk_content = delta.content
                             content += chunk_content
@@ -755,7 +795,9 @@ Respond with: "yes (reason)" or "no (reason)"."""
 
                         if hasattr(delta, "tool_calls") and delta.tool_calls:
                             if not start_tool_call:
-                                output(f"\n{'='*config.log_separator_length} 工具调用 {'='*config.log_separator_length}\n")
+                                output(
+                                    f"\n{'='*config.log_separator_length} 工具调用 {'='*config.log_separator_length}\n"
+                                )
                                 start_tool_call = True
                             for tc in delta.tool_calls:
                                 tc_id = tc.id or last_tool_call_id
@@ -783,15 +825,27 @@ Respond with: "yes (reason)" or "no (reason)"."""
                                             "arguments"
                                         ] += tc.function.arguments
                                         output(tc.function.arguments, end_newline=False)
-                                    
+
                                     # 实时更新估算的 token（工具调用也会消耗 tokens）
                                     # 构建工具调用的完整文本用于估算
                                     tool_call_text = ""
                                     for acc_tc_id, acc_tc_data in tool_call_acc.items():
-                                        tool_call_text += acc_tc_data.get("name", "") + acc_tc_data.get("arguments", "")
+                                        tool_call_text += acc_tc_data.get(
+                                            "name", ""
+                                        ) + acc_tc_data.get("arguments", "")
                                     # 估算时考虑 reasoning、content 和 tool_calls
-                                    total_completion = (self._current_reasoning if hasattr(self, '_current_reasoning') else "") + content + tool_call_text
-                                    self.message_manager.update_estimated_tokens(total_completion)
+                                    total_completion = (
+                                        (
+                                            self._current_reasoning
+                                            if hasattr(self, "_current_reasoning")
+                                            else ""
+                                        )
+                                        + content
+                                        + tool_call_text
+                                    )
+                                    self.message_manager.update_estimated_tokens(
+                                        total_completion
+                                    )
                                     # 通知UI更新状态（实时更新token显示）
                                     if status_callback:
                                         status_callback()
@@ -807,17 +861,19 @@ Respond with: "yes (reason)" or "no (reason)"."""
                     stream_response.close()
                 except Exception:
                     pass
-            
+
             # 如果用户中断了对话，将中断信息添加到上下文
             if self.should_stop:
                 # 如果有部分内容，先保存
                 if content.strip():
                     self.message_manager.add_assistant_content(content)
                 # 添加系统消息说明用户中断了对话
-                self.message_manager.messages.append({
-                    "role": "system",
-                    "content": "[用户在此处中断了对话，未完成的任务已暂停]"
-                })
+                self.message_manager.messages.append(
+                    {
+                        "role": "system",
+                        "content": "[用户在此处中断了对话，未完成的任务已暂停]",
+                    }
+                )
                 logger.info("已将用户中断信息添加到上下文")
                 break
 
@@ -832,8 +888,8 @@ Respond with: "yes (reason)" or "no (reason)"."""
                         f"\nToken 使用: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}"
                     )
                     # 清除临时变量
-                    if hasattr(self, '_current_reasoning'):
-                        delattr(self, '_current_reasoning')
+                    if hasattr(self, "_current_reasoning"):
+                        delattr(self, "_current_reasoning")
                     # 通知UI更新状态（更新为实际值）
                     if status_callback:
                         status_callback()
@@ -842,8 +898,8 @@ Respond with: "yes (reason)" or "no (reason)"."""
             else:
                 logger.warning("\n流式响应中未找到 usage 信息")
                 # 即使没有 usage，也清除临时变量
-                if hasattr(self, '_current_reasoning'):
-                    delattr(self, '_current_reasoning')
+                if hasattr(self, "_current_reasoning"):
+                    delattr(self, "_current_reasoning")
 
             if tool_call_acc:
                 # 如果有任务计划，更新UI显示（但不自动更新计划状态，由大模型自己管理）
@@ -851,10 +907,14 @@ Respond with: "yes (reason)" or "no (reason)"."""
                     progress = self.current_plan.get_progress()
                     current_step = self.current_plan.get_current_step()
                     if current_step:
-                        update_plan_status(f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%) | 步骤 {current_step.step_number}")
+                        update_plan_status(
+                            f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%) | 步骤 {current_step.step_number}"
+                        )
                     else:
-                        update_plan_status(f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%)")
-                
+                        update_plan_status(
+                            f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%)"
+                        )
+
                 for tc_id, tc_data in tool_call_acc.items():
                     # logger.info(f"=== Tool Call ===")
                     # logger.debug(f"name: {tc_data['name']}")
@@ -868,7 +928,9 @@ Respond with: "yes (reason)" or "no (reason)"."""
                     result_content = None
                     # 处理标准化的返回格式
                     if isinstance(tool_call_result, dict):
-                        result_content = json.dumps(tool_call_result, ensure_ascii=False, indent=2)
+                        result_content = json.dumps(
+                            tool_call_result, ensure_ascii=False, indent=2
+                        )
                         # 检查工具执行是否成功
                         is_success = tool_call_result.get("success", False)
                         tool_result = tool_call_result.get("result", "")
@@ -879,31 +941,41 @@ Respond with: "yes (reason)" or "no (reason)"."""
                         is_success = True  # 假设成功
                         tool_result = tool_call_result
                         tool_error = None
-                    
+
                     # 检查是否是任务计划管理工具，如果是则更新UI显示
-                    if self.current_plan and tc_data["name"] in ["update_step_status", "move_to_next_step", "get_plan_status"]:
+                    if self.current_plan and tc_data["name"] in [
+                        "update_step_status",
+                        "move_to_next_step",
+                        "get_plan_status",
+                    ]:
                         # 解析工具结果以更新UI
                         try:
-                            if isinstance(tool_call_result, dict) and tool_call_result.get("success"):
+                            if isinstance(
+                                tool_call_result, dict
+                            ) and tool_call_result.get("success"):
                                 progress = self.current_plan.get_progress()
                                 current_step = self.current_plan.get_current_step()
                                 if current_step:
-                                    update_plan_status(f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%) | 步骤 {current_step.step_number}")
+                                    update_plan_status(
+                                        f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%) | 步骤 {current_step.step_number}"
+                                    )
                                 else:
-                                    update_plan_status(f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%)")
+                                    update_plan_status(
+                                        f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%)"
+                                    )
                         except:
                             pass
-                    
+
                     self.message_manager.add_assistant_tool_call_result(
                         tc_data["id"], result_content
                     )
-                
+
                 continue
             else:
                 # 最终回复阶段
                 # logger.info(f"=== Final Answer ===")
                 # logger.info(content)
-                
+
                 # 如果有任务计划，更新UI显示最终进度（但不自动更新计划状态）
                 if self.current_plan:
                     final_progress = self.current_plan.get_progress()
@@ -913,6 +985,6 @@ Respond with: "yes (reason)" or "no (reason)"."""
                         if final_progress["failed"] > 0:
                             status_text += f" ⚠️{final_progress['failed']}"
                         update_plan_status(status_text)
-                
+
                 self.message_manager.add_assistant_content(content)
                 break

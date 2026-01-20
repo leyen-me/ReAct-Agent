@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 class StepStatus(Enum):
     """步骤状态"""
+
     PENDING = "pending"  # 待执行
     IN_PROGRESS = "in_progress"  # 执行中
     COMPLETED = "completed"  # 已完成
@@ -27,6 +28,7 @@ class StepStatus(Enum):
 @dataclass
 class PlanStep:
     """计划步骤"""
+
     step_number: int  # 步骤编号
     description: str  # 步骤描述
     expected_tools: List[str] = field(default_factory=list)  # 预期使用的工具
@@ -76,6 +78,7 @@ class PlanStep:
 @dataclass
 class TaskPlan:
     """任务计划"""
+
     task_description: str  # 任务描述
     steps: List[PlanStep] = field(default_factory=list)  # 计划步骤
     created_at: datetime = field(default_factory=datetime.now)  # 创建时间
@@ -127,11 +130,13 @@ class TaskPlan:
             "",
             "执行步骤:",
         ]
-        
+
         progress = self.get_progress()
-        lines.append(f"进度: {progress['completed']}/{progress['total']} 已完成 ({progress['progress_percent']:.1f}%)")
+        lines.append(
+            f"进度: {progress['completed']}/{progress['total']} 已完成 ({progress['progress_percent']:.1f}%)"
+        )
         lines.append("")
-        
+
         for step in self.steps:
             status_icon = {
                 StepStatus.PENDING: "⏳",
@@ -140,17 +145,21 @@ class TaskPlan:
                 StepStatus.FAILED: "❌",
                 StepStatus.SKIPPED: "⏭️",
             }.get(step.status, "❓")
-            
+
             line = f"{status_icon} 步骤 {step.step_number}: {step.description}"
             if step.expected_tools:
                 line += f" [工具: {', '.join(step.expected_tools)}]"
             lines.append(line)
-            
+
             if step.status == StepStatus.COMPLETED and step.result:
-                lines.append(f"   ✓ 结果: {step.result[:100]}..." if len(step.result) > 100 else f"   ✓ 结果: {step.result}")
+                lines.append(
+                    f"   ✓ 结果: {step.result[:100]}..."
+                    if len(step.result) > 100
+                    else f"   ✓ 结果: {step.result}"
+                )
             elif step.status == StepStatus.FAILED and step.error:
                 lines.append(f"   ✗ 错误: {step.error}")
-        
+
         return "\n".join(lines)
 
 
@@ -168,7 +177,11 @@ class TaskPlanner:
         self.client = client
         self.available_tools = available_tools
 
-    def create_plan(self, task_description: str, plan_status_callback: Optional[Callable[[str], None]] = None) -> TaskPlan:
+    def create_plan(
+        self,
+        task_description: str,
+        plan_status_callback: Optional[Callable[[str], None]] = None,
+    ) -> TaskPlan:
         """
         创建任务计划
 
@@ -180,7 +193,7 @@ class TaskPlanner:
             任务计划
         """
         logger.info(f"开始规划任务: {task_description}")
-        
+
         if plan_status_callback:
             plan_status_callback("📋 制定计划中...")
 
@@ -198,6 +211,7 @@ class TaskPlanner:
                 temperature=0.7,
                 max_tokens=2048,
                 stream=True,
+                extra_body={"thinking": {"type": "disabled"}},
             )
 
             plan_content = ""
@@ -209,14 +223,14 @@ class TaskPlanner:
                             plan_content += delta.content
                             # 更新规划状态（显示前30个字符）
                             if plan_status_callback:
-                                preview = plan_content[:30].replace('\n', ' ')
+                                preview = plan_content[:30].replace("\n", " ")
                                 plan_status_callback(f"📋 制定计划中: {preview}...")
             finally:
                 try:
                     stream_response.close()
                 except:
                     pass
-            
+
             logger.debug(f"规划响应: {plan_content}")
 
             # 解析计划
@@ -246,7 +260,8 @@ class TaskPlanner:
 
     def _get_planning_system_prompt(self) -> str:
         """获取规划系统提示词（参考 OpenAI/Anthropic 最佳实践）"""
-        return """You are an expert task planning assistant. Your role is to analyze user requests and decompose them into clear, executable action plans.
+        return (
+            """You are an expert task planning assistant. Your role is to analyze user requests and decompose them into clear, executable action plans.
 
 ## Your Responsibilities
 
@@ -258,7 +273,9 @@ class TaskPlanner:
 
 ## Available Tools
 
-""" + ", ".join(self.available_tools) + """
+"""
+            + ", ".join(self.available_tools)
+            + """
 
 ## Output Format
 
@@ -313,6 +330,7 @@ User request: "Create a Python web application with a database"
     }
   ]
 }"""
+        )
 
     def _build_planning_prompt(self, task_description: str) -> str:
         """构建规划提示词（参考 OpenAI/Anthropic 最佳实践）"""
@@ -356,11 +374,11 @@ Please provide your plan in the JSON format specified in the system instructions
             # 尝试提取 JSON（可能包含 markdown 代码块）
             json_start = plan_content.find("{")
             json_end = plan_content.rfind("}") + 1
-            
+
             if json_start >= 0 and json_end > json_start:
                 json_str = plan_content[json_start:json_end]
                 plan_data = json.loads(json_str)
-                
+
                 steps = []
                 for step_data in plan_data.get("steps", []):
                     step = PlanStep(
@@ -369,14 +387,14 @@ Please provide your plan in the JSON format specified in the system instructions
                         expected_tools=step_data.get("expected_tools", []),
                     )
                     steps.append(step)
-                
+
                 return TaskPlan(
                     task_description=task_description,
                     steps=steps,
                 )
         except json.JSONDecodeError as e:
             logger.warning(f"解析 JSON 失败: {e}，尝试文本解析")
-        
+
         # 如果 JSON 解析失败，尝试文本解析
         return self._parse_plan_from_text(task_description, plan_content)
 
@@ -390,36 +408,42 @@ Please provide your plan in the JSON format specified in the system instructions
         compacted_steps: List[PlanStep] = []
         step_number = 1
         for i in range(0, len(plan.steps), chunk_size):
-            chunk = plan.steps[i:i + chunk_size]
+            chunk = plan.steps[i : i + chunk_size]
             descriptions = [s.description for s in chunk if s.description]
-            merged_description = " / ".join(descriptions) if descriptions else "合并步骤"
+            merged_description = (
+                " / ".join(descriptions) if descriptions else "合并步骤"
+            )
             expected_tools: List[str] = []
             for s in chunk:
                 for tool in s.expected_tools:
                     if tool not in expected_tools:
                         expected_tools.append(tool)
-            compacted_steps.append(PlanStep(
-                step_number=step_number,
-                description=merged_description,
-                expected_tools=expected_tools,
-            ))
+            compacted_steps.append(
+                PlanStep(
+                    step_number=step_number,
+                    description=merged_description,
+                    expected_tools=expected_tools,
+                )
+            )
             step_number += 1
 
         plan.steps = compacted_steps
         plan.current_step = 0
         return plan
 
-    def _parse_plan_from_text(self, task_description: str, plan_content: str) -> TaskPlan:
+    def _parse_plan_from_text(
+        self, task_description: str, plan_content: str
+    ) -> TaskPlan:
         """从文本解析计划（备用方法）"""
         steps = []
         lines = plan_content.split("\n")
-        
+
         step_number = 1
         for line in lines:
             line = line.strip()
             if not line:
                 continue
-            
+
             # 查找步骤模式：数字开头或列表项
             if line[0].isdigit() or line.startswith("-") or line.startswith("*"):
                 # 提取描述
@@ -431,7 +455,7 @@ Please provide your plan in the JSON format specified in the system instructions
                         description = parts[1].strip()
                 elif description.startswith("-") or description.startswith("*"):
                     description = description[1:].strip()
-                
+
                 if description:
                     step = PlanStep(
                         step_number=step_number,
@@ -440,15 +464,17 @@ Please provide your plan in the JSON format specified in the system instructions
                     )
                     steps.append(step)
                     step_number += 1
-        
+
         # 如果没有找到步骤，创建一个默认步骤
         if not steps:
-            steps.append(PlanStep(
-                step_number=1,
-                description=task_description,
-                expected_tools=[],
-            ))
-        
+            steps.append(
+                PlanStep(
+                    step_number=1,
+                    description=task_description,
+                    expected_tools=[],
+                )
+            )
+
         return TaskPlan(
             task_description=task_description,
             steps=steps,
