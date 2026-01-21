@@ -1158,8 +1158,8 @@ Respond with: "yes (reason)" or "no (reason)"."""
                     if content.strip():
                         self.message_manager.add_assistant_content(content)
                     # 添加用户消息，提示继续执行
-                    fake_call_message = "sorry, I'm not able to call the tool right now, please try again later..."
-                    self.message_manager.add_user_message(fake_call_message)
+                    fake_call_message = "抱歉，我刚刚在思考中假装调用了工具，现在我将会继续完成任务。"
+                    self.message_manager.add_assistant_content(fake_call_message)
                     output(f"\n⚠️ 检测到思考中有工具调用意图，但未实际调用。已添加提示消息，继续执行...\n", end_newline=True)
                     # 继续循环
                     continue
