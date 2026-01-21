@@ -365,15 +365,13 @@ You must reason and act strictly based on the above real environment.
     def _get_system_prompt_by_cn(self) -> str:
         """生成系统提示词（微软 PM / Spec 风格 Agent）"""
         return f"""
-    你是一名微软的全栈开发实习生，正在使用 Visual Studio Code 工作。
-    你的所有行动都由**产品负责人（PM）或相关 Stakeholder 提供的产品需求**驱动。
-    不允许自行编造需求或假设不存在的决策。
+    你是一名微软的全栈开发实习生，正在使用 {config.operating_system}电脑, 正在使用 Visual Studio Code 打开了一个的本地工作目录 {config.work_dir}。准备完成 PM 提供的产品需求。
 
     ━━━━━━━━━━━━━━
     【初始状态规则（必须遵守）】
     ━━━━━━━━━━━━━━
     - 如果尚未收到明确、可执行的产品需求或工作项（Work Item）：
-    - 明确回复：“等待产品需求输入”
+    - 明确回复：“你好，我刚刚在摸鱼，现在有一些空闲时间，请告诉我你需要我做什么？”
     - 不进行任务拆分
     - 不调用任何工具
     - 不输出多余内容
@@ -386,34 +384,24 @@ You must reason and act strictly based on the above real environment.
     ━━━━━━━━━━━━━━
     【总体目标】
     ━━━━━━━━━━━━━━
-    - 准确理解当前**有效的产品需求 / 规格（Spec）**
+    - 准确理解当前有效的产品需求
     - 在真实环境与约束下完成实现
     - 在需求不明确或存在风险时，主动暴露问题
-    - 仅输出对需求方（PM / Stakeholder）有价值的结果
-
-    ━━━━━━━━━━━━━━
-    【需求管理原则（微软工程语境）】
-    ━━━━━━━━━━━━━━
-    - 产品需求可能来自：
-    - PM 提供的功能需求
-    - Stakeholder 的补充或调整
-    - 已存在的 Spec / Work Item
-    - 需求是**可以演进的**，但每一时刻只存在一个“当前有效版本”
-    - 最新的产品决策具有最高优先级
+    - 仅输出对需求方 PM 有价值的结果
 
     ━━━━━━━━━━━━━━
     【执行流程（严格阶段化）】
     ━━━━━━━━━━━━━━
 
-    【阶段 1：需求理解与澄清（Understand）】
+    【阶段 1：需求理解、澄清、补全默认实现（Understand）】
     - 判断当前输入属于：
     - 新产品需求
     - 对现有需求的补充 / 修改
     - 对实现进度或结果的询问
-    - 在需求存在歧义、缺失验收标准或影响较大时：
-    - 明确指出不确定点
-    - 提出必要的澄清问题
-    - 不调用任何工具
+    - 在需求存在歧义，明确指出不确定点，提出必要的澄清问题
+    - 可以调用一些可读性工具，来辅助理解需求
+    - 你的目标不是“等待完美需求”，而是：在需求不完整时，先基于代码和常识给出一个【合理的默认实现】，同时明确哪些地方是【你的工程假设】
+    - 当需求表述模糊时，允许你基于工程经验自行补全默认方案
 
     ━━━━━━━━━━━━━━
     【阶段 2：任务规划（Plan）】
@@ -425,6 +413,7 @@ You must reason and act strictly based on the above real environment.
     - 输出内容：
     - 简要的需求理解摘要
     - 基于需求的任务拆分（markdown 任务列表）
+    - 为防止遗忘，你可以创建一个 tasks 目录，将任务列表以 markdown 文件的格式保存到 tasks 目录下
 
     - 任务拆分规则：
     - 从功能层面拆分，而非代码细节
@@ -450,7 +439,7 @@ You must reason and act strictly based on the above real environment.
     【阶段 4：验证与进度同步（Verify & Sync）】
     ━━━━━━━━━━━━━━
     - 每完成一个任务：
-    - 更新任务状态
+    - 更新 tasks 目录下的 markdown 文件，标记任务状态
     - 同步对需求方有价值的进度或结果
     - 如果发现：
     - 实现与需求不一致
@@ -458,16 +447,15 @@ You must reason and act strictly based on the above real environment.
     - 当前方案存在明显风险
     - 必须及时指出并给出建议
 
-    - 如果 PM / Stakeholder 在执行过程中提出新决策：
+    - 如果 PM 在执行过程中提出新决策：
     - 立即暂停当前任务
-    - 回到【阶段 1：需求理解与澄清】
+    - 回到【阶段 1：需求理解、澄清、补全默认实现】
 
     ━━━━━━━━━━━━━━
     【阶段 5：完成条件（Definition of Done）】
     ━━━━━━━━━━━━━━
     - 仅在以下条件全部满足时，才认为需求完成：
     - 当前有效需求已全部实现
-    - 验收条件（如有）已满足
     - 所有相关任务状态为“✅ 已完成”或“🟡 已跳过（合理）”
 
     - 完成后：
@@ -480,7 +468,7 @@ You must reason and act strictly based on the above real environment.
     - 操作系统：{config.operating_system}
     - 工作目录：{config.work_dir}
     - 当前时间（北京时间）：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-    - 用户语言偏好：{config.user_language_preference}
+    - PM 语言偏好：{config.user_language_preference}
 
     你必须基于以上真实环境进行推理与行动。
 
@@ -569,6 +557,8 @@ You must reason and act strictly based on the above real environment.
         """
         检测思考内容中是否有虚假的工具调用
         
+        检测逻辑：如果思考内容末尾是 JSON 对象，很可能是虚假的工具调用
+        
         Args:
             reasoning_content: 思考内容
             
@@ -578,64 +568,42 @@ You must reason and act strictly based on the above real environment.
         if not reasoning_content:
             return False
         
-        # 获取所有工具名称
-        tool_names = [tool.name for tool in self.tools]
+        # 去除末尾空白
+        content = reasoning_content.strip()
+        if not content:
+            return False
         
-        # 检测模式1: 包含工具名称（不区分大小写）
-        reasoning_lower = reasoning_content.lower()
-        for tool_name in tool_names:
-            # 检查是否包含工具名称（作为独立词或部分词）
-            if tool_name in reasoning_lower:
-                # 进一步检查是否有类似 JSON 格式的参数
-                # 查找工具名称附近的 JSON 对象模式
-                tool_name_pos = reasoning_lower.find(tool_name)
-                if tool_name_pos != -1:
-                    # 检查工具名称后面是否有 JSON 格式的内容
-                    after_tool_name = reasoning_content[tool_name_pos + len(tool_name):tool_name_pos + len(tool_name) + 200]
-                    # 检查是否有 JSON 对象模式 { ... }
-                    if '{' in after_tool_name:
-                        # 尝试提取 JSON 对象
-                        json_start = after_tool_name.find('{')
-                        json_end = after_tool_name.rfind('}')
-                        if json_end > json_start:
-                            json_str = after_tool_name[json_start:json_end + 1]
-                            # 尝试解析 JSON（如果成功，说明可能是工具调用）
-                            try:
-                                json.loads(json_str)
-                                return True
-                            except:
-                                pass
+        # 查找最后一个 JSON 对象（从末尾开始）
+        # 找到最后一个 '}' 的位置
+        last_brace_pos = content.rfind('}')
+        if last_brace_pos == -1:
+            return False
         
-        # 检测模式2: 包含类似函数调用的模式，如 "read_file(...)" 或 "edit_file({...})"
-        # 匹配工具名称后跟括号的模式
-        for tool_name in tool_names:
-            pattern = rf'\b{re.escape(tool_name)}\s*\([^)]*\)'
-            if re.search(pattern, reasoning_content, re.IGNORECASE):
-                return True
+        # 从最后一个 '}' 向前查找匹配的 '{'
+        brace_count = 1
+        json_start = -1
+        for i in range(last_brace_pos - 1, -1, -1):
+            if content[i] == '}':
+                brace_count += 1
+            elif content[i] == '{':
+                brace_count -= 1
+                if brace_count == 0:
+                    json_start = i
+                    break
         
-        # 检测模式3: 包含类似 "调用工具"、"使用工具" 等中文描述，后面跟 JSON
-        chinese_patterns = [
-            r'调用\s*\w+',
-            r'使用\s*\w+',
-            r'执行\s*\w+',
-            r'运行\s*\w+',
-        ]
-        for pattern in chinese_patterns:
-            if re.search(pattern, reasoning_content):
-                # 检查后面是否有 JSON
-                matches = list(re.finditer(pattern, reasoning_content))
-                for match in matches:
-                    after_match = reasoning_content[match.end():match.end() + 200]
-                    if '{' in after_match:
-                        json_start = after_match.find('{')
-                        json_end = after_match.rfind('}')
-                        if json_end > json_start:
-                            json_str = after_match[json_start:json_end + 1]
-                            try:
-                                json.loads(json_str)
-                                return True
-                            except:
-                                pass
+        # 如果找到了匹配的 '{'，尝试解析 JSON
+        if json_start != -1:
+            json_str = content[json_start:last_brace_pos + 1]
+            # 检查 JSON 后面是否只有空白或换行
+            after_json = content[last_brace_pos + 1:].strip()
+            if not after_json or after_json in ['\n', '\r\n']:
+                try:
+                    parsed_json = json.loads(json_str)
+                    # 如果成功解析为字典，说明末尾是 JSON 对象
+                    if isinstance(parsed_json, dict):
+                        return True
+                except:
+                    pass
         
         return False
 
@@ -1190,7 +1158,7 @@ Respond with: "yes (reason)" or "no (reason)"."""
                     if content.strip():
                         self.message_manager.add_assistant_content(content)
                     # 添加用户消息，提示继续执行
-                    fake_call_message = "刚刚断网了，请继续执行..."
+                    fake_call_message = "sorry, I'm not able to call the tool right now, please try again later..."
                     self.message_manager.add_user_message(fake_call_message)
                     output(f"\n⚠️ 检测到思考中有工具调用意图，但未实际调用。已添加提示消息，继续执行...\n", end_newline=True)
                     # 继续循环

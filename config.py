@@ -71,7 +71,7 @@ class Config:
             "max_context_tokens": "128000",
             "user_language_preference": "中文",
             "log_separator_length": "20",
-            "enable_task_planning": "true",
+            "enable_task_planning": "false",
             "max_plan_steps": "6",
         }
     

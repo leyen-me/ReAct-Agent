@@ -1370,7 +1370,7 @@ class ConfigEditScreen(ModalScreen[bool]):
                     # 任务规划配置
                     with Horizontal(classes="config-row config-row-enable_task_planning"):
                         yield Static("启用任务规划", classes="config-label")
-                        yield Input(value="true", classes="config-input", id="config-enable_task_planning")
+                        yield Input(value="false", classes="config-input", id="config-enable_task_planning")
                     
                     with Horizontal(classes="config-row config-row-max_plan_steps"):
                         yield Static("最大计划步骤", classes="config-label")
