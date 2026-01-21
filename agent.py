@@ -3,6 +3,7 @@
 
 import json
 import logging
+import re
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Callable, Tuple
 
@@ -563,6 +564,80 @@ You must reason and act strictly based on the above real environment.
     def _get_tools_name_and_description(self) -> str:
         """获取工具名称和描述"""
         return "\n".join([f"- {tool.name}: {tool.description}" for tool in self.tools])
+    
+    def _detect_fake_tool_call_in_reasoning(self, reasoning_content: str) -> bool:
+        """
+        检测思考内容中是否有虚假的工具调用
+        
+        Args:
+            reasoning_content: 思考内容
+            
+        Returns:
+            是否检测到虚假工具调用
+        """
+        if not reasoning_content:
+            return False
+        
+        # 获取所有工具名称
+        tool_names = [tool.name for tool in self.tools]
+        
+        # 检测模式1: 包含工具名称（不区分大小写）
+        reasoning_lower = reasoning_content.lower()
+        for tool_name in tool_names:
+            # 检查是否包含工具名称（作为独立词或部分词）
+            if tool_name in reasoning_lower:
+                # 进一步检查是否有类似 JSON 格式的参数
+                # 查找工具名称附近的 JSON 对象模式
+                tool_name_pos = reasoning_lower.find(tool_name)
+                if tool_name_pos != -1:
+                    # 检查工具名称后面是否有 JSON 格式的内容
+                    after_tool_name = reasoning_content[tool_name_pos + len(tool_name):tool_name_pos + len(tool_name) + 200]
+                    # 检查是否有 JSON 对象模式 { ... }
+                    if '{' in after_tool_name:
+                        # 尝试提取 JSON 对象
+                        json_start = after_tool_name.find('{')
+                        json_end = after_tool_name.rfind('}')
+                        if json_end > json_start:
+                            json_str = after_tool_name[json_start:json_end + 1]
+                            # 尝试解析 JSON（如果成功，说明可能是工具调用）
+                            try:
+                                json.loads(json_str)
+                                return True
+                            except:
+                                pass
+        
+        # 检测模式2: 包含类似函数调用的模式，如 "read_file(...)" 或 "edit_file({...})"
+        # 匹配工具名称后跟括号的模式
+        for tool_name in tool_names:
+            pattern = rf'\b{re.escape(tool_name)}\s*\([^)]*\)'
+            if re.search(pattern, reasoning_content, re.IGNORECASE):
+                return True
+        
+        # 检测模式3: 包含类似 "调用工具"、"使用工具" 等中文描述，后面跟 JSON
+        chinese_patterns = [
+            r'调用\s*\w+',
+            r'使用\s*\w+',
+            r'执行\s*\w+',
+            r'运行\s*\w+',
+        ]
+        for pattern in chinese_patterns:
+            if re.search(pattern, reasoning_content):
+                # 检查后面是否有 JSON
+                matches = list(re.finditer(pattern, reasoning_content))
+                for match in matches:
+                    after_match = reasoning_content[match.end():match.end() + 200]
+                    if '{' in after_match:
+                        json_start = after_match.find('{')
+                        json_end = after_match.rfind('}')
+                        if json_end > json_start:
+                            json_str = after_match[json_start:json_end + 1]
+                            try:
+                                json.loads(json_str)
+                                return True
+                            except:
+                                pass
+        
+        return False
 
     def stop_chat(self) -> None:
         """停止当前对话"""
@@ -998,6 +1073,7 @@ Respond with: "yes (reason)" or "no (reason)"."""
             if self.should_stop:
                 # 如果有部分内容，先保存
                 if content.strip():
+                    self.message_manager.add_assistant_content(reasoning_content)
                     self.message_manager.add_assistant_content(content)
                 # 添加系统消息说明用户中断了对话
                 self.message_manager.messages.append(
@@ -1105,6 +1181,21 @@ Respond with: "yes (reason)" or "no (reason)"."""
                 continue
             else:
                 # 最终回复阶段
+                # 检测是否有虚假的工具调用（在思考中假装调用工具）
+                if self._detect_fake_tool_call_in_reasoning(reasoning_content):
+                    logger.warning("检测到思考内容中有虚假的工具调用，但未实际调用工具")
+                    # 保存当前的思考内容和回复内容
+                    if reasoning_content.strip():
+                        self.message_manager.add_assistant_content(reasoning_content)
+                    if content.strip():
+                        self.message_manager.add_assistant_content(content)
+                    # 添加用户消息，提示继续执行
+                    fake_call_message = "刚刚断网了，请继续执行..."
+                    self.message_manager.add_user_message(fake_call_message)
+                    output(f"\n⚠️ 检测到思考中有工具调用意图，但未实际调用。已添加提示消息，继续执行...\n", end_newline=True)
+                    # 继续循环
+                    continue
+                
                 # logger.info(f"=== Final Answer ===")
                 # logger.info(content)
 
@@ -1118,6 +1209,8 @@ Respond with: "yes (reason)" or "no (reason)"."""
                             status_text += f" ⚠️{final_progress['failed']}"
                         update_plan_status(status_text)
 
-                self.message_manager.add_assistant_content(reasoning_content)
-                self.message_manager.add_assistant_content(content)
+                if reasoning_content.strip():
+                    self.message_manager.add_assistant_content(reasoning_content)
+                if content.strip():
+                    self.message_manager.add_assistant_content(content)
                 break
