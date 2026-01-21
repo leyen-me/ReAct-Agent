@@ -240,7 +240,7 @@ class Config:
         
         # 任务规划配置
         enable_task_planning_value = self._get_config_value(
-            config_dict, "enable_task_planning", "ENABLE_TASK_PLANNING", "true"
+            config_dict, "enable_task_planning", "ENABLE_TASK_PLANNING", "false"
         )
         self.enable_task_planning: bool = str(enable_task_planning_value).lower() == "true"
         
