@@ -1325,9 +1325,15 @@ class ReActAgentApp(App):
     }
     
     #header-title {
-        width: auto;
+        width: 1fr;
         color: #ffffff;
         text-style: bold;
+    }
+    
+    #header-context {
+        width: auto;
+        color: #a0a0a0;
+        margin-left: 2;
     }
     
     /* ===== Main 聊天区域 ===== */
@@ -1573,6 +1579,7 @@ class ReActAgentApp(App):
             # Header
             with Horizontal(id="app-header"):
                 yield Static(self._get_title(), id="header-title")
+                yield Static(self._get_context_percent(), id="header-context")
             
             # Main: 聊天区域
             with ScrollableContainer(id="main-container"):
@@ -1612,15 +1619,8 @@ class ReActAgentApp(App):
         
         return f"Token: {used:,}  Usage: {usage:.0f}%"
     
-    def _get_status_info_with_stats(self) -> str:
-        """获取状态信息（包含统计信息）"""
-        if self.is_processing:
-            status = "[#22c55e]●[/] 对话中"
-        else:
-            status = "[#7d8590]○[/] 空闲"
-        
-        # 添加统计信息，确保始终显示
-        stats = ""
+    def _get_context_percent(self) -> str:
+        """获取上下文使用百分比（用于 header）"""
         try:
             if hasattr(self.agent, "message_manager") and self.agent.message_manager is not None:
                 mm = self.agent.message_manager
@@ -1629,30 +1629,37 @@ class ReActAgentApp(App):
                     # 使用估算值（实时更新）
                     usage = mm.get_estimated_token_usage_percent()
                     used = mm.max_context_tokens - mm.get_estimated_remaining_tokens()
-                    stats = f"  Token: {used:,} ({usage:.0f}%) [估算]"
+                    return f"[dim]Context: {usage:.0f}% ({used:,}/{mm.max_context_tokens:,})[/]"
                 else:
                     # 使用实际值
                     usage = mm.get_token_usage_percent()
                     used = mm.max_context_tokens - mm.get_remaining_tokens()
-                    stats = f"  Token: {used:,} ({usage:.0f}%)"
+                    return f"[dim]Context: {usage:.0f}% ({used:,}/{mm.max_context_tokens:,})[/]"
             else:
                 # 如果 message_manager 不存在，显示默认值
-                stats = "  Token: --"
+                return "[dim]Context: --[/]"
         except Exception:
             # 如果获取 token 信息出错，显示默认值
-            stats = "  Token: --"
+            return "[dim]Context: --[/]"
+    
+    def _get_status_info_with_stats(self) -> str:
+        """获取状态信息（不包含统计信息，统计信息已移到 header）"""
+        if self.is_processing:
+            status = "[#22c55e]●[/] 对话中"
+        else:
+            status = "[#7d8590]○[/] 空闲"
         
         # 实时显示当前对话耗时（如果正在对话中）
         if self.is_processing and self.chat_start_time is not None:
             import time
             current_duration = time.time() - self.chat_start_time
             duration = f"  [dim]本轮耗时: {current_duration:.1f}s[/]"
-            return f"{status}{stats}{duration}"
+            return f"{status}{duration}"
         elif self.last_chat_duration is not None:
             duration = f"  [dim]上轮耗时: {self.last_chat_duration:.1f}s[/]"
-            return f"{status}{stats}{duration}"
+            return f"{status}{duration}"
         else:
-            return f"{status}{stats}"
+            return status
     
     def _get_model_info(self) -> str:
         """获取模型信息"""
@@ -1684,17 +1691,19 @@ class ReActAgentApp(App):
         try:
             # 刷新标题
             self.query_one("#header-title", Static).update(self._get_title())
-            # 刷新统计信息（现在在 setting-left 中）
-            self.query_one("#setting-left", Static).update(self._get_status_info_with_stats())
+            # 刷新上下文百分比（现在在 header 中）
+            self.query_one("#header-context", Static).update(self._get_context_percent())
         except Exception:
             pass
     
     def refresh_status(self) -> None:
-        """刷新状态栏"""
+        """刷新状态栏和 header 中的上下文百分比"""
         try:
-            # 统一使用包含 token 信息的版本，确保 token 信息一直显示
+            # 更新 footer 状态
             self.query_one("#setting-left", Static).update(self._get_status_info_with_stats())
             self.query_one("#setting-right", Static).update(self._get_shortcuts_info())
+            # 同时更新 header 中的上下文百分比（需要实时更新）
+            self.query_one("#header-context", Static).update(self._get_context_percent())
         except Exception:
             pass
     

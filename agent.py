@@ -67,8 +67,16 @@ class MessageManager:
         Args:
             prompt_tokens: API 返回的 prompt_tokens
         """
+        old_tokens = self.current_tokens
         self.current_tokens = prompt_tokens
         self.estimated_tokens = prompt_tokens  # 同步更新估算值
+
+        logger.debug(
+            f"更新 token 使用量 - "
+            f"旧值: {old_tokens}, 新值: {prompt_tokens}, "
+            f"使用率: {self.get_token_usage_percent():.2f}%"
+        )
+
         self._manage_context()
 
     def estimate_tokens(self, text: str) -> int:
@@ -156,28 +164,45 @@ class MessageManager:
 
     def _manage_context(self) -> None:
         """管理上下文，当超过限制时删除旧消息（保留系统消息）"""
-        # 如果超过限制，删除最旧的非系统消息
-        while self.current_tokens > self.max_context_tokens and len(self.messages) > 1:
+        removed_count = 0
+        while (
+            self.current_tokens > self.max_context_tokens
+            and len(self.messages) > 1
+        ):
             # 保留系统消息，删除第一个非系统消息
             removed_message = self.messages.pop(1)
+            removed_count += 1
             logger.debug(
-                f"上下文已满，删除旧消息，当前使用: {self.current_tokens}/{self.max_context_tokens}"
+                f"上下文已满，删除旧消息 - "
+                f"当前使用: {self.current_tokens}/{self.max_context_tokens}, "
+                f"消息角色: {removed_message.get('role', 'unknown')}"
             )
             # 注意：删除消息后，下次 API 调用时会重新计算 token 数
             # 这里我们暂时保持 current_tokens 不变，等待下次 API 响应更新
 
+        if removed_count > 0:
+            logger.info(
+                f"上下文管理完成 - 删除了 {removed_count} 条旧消息, "
+                f"剩余消息数: {len(self.messages)}"
+            )
+
     def add_user_message(self, content: str) -> None:
         """添加用户消息"""
         self.messages.append({"role": "user", "content": f"{content}"})
+        logger.debug(f"已添加用户消息 - 长度: {len(content)}")
 
     def add_assistant_content(self, content: str) -> None:
         """添加助手内容"""
         self.messages.append({"role": "assistant", "content": f"{content}"})
+        logger.debug(f"已添加助手回复 - 长度: {len(content)}")
 
     def add_assistant_tool_call_result(self, tool_call_id: str, content: str) -> None:
         """添加助手工具调用结果"""
         self.messages.append(
             {"role": "tool", "tool_call_id": tool_call_id, "content": f"{content}"}
+        )
+        logger.debug(
+            f"已添加工具调用结果 - ID: {tool_call_id}, 结果长度: {len(content)}"
         )
 
     def add_assistant_tool_call(
@@ -198,6 +223,10 @@ class MessageManager:
                     }
                 ],
             }
+        )
+        logger.debug(
+            f"已添加工具调用 - ID: {tool_call_id}, 工具: {name}, "
+            f"参数长度: {len(arguments)}"
         )
 
     def get_messages(self) -> List[Dict[str, str]]:
@@ -226,8 +255,16 @@ class MessageManager:
 class ReActAgent:
     """ReAct Agent"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """初始化 Agent"""
+        logger.info("初始化 ReActAgent")
+        logger.debug(
+            f"配置信息 - "
+            f"工作目录: {config.work_dir}, "
+            f"最大上下文: {config.max_context_tokens}, "
+            f"模型: {config.model}"
+        )
+
         self.client = OpenAI(
             api_key=config.api_key,
             base_url=config.base_url,
@@ -240,8 +277,11 @@ class ReActAgent:
         self.chat_count = 0
         self.should_stop = False  # 中断标志
 
+        logger.info(f"Agent 初始化完成 - 工具数量: {len(self.tools)}")
+
     def _create_tools(self) -> List[Tool]:
         """创建工具列表"""
+        logger.debug("开始创建工具列表")
         tools = [
             ReadFileTool(config.work_dir),
             ReadCodeBlockTool(config.work_dir),
@@ -265,6 +305,8 @@ class ReActAgent:
             GitBranchTool(config.work_dir),
             GitLogTool(config.work_dir),
         ]
+        logger.debug(f"工具列表创建完成 - 工具数量: {len(tools)}")
+        logger.debug(f"工具名称: {[tool.name for tool in tools]}")
         return tools
 
     def _get_system_prompt_by_en(self) -> str:
@@ -635,7 +677,7 @@ Execution Constraints:
 
     def _get_system_prompt(self) -> str:
         """生成系统提示词"""
-        return self._get_system_prompt_by_en()
+        return self._get_system_prompt_by_cn()
 
     def _get_tools(self) -> List[Dict[str, Any]]:
         """获取工具列表"""
@@ -659,44 +701,52 @@ Execution Constraints:
         """
         if not reasoning_content:
             return False
-        
+
         # 去除末尾空白
         content = reasoning_content.strip()
         if not content:
             return False
-        
+
         # 查找最后一个 JSON 对象（从末尾开始）
         # 找到最后一个 '}' 的位置
-        last_brace_pos = content.rfind('}')
+        last_brace_pos = content.rfind("}")
         if last_brace_pos == -1:
             return False
-        
+
         # 从最后一个 '}' 向前查找匹配的 '{'
         brace_count = 1
         json_start = -1
         for i in range(last_brace_pos - 1, -1, -1):
-            if content[i] == '}':
+            if content[i] == "}":
                 brace_count += 1
-            elif content[i] == '{':
+            elif content[i] == "{":
                 brace_count -= 1
                 if brace_count == 0:
                     json_start = i
                     break
-        
+
         # 如果找到了匹配的 '{'，尝试解析 JSON
         if json_start != -1:
-            json_str = content[json_start:last_brace_pos + 1]
+            json_str = content[json_start : last_brace_pos + 1]
             # 检查 JSON 后面是否只有空白或换行
-            after_json = content[last_brace_pos + 1:].strip()
-            if not after_json or after_json in ['\n', '\r\n']:
+            after_json = content[last_brace_pos + 1 :].strip()
+            if not after_json or after_json in ["\n", "\r\n"]:
                 try:
                     parsed_json = json.loads(json_str)
                     # 如果成功解析为字典，说明末尾是 JSON 对象
                     if isinstance(parsed_json, dict):
+                        logger.debug(
+                            f"检测到思考内容末尾有 JSON 对象 - "
+                            f"JSON 长度: {len(json_str)}, "
+                            f"键: {list(parsed_json.keys())}"
+                        )
                         return True
-                except:
+                except json.JSONDecodeError:
+                    # JSON 解析失败，不是有效的 JSON
                     pass
-        
+                except Exception as e:
+                    logger.debug(f"解析 JSON 时发生异常: {e}")
+
         return False
 
     def _clean_content(self, content: str) -> str:
@@ -711,14 +761,546 @@ Execution Constraints:
         """
         if not content:
             return content
-        
+
         # 简单匹配并移除 assistantfinal 这个词
-        cleaned = re.sub(r'assistantfinal', '', content, flags=re.IGNORECASE)
-        return cleaned.strip()
+        cleaned = re.sub(r"assistantfinal", "", content, flags=re.IGNORECASE)
+        cleaned = cleaned.strip()
+
+        if cleaned != content.strip():
+            logger.debug(
+                f"已清理内容中的 'assistantfinal' - "
+                f"原始长度: {len(content)}, 清理后长度: {len(cleaned)}"
+            )
+
+        return cleaned
 
     def stop_chat(self) -> None:
         """停止当前对话"""
+        logger.info("收到停止对话请求")
         self.should_stop = True
+
+    def _call_api_with_retry(
+        self, max_retries: int = 3
+    ) -> Stream[ChatCompletionChunk]:
+        """
+        调用 API，带重试机制
+
+        Args:
+            max_retries: 最大重试次数
+
+        Returns:
+            API 流式响应
+
+        Raises:
+            Exception: API 调用失败且重试次数用尽
+        """
+        retry_count = 0
+        messages = self.message_manager.get_messages()
+        tools = self._get_tools()
+
+        logger.info(
+            f"开始调用 API (第 {self.chat_count} 轮对话) - "
+            f"消息数: {len(messages)}, 工具数: {len(tools)}"
+        )
+        logger.debug(f"API 请求参数: model={config.model}, temperature=0.7, top_p=0.8")
+
+        while retry_count < max_retries:
+            try:
+                stream_response: Stream[ChatCompletionChunk] = (
+                    self.client.chat.completions.create(
+                        model=config.model,
+                        messages=messages,
+                        stream=True,
+                        temperature=0.7,
+                        top_p=0.8,
+                        max_tokens=65535,
+                        tools=tools,
+                        tool_choice="auto",
+                    )
+                )
+                logger.info(f"API 调用成功 (重试次数: {retry_count})")
+                return stream_response
+            except Exception as e:
+                retry_count += 1
+                logger.error(
+                    f"API 调用失败 (重试 {retry_count}/{max_retries}): {e}",
+                    exc_info=True,
+                )
+                if retry_count >= max_retries:
+                    logger.error("API 调用失败: 已达到最大重试次数")
+                    raise
+
+        # 理论上不会到达这里
+        raise RuntimeError("API 调用失败: 已达到最大重试次数")
+
+    def _get_current_reasoning(self) -> str:
+        """获取当前思考内容"""
+        return getattr(self, "_current_reasoning", "")
+
+    def _set_current_reasoning(self, content: str) -> None:
+        """设置当前思考内容"""
+        self._current_reasoning = content
+
+    def _clear_current_reasoning(self) -> None:
+        """清除当前思考内容"""
+        if hasattr(self, "_current_reasoning"):
+            delattr(self, "_current_reasoning")
+
+    def _handle_reasoning_content(
+        self,
+        delta_content: str,
+        reasoning_content: str,
+        start_flag: bool,
+        content: str,
+        output: Callable[[str, bool], None],
+        status_callback: Optional[Callable[[], None]],
+    ) -> Tuple[str, bool]:
+        """
+        处理思考内容
+
+        Args:
+            delta_content: 增量思考内容
+            reasoning_content: 累计思考内容
+            start_flag: 是否已开始输出思考内容
+            content: 当前回复内容
+            output: 输出回调函数
+            status_callback: 状态更新回调函数
+
+        Returns:
+            (更新后的思考内容, 是否已开始标志)
+        """
+        if not start_flag:
+            output(
+                f"\n{'='*config.log_separator_length} 模型思考 {'='*config.log_separator_length}\n"
+            )
+            logger.debug("开始接收模型思考内容")
+            start_flag = True
+
+        reasoning_content += delta_content
+        output(delta_content, end_newline=False)
+
+        # 更新思考内容追踪
+        current_reasoning = self._get_current_reasoning() + delta_content
+        self._set_current_reasoning(current_reasoning)
+
+        # 更新估算的 token
+        total_completion = current_reasoning + content
+        self.message_manager.update_estimated_tokens(total_completion)
+
+        # 通知UI更新状态
+        if status_callback:
+            status_callback()
+
+        return reasoning_content, start_flag
+
+    def _handle_assistant_content(
+        self,
+        delta_content: str,
+        content: str,
+        start_flag: bool,
+        output: Callable[[str, bool], None],
+        status_callback: Optional[Callable[[], None]],
+    ) -> Tuple[str, bool]:
+        """
+        处理助手回复内容
+
+        Args:
+            delta_content: 增量回复内容
+            content: 累计回复内容
+            start_flag: 是否已开始输出回复内容
+            output: 输出回调函数
+            status_callback: 状态更新回调函数
+
+        Returns:
+            (更新后的回复内容, 是否已开始标志)
+        """
+        if not start_flag:
+            output(
+                f"\n{'='*config.log_separator_length} 最终回复 {'='*config.log_separator_length}\n"
+            )
+            logger.debug("开始接收模型最终回复")
+            start_flag = True
+
+        content += delta_content
+        output(delta_content, end_newline=False)
+
+        # 更新估算的 token
+        self.message_manager.update_estimated_tokens(content)
+
+        # 通知UI更新状态
+        if status_callback:
+            status_callback()
+
+        return content, start_flag
+
+    def _handle_tool_call_delta(
+        self,
+        tool_call: Any,
+        tool_call_acc: Dict[str, Dict[str, str]],
+        last_tool_call_id: Optional[str],
+        start_flag: bool,
+        content: str,
+        output: Callable[[str, bool], None],
+        status_callback: Optional[Callable[[], None]],
+    ) -> Tuple[Dict[str, Dict[str, str]], Optional[str], bool]:
+        """
+        处理工具调用的增量数据
+
+        Args:
+            tool_call: 工具调用增量数据
+            tool_call_acc: 累计的工具调用数据
+            last_tool_call_id: 上一个工具调用ID
+            start_flag: 是否已开始输出工具调用
+            content: 当前回复内容
+            output: 输出回调函数
+            status_callback: 状态更新回调函数
+
+        Returns:
+            (更新后的工具调用累计数据, 工具调用ID, 是否已开始标志)
+        """
+        if not start_flag:
+            output(
+                f"\n{'='*config.log_separator_length} 工具调用 {'='*config.log_separator_length}\n"
+            )
+            logger.info("开始接收工具调用")
+            start_flag = True
+
+        tc_id = tool_call.id or last_tool_call_id
+        if tc_id is None:
+            logger.warning("工具调用缺少 ID，跳过")
+            return tool_call_acc, last_tool_call_id, start_flag
+
+        last_tool_call_id = tc_id
+
+        if tc_id not in tool_call_acc:
+            tool_call_acc[tc_id] = {"id": tc_id, "name": "", "arguments": ""}
+            logger.debug(f"开始接收工具调用: ID={tc_id}")
+
+        if tool_call.function:
+            if tool_call.function.name:
+                tool_call_acc[tc_id]["name"] += tool_call.function.name
+                output(tool_call.function.name, end_newline=False)
+            if tool_call.function.arguments:
+                tool_call_acc[tc_id]["arguments"] += tool_call.function.arguments
+                output(tool_call.function.arguments, end_newline=False)
+
+        # 更新估算的 token
+        tool_call_text = ""
+        for acc_tc_data in tool_call_acc.values():
+            tool_call_text += acc_tc_data.get("name", "") + acc_tc_data.get(
+                "arguments", ""
+            )
+
+        current_reasoning = self._get_current_reasoning()
+        total_completion = current_reasoning + content + tool_call_text
+        self.message_manager.update_estimated_tokens(total_completion)
+
+        # 通知UI更新状态
+        if status_callback:
+            status_callback()
+
+        return tool_call_acc, last_tool_call_id, start_flag
+
+    def _process_stream_response(
+        self,
+        stream_response: Stream[ChatCompletionChunk],
+        output: Callable[[str, bool], None],
+        status_callback: Optional[Callable[[], None]],
+    ) -> Tuple[str, str, Dict[str, Dict[str, str]], Optional[Any]]:
+        """
+        处理流式响应
+
+        Args:
+            stream_response: API 流式响应
+            output: 输出回调函数
+            status_callback: 状态更新回调函数
+
+        Returns:
+            (思考内容, 回复内容, 工具调用累计数据, usage信息)
+        """
+        reasoning_content = "Thinking:\n"
+        content = ""
+        last_tool_call_id: Optional[str] = None
+        tool_call_acc: Dict[str, Dict[str, str]] = {}
+        usage = None
+
+        start_reasoning_content = False
+        start_content = False
+        start_tool_call = False
+
+        self._set_current_reasoning("")
+
+        logger.debug("开始处理流式响应")
+
+        try:
+            for chunk in stream_response:
+                if self.should_stop:
+                    logger.info("流式响应处理被用户中断，正在关闭流...")
+                    stream_response.close()
+                    break
+
+                if hasattr(chunk, "usage") and chunk.usage is not None:
+                    usage = chunk.usage
+
+                if chunk.choices and len(chunk.choices) > 0:
+                    delta = chunk.choices[0].delta
+
+                    if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                        reasoning_content, start_reasoning_content = (
+                            self._handle_reasoning_content(
+                                delta.reasoning_content,
+                                reasoning_content,
+                                start_reasoning_content,
+                                content,
+                                output,
+                                status_callback,
+                            )
+                        )
+
+                    if hasattr(delta, "content") and delta.content:
+                        content, start_content = self._handle_assistant_content(
+                            delta.content,
+                            content,
+                            start_content,
+                            output,
+                            status_callback,
+                        )
+
+                    if hasattr(delta, "tool_calls") and delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            tool_call_acc, last_tool_call_id, start_tool_call = (
+                                self._handle_tool_call_delta(
+                                    tc,
+                                    tool_call_acc,
+                                    last_tool_call_id,
+                                    start_tool_call,
+                                    content,
+                                    output,
+                                    status_callback,
+                                )
+                            )
+
+        except Exception as e:
+            logger.error(f"处理流式响应时发生异常: {e}", exc_info=True)
+            if not self.should_stop:
+                raise
+        finally:
+            try:
+                stream_response.close()
+                logger.debug("流式响应已关闭")
+            except Exception:
+                pass
+
+        logger.debug(
+            f"流式响应处理完成 - "
+            f"思考长度: {len(reasoning_content)}, "
+            f"回复长度: {len(content)}, "
+            f"工具调用数: {len(tool_call_acc)}"
+        )
+
+        return reasoning_content, content, tool_call_acc, usage
+
+    def _update_token_usage(
+        self, usage: Any, status_callback: Optional[Callable[[], None]]
+    ) -> None:
+        """
+        更新 token 使用量
+
+        Args:
+            usage: API 返回的 usage 信息
+            status_callback: 状态更新回调函数
+        """
+        if not usage:
+            logger.warning("流式响应中未找到 usage 信息")
+            self._clear_current_reasoning()
+            return
+
+        prompt_tokens = getattr(usage, "prompt_tokens", None)
+        if prompt_tokens is None:
+            logger.warning("API 响应中未找到 prompt_tokens")
+            self._clear_current_reasoning()
+            return
+
+        completion_tokens = getattr(usage, "completion_tokens", 0)
+        total_tokens = getattr(usage, "total_tokens", 0)
+
+        self.message_manager.update_token_usage(prompt_tokens)
+        self._clear_current_reasoning()
+
+        logger.info(
+            f"Token 使用量更新 - "
+            f"prompt: {prompt_tokens}, "
+            f"completion: {completion_tokens}, "
+            f"total: {total_tokens}, "
+            f"使用率: {self.message_manager.get_token_usage_percent():.2f}%"
+        )
+
+        if status_callback:
+            status_callback()
+
+    def _execute_tool_calls(
+        self, tool_call_acc: Dict[str, Dict[str, str]]
+    ) -> None:
+        """
+        执行工具调用
+
+        Args:
+            tool_call_acc: 工具调用累计数据
+        """
+        logger.info(f"开始执行 {len(tool_call_acc)} 个工具调用")
+
+        for tc_id, tc_data in tool_call_acc.items():
+            tool_name = tc_data["name"]
+            tool_args = tc_data["arguments"]
+
+            logger.info(
+                f"执行工具调用 - ID: {tc_id}, 工具: {tool_name}, "
+                f"参数长度: {len(tool_args)}"
+            )
+            logger.debug(f"工具调用参数: {tool_args}")
+
+            # 添加到消息历史
+            self.message_manager.add_assistant_tool_call(tc_id, tool_name, tool_args)
+
+            # 执行工具
+            try:
+                tool_call_result = self.tool_executor.execute(tool_name, tool_args)
+
+                # 处理返回结果
+                if isinstance(tool_call_result, dict):
+                    result_content = json.dumps(
+                        tool_call_result, ensure_ascii=False, indent=2
+                    )
+                    is_success = tool_call_result.get("success", False)
+                    tool_result = tool_call_result.get("result", "")
+                    tool_error = tool_call_result.get("error")
+
+                    if is_success:
+                        logger.info(
+                            f"工具执行成功 - ID: {tc_id}, 工具: {tool_name}, "
+                            f"结果长度: {len(str(tool_result))}"
+                        )
+                    else:
+                        logger.error(
+                            f"工具执行失败 - ID: {tc_id}, 工具: {tool_name}, "
+                            f"错误: {tool_error}"
+                        )
+                else:
+                    # 兼容旧格式
+                    result_content = tool_call_result
+                    is_success = True
+                    logger.info(
+                        f"工具执行完成 - ID: {tc_id}, 工具: {tool_name} "
+                        f"(旧格式返回)"
+                    )
+
+                # 添加到消息历史
+                self.message_manager.add_assistant_tool_call_result(
+                    tc_id, result_content
+                )
+
+            except Exception as e:
+                logger.error(
+                    f"执行工具时发生异常 - ID: {tc_id}, 工具: {tool_name}: {e}",
+                    exc_info=True,
+                )
+                # 即使异常也要添加到消息历史
+                error_result = json.dumps(
+                    {"success": False, "result": None, "error": str(e)},
+                    ensure_ascii=False,
+                )
+                self.message_manager.add_assistant_tool_call_result(
+                    tc_id, error_result
+                )
+
+        logger.info("所有工具调用执行完成")
+
+    def _handle_final_response(
+        self,
+        reasoning_content: str,
+        content: str,
+        output: Callable[[str, bool], None],
+    ) -> bool:
+        """
+        处理最终回复
+
+        Args:
+            reasoning_content: 思考内容
+            content: 回复内容
+            output: 输出回调函数
+
+        Returns:
+            是否应该继续循环（True=继续，False=结束）
+        """
+        # 检测虚假工具调用
+        if self._detect_fake_tool_call_in_reasoning(reasoning_content):
+            logger.warning(
+                f"检测到思考内容中有虚假的工具调用 - "
+                f"思考长度: {len(reasoning_content)}, "
+                f"回复长度: {len(content)}"
+            )
+
+            # 保存内容
+            if reasoning_content.strip():
+                self.message_manager.add_assistant_content(reasoning_content)
+            if content.strip():
+                cleaned_content = self._clean_content(content)
+                self.message_manager.add_assistant_content(cleaned_content)
+
+            # 添加提示消息
+            fake_call_message = (
+                "抱歉，我刚刚在思考中假装调用了工具，现在我将会继续完成任务。"
+            )
+            self.message_manager.add_assistant_content(fake_call_message)
+            output(
+                "\n⚠️ 检测到思考中有工具调用意图，但未实际调用。已添加提示消息，继续执行...\n",
+                end_newline=True,
+            )
+            logger.info("已添加虚假工具调用提示消息，继续执行")
+            return True  # 继续循环
+
+        # 保存最终回复
+        if reasoning_content.strip():
+            self.message_manager.add_assistant_content(reasoning_content)
+            logger.debug(f"已保存思考内容，长度: {len(reasoning_content)}")
+
+        if content.strip():
+            cleaned_content = self._clean_content(content)
+            self.message_manager.add_assistant_content(cleaned_content)
+            logger.info(f"已保存最终回复，长度: {len(cleaned_content)}")
+
+        logger.info("最终回复处理完成，结束对话轮次")
+        return False  # 结束循环
+
+    def _handle_user_interruption(
+        self,
+        reasoning_content: str,
+        content: str,
+        output: Callable[[str, bool], None],
+    ) -> None:
+        """
+        处理用户中断
+
+        Args:
+            reasoning_content: 思考内容
+            content: 回复内容
+            output: 输出回调函数
+        """
+        logger.info("处理用户中断请求")
+
+        # 保存部分内容
+        if content.strip():
+            self.message_manager.add_assistant_content(reasoning_content)
+            cleaned_content = self._clean_content(content)
+            self.message_manager.add_assistant_content(cleaned_content)
+            logger.debug("已保存中断前的部分内容")
+
+        # 添加系统消息
+        self.message_manager.messages.append(
+            {"role": "system", "content": "[用户在此处中断了对话，未完成的任务已暂停]"}
+        )
+        output("\n\n[对话已被用户中断]", end_newline=True)
+        logger.info("已将用户中断信息添加到上下文")
 
     def chat(
         self,
@@ -735,313 +1317,80 @@ Execution Constraints:
                             如果提供，将使用回调而不是 print
             status_callback: 可选的状态更新回调函数，用于实时更新UI状态（如token使用量）
         """
+        logger.info(f"开始处理用户任务 - 消息长度: {len(task_message)}")
+        logger.debug(f"用户任务内容: {task_message[:200]}...")
+
         # 重置中断标志
         self.should_stop = False
 
         # 定义输出函数
-        def output(text: str, end_newline: bool = True):
+        def output(text: str, end_newline: bool = True) -> None:
             if output_callback:
                 output_callback(text, end_newline)
             else:
                 print(text, end="\n" if end_newline else "", flush=True)
 
+        # 添加用户消息
         self.message_manager.add_user_message(task_message)
-        # 重置 reasoning content 追踪（每次新的对话轮次）
-        if hasattr(self, "_current_reasoning"):
-            delattr(self, "_current_reasoning")
+        logger.debug("已添加用户消息到消息历史")
+
+        # 重置思考内容追踪
+        self._clear_current_reasoning()
+
+        # 主循环
         while True:
-            # 检查是否需要中断（在主循环开始时）
+            # 检查中断
             if self.should_stop:
                 logger.info("对话在主循环被用户中断")
-                # 添加系统消息说明用户中断了对话
                 self.message_manager.messages.append(
                     {"role": "system", "content": "[对话已被用户中断]"}
                 )
                 output("\n\n[对话已被用户中断]", end_newline=True)
                 break
-            self.chat_count += 1
 
-            logger.debug(f"=== Chat Round {self.chat_count} ===")
+            self.chat_count += 1
+            logger.info(f"=== 开始第 {self.chat_count} 轮对话 ===")
             logger.debug(
-                f"Messages: {json.dumps(self.message_manager.get_messages(), indent=2, ensure_ascii=False)}"
+                f"当前消息历史: {json.dumps(self.message_manager.get_messages(), indent=2, ensure_ascii=False)}"
             )
 
-            # 调用 API（带重试机制）
-            max_retries = 3
-            retry_count = 0
-
-            while retry_count < max_retries:
-                try:
-                    stream_response: Stream[ChatCompletionChunk] = (
-                        self.client.chat.completions.create(
-                            model=config.model,  # 使用执行模型
-                            messages=self.message_manager.get_messages(),
-                            stream=True,
-                            temperature=0.7,
-                            top_p=0.8,
-                            max_tokens=65535,
-                            tools=self._get_tools(),
-                            tool_choice="auto",
-                            extra_body={"thinking": {"type": "disabled"}},
-                        )
-                    )
-                    break  # 成功则跳出重试循环
-                except Exception as e:
-                    retry_count += 1
-                    logger.error(f"API 调用失败: {e}")
-                    raise
-
-            else:
-                # 重试次数用尽
-                logger.error("API 调用失败: 已达到最大重试次数")
-                error_msg = "\n=== 错误信息 ===\nAPI 调用失败: 已达到最大重试次数\n=== 错误信息结束 ===\n"
+            # 调用 API
+            try:
+                stream_response = self._call_api_with_retry()
+            except Exception as e:
+                logger.error(f"API 调用失败，无法继续: {e}", exc_info=True)
+                error_msg = (
+                    "\n=== 错误信息 ===\n"
+                    f"API 调用失败: {e}\n"
+                    "=== 错误信息结束 ===\n"
+                )
                 output(error_msg, end_newline=True)
-                return  # 优雅退出，不抛出异常
+                return
 
             # 处理流式响应
-            reasoning_content = "Thinking:\n"
-            content = ""
-            last_tool_call_id = None
-            tool_call_acc = {}
-            usage = None
+            reasoning_content, content, tool_call_acc, usage = (
+                self._process_stream_response(stream_response, output, status_callback)
+            )
 
-            start_reasoning_content = False
-            start_content = False
-            start_tool_call = False
-
-            # 初始化 reasoning content 追踪
-            self._current_reasoning = ""
-
-            # 定义输出函数（已在方法开始处定义，这里不需要重复定义）
-
-            try:
-                for chunk in stream_response:
-                    # 检查是否需要中断
-                    if self.should_stop:
-                        logger.info("流式响应被中断，正在关闭流...")
-                        stream_response.close()  # 关闭流，停止后端继续生成
-                        break
-
-                    # 获取 usage 信息（通常在最后一个 chunk 中）
-                    if hasattr(chunk, "usage") and chunk.usage is not None:
-                        usage = chunk.usage
-
-                    if chunk.choices and len(chunk.choices) > 0:
-                        delta = chunk.choices[0].delta
-
-                        if (
-                            hasattr(delta, "reasoning_content")
-                            and delta.reasoning_content
-                        ):
-                            if not start_reasoning_content:
-                                output(
-                                    f"\n{'='*config.log_separator_length} 模型思考 {'='*config.log_separator_length}\n"
-                                )
-                                start_reasoning_content = True
-                            _reasoning_content = delta.reasoning_content
-                            reasoning_content += delta.reasoning_content
-                            output(_reasoning_content, end_newline=False)
-                            # 实时更新估算的 token（reasoning content 也会消耗 tokens）
-                            # 这里我们简单地将 reasoning content 也计入 completion
-                            # 注意：reasoning 和 content 是分开的，但都计入 completion tokens
-                            if not hasattr(self, "_current_reasoning"):
-                                self._current_reasoning = ""
-                            self._current_reasoning += _reasoning_content
-                            # 估算时考虑 reasoning 和 content
-                            total_completion = (
-                                self._current_reasoning
-                                if hasattr(self, "_current_reasoning")
-                                else ""
-                            ) + content
-                            self.message_manager.update_estimated_tokens(
-                                total_completion
-                            )
-                            # 通知UI更新状态（实时更新token显示）
-                            if status_callback:
-                                status_callback()
-
-                        if hasattr(delta, "content") and delta.content:
-                            if not start_content:
-                                output(
-                                    f"\n{'='*config.log_separator_length} 最终回复 {'='*config.log_separator_length}\n"
-                                )
-                                start_content = True
-                            chunk_content = delta.content
-                            content += chunk_content
-                            output(chunk_content, end_newline=False)
-                            # 实时更新估算的 token（基于已生成的内容）
-                            self.message_manager.update_estimated_tokens(content)
-                            # 通知UI更新状态（实时更新token显示）
-                            if status_callback:
-                                status_callback()
-
-                        if hasattr(delta, "tool_calls") and delta.tool_calls:
-                            if not start_tool_call:
-                                output(
-                                    f"\n{'='*config.log_separator_length} 工具调用 {'='*config.log_separator_length}\n"
-                                )
-                                start_tool_call = True
-                            for tc in delta.tool_calls:
-                                tc_id = tc.id or last_tool_call_id
-
-                                if tc_id is None:
-                                    # 连第一个 id 都没有，直接跳过（极少见）
-                                    continue
-
-                                last_tool_call_id = tc_id
-
-                                if tc_id not in tool_call_acc:
-                                    tool_call_acc[tc_id] = {
-                                        "id": tc_id,
-                                        "name": "",
-                                        "arguments": "",
-                                    }
-
-                                # 拼 name（虽然一般只来一次，但规范允许拆）
-                                if tc.function:
-                                    if tc.function.name:
-                                        tool_call_acc[tc_id]["name"] += tc.function.name
-                                        output(tc.function.name, end_newline=False)
-                                    if tc.function.arguments:
-                                        tool_call_acc[tc_id][
-                                            "arguments"
-                                        ] += tc.function.arguments
-                                        output(tc.function.arguments, end_newline=False)
-
-                                    # 实时更新估算的 token（工具调用也会消耗 tokens）
-                                    # 构建工具调用的完整文本用于估算
-                                    tool_call_text = ""
-                                    for acc_tc_id, acc_tc_data in tool_call_acc.items():
-                                        tool_call_text += acc_tc_data.get(
-                                            "name", ""
-                                        ) + acc_tc_data.get("arguments", "")
-                                    # 估算时考虑 reasoning、content 和 tool_calls
-                                    total_completion = (
-                                        (
-                                            self._current_reasoning
-                                            if hasattr(self, "_current_reasoning")
-                                            else ""
-                                        )
-                                        + content
-                                        + tool_call_text
-                                    )
-                                    self.message_manager.update_estimated_tokens(
-                                        total_completion
-                                    )
-                                    # 通知UI更新状态（实时更新token显示）
-                                    if status_callback:
-                                        status_callback()
-            except Exception as e:
-                # 如果在处理流时发生异常（包括关闭流），记录日志
-                logger.debug(f"流处理异常: {e}")
-                # 如果是用户中断，不需要抛出异常
-                if not self.should_stop:
-                    raise
-            finally:
-                # 确保流被关闭
-                try:
-                    stream_response.close()
-                except Exception:
-                    pass
-
-            # 如果用户中断了对话，将中断信息添加到上下文
+            # 处理用户中断
             if self.should_stop:
-                # 如果有部分内容，先保存
-                if content.strip():
-                    self.message_manager.add_assistant_content(reasoning_content)
-                    cleaned_content = self._clean_content(content)
-                    self.message_manager.add_assistant_content(cleaned_content)
-                # 添加系统消息说明用户中断了对话
-                self.message_manager.messages.append(
-                    {
-                        "role": "system",
-                        "content": "[用户在此处中断了对话，未完成的任务已暂停]",
-                    }
-                )
-                logger.info("已将用户中断信息添加到上下文")
+                self._handle_user_interruption(reasoning_content, content, output)
                 break
 
-            # 更新 token 使用量（从 API 响应获取）
-            if usage:
-                prompt_tokens = getattr(usage, "prompt_tokens", None)
-                if prompt_tokens is not None:
-                    self.message_manager.update_token_usage(prompt_tokens)
-                    completion_tokens = getattr(usage, "completion_tokens", 0)
-                    total_tokens = getattr(usage, "total_tokens", 0)
-                    logger.debug(
-                        f"\nToken 使用: prompt={prompt_tokens}, completion={completion_tokens}, total={total_tokens}"
-                    )
-                    # 清除临时变量
-                    if hasattr(self, "_current_reasoning"):
-                        delattr(self, "_current_reasoning")
-                    # 通知UI更新状态（更新为实际值）
-                    if status_callback:
-                        status_callback()
-                else:
-                    logger.warning("\nAPI 响应中未找到 prompt_tokens")
-            else:
-                logger.warning("\n流式响应中未找到 usage 信息")
-                # 即使没有 usage，也清除临时变量
-                if hasattr(self, "_current_reasoning"):
-                    delattr(self, "_current_reasoning")
+            # 更新 token 使用量
+            self._update_token_usage(usage, status_callback)
 
+            # 执行工具调用
             if tool_call_acc:
-                for tc_id, tc_data in tool_call_acc.items():
-                    # logger.info(f"=== Tool Call ===")
-                    # logger.debug(f"name: {tc_data['name']}")
-                    # logger.debug(f"arguments: {tc_data['arguments']}")
-                    self.message_manager.add_assistant_tool_call(
-                        tc_id, tc_data["name"], tc_data["arguments"]
-                    )
-                    tool_call_result = self.tool_executor.execute(
-                        tc_data["name"], tc_data["arguments"]
-                    )
-                    result_content = None
-                    # 处理标准化的返回格式
-                    if isinstance(tool_call_result, dict):
-                        result_content = json.dumps(
-                            tool_call_result, ensure_ascii=False, indent=2
-                        )
-                        # 检查工具执行是否成功
-                        is_success = tool_call_result.get("success", False)
-                        tool_result = tool_call_result.get("result", "")
-                        tool_error = tool_call_result.get("error")
-                    else:
-                        # 兼容旧的返回格式
-                        result_content = tool_call_result
-                        is_success = True  # 假设成功
-                        tool_result = tool_call_result
-                        tool_error = None
-
-                    self.message_manager.add_assistant_tool_call_result(
-                        tc_data["id"], result_content
-                    )
-
+                self._execute_tool_calls(tool_call_acc)
+                logger.info("工具调用执行完成，继续下一轮对话")
                 continue
-            else:
-                # 最终回复阶段
-                # 检测是否有虚假的工具调用（在思考中假装调用工具）
-                if self._detect_fake_tool_call_in_reasoning(reasoning_content):
-                    logger.warning("检测到思考内容中有虚假的工具调用，但未实际调用工具")
-                    # 保存当前的思考内容和回复内容
-                    if reasoning_content.strip():
-                        self.message_manager.add_assistant_content(reasoning_content)
-                    if content.strip():
-                        cleaned_content = self._clean_content(content)
-                        self.message_manager.add_assistant_content(cleaned_content)
-                    # 添加用户消息，提示继续执行
-                    fake_call_message = "抱歉，我刚刚在思考中假装调用了工具，现在我将会继续完成任务。"
-                    self.message_manager.add_assistant_content(fake_call_message)
-                    output(f"\n⚠️ 检测到思考中有工具调用意图，但未实际调用。已添加提示消息，继续执行...\n", end_newline=True)
-                    # 继续循环
-                    continue
-                
-                # logger.info(f"=== Final Answer ===")
-                # logger.info(content)
 
-                if reasoning_content.strip():
-                    self.message_manager.add_assistant_content(reasoning_content)
-                if content.strip():
-                    cleaned_content = self._clean_content(content)
-                    self.message_manager.add_assistant_content(cleaned_content)
+            # 处理最终回复
+            should_continue = self._handle_final_response(
+                reasoning_content, content, output
+            )
+            if not should_continue:
                 break
+
+        logger.info("用户任务处理完成")
