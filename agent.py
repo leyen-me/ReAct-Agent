@@ -212,6 +212,7 @@ class MessageManager:
         self.messages.append(
             {
                 "role": "assistant",
+                "content": "",  # 当有 tool_calls 时，content 应为空字符串（某些 API 实现不接受 None）
                 "tool_calls": [
                     {
                         "id": tool_call_id,
@@ -229,9 +230,54 @@ class MessageManager:
             f"参数长度: {len(arguments)}"
         )
 
+    def _validate_and_clean_messages(self, messages: List[Dict]) -> List[Dict]:
+        """
+        验证并清理消息格式，确保符合 OpenAI API 规范
+        
+        Args:
+            messages: 原始消息列表
+            
+        Returns:
+            清理后的消息列表
+        """
+        cleaned_messages = []
+        for msg in messages:
+            cleaned_msg = msg.copy()
+            role = cleaned_msg.get("role")
+            
+            # 确保 content 字段的类型正确
+            if "content" in cleaned_msg:
+                content = cleaned_msg["content"]
+                # 如果 content 是 None，根据是否有 tool_calls 决定处理方式
+                if content is None:
+                    # 如果有 tool_calls，content 可以是 None
+                    if "tool_calls" not in cleaned_msg or not cleaned_msg["tool_calls"]:
+                        # 如果没有 tool_calls，content 不能是 None，设置为空字符串
+                        cleaned_msg["content"] = ""
+                elif not isinstance(content, (str, list)):
+                    # 如果 content 不是字符串或列表，转换为字符串
+                    cleaned_msg["content"] = str(content) if content is not None else ""
+            
+            # 确保 tool_calls 存在时，content 为空字符串
+            if "tool_calls" in cleaned_msg and cleaned_msg["tool_calls"]:
+                if "content" not in cleaned_msg or cleaned_msg["content"]:
+                    # 如果有 tool_calls，content 应该为空字符串（某些 API 实现不接受 None）
+                    cleaned_msg["content"] = ""
+            
+            # 确保 tool_call_id 是字符串
+            if "tool_call_id" in cleaned_msg:
+                tool_call_id = cleaned_msg["tool_call_id"]
+                if not isinstance(tool_call_id, str):
+                    cleaned_msg["tool_call_id"] = str(tool_call_id)
+            
+            cleaned_messages.append(cleaned_msg)
+        
+        return cleaned_messages
+
     def get_messages(self) -> List[Dict[str, str]]:
-        """获取所有消息"""
-        return self.messages.copy()
+        """获取所有消息（已验证和清理）"""
+        messages = self.messages.copy()
+        return self._validate_and_clean_messages(messages)
 
     def get_token_usage_percent(self) -> float:
         """
@@ -531,9 +577,8 @@ Execution Constraints:
     - 仅输出对需求方 PM 有价值的结果
 
     ━━━━━━━━━━━━━━
-    【执行流程（严格阶段化）】
+    【执行流程（严格阶段化）】:
     ━━━━━━━━━━━━━━
-
     【阶段 1：需求理解、澄清、补全默认实现（Understand）】
     - 判断当前输入属于：
     - 新产品需求
@@ -543,6 +588,24 @@ Execution Constraints:
     - 可以调用一些可读性工具，来辅助理解需求
     - 你的目标不是“等待完美需求”，而是：在需求不完整时，先基于代码和常识给出一个【合理的默认实现】，同时明确哪些地方是【你的工程假设】
     - 当需求表述模糊时，允许你基于工程经验自行补全默认方案
+
+    ━━━━━━━━━━━━━━
+    【快速执行判定（Fast Path）】
+    ━━━━━━━━━━━━━━
+    在进入【阶段 2：任务规划】之前，必须先判断当前需求是否满足以下全部条件：
+
+    - 需求清晰、无歧义
+    - 不涉及业务决策或产品取舍
+    - 可通过 ≤3 个连续工具调用完成
+    - 不需要用户确认中间结果
+    - 失败风险可直接通过结果验证
+
+    若全部满足，则：
+    - 跳过「阶段 2：任务规划」
+    - 不创建 Tasks 文件
+    - 直接进入【快速执行模式】
+
+    否则，按原流程进入阶段化执行。
 
     ━━━━━━━━━━━━━━
     【阶段 2：任务规划（Plan）】
@@ -555,18 +618,13 @@ Execution Constraints:
     - 输出内容：
     - 简要的需求理解摘要
     - 基于需求的任务拆分（markdown 任务列表）
-    - 为防止遗忘，你可以创建一个 .agent_tasks/ 目录，将任务列表以 markdown 文件的格式保存到 .agent_tasks/ 目录下
+    - 为防止遗忘和管理任务进度，你必须创建一个 .agent_tasks/xxx-tasks.md 文件，将任务列表以 markdown 文件的格式保存到 .agent_tasks/ 目录下。
+    - 任务列表规范请遵守【Tasks 文件管理规则（必须遵守）】。
 
     - 任务拆分规则：
     - 从功能层面拆分，而非代码细节
     - 拆分到“单个任务可以在一次工具调用或一次明确操作中完成”为止
     - 禁止为拆分而拆分
-
-    - 任务状态标记：
-    - ⏳ 待执行
-    - ✅ 已完成
-    - 🟡 已跳过（因需求调整）
-    - ⛔ 已失效（需求被推翻）
     
     ━━━━━━━━━━━━━━━━━━
     【Tasks 文件管理规则（必须遵守）】
@@ -576,7 +634,7 @@ Execution Constraints:
     - 每一个“独立的用户需求 / Work Item”，必须对应一个独立的 Tasks 文件
     - 不同需求之间，禁止复用或混写同一个 Tasks 文件
 
-    2. Tasks 文件命名规则（由 AI 决定，但必须规范）
+    2. Tasks 文件命名规则（由你决定，但必须规范）
     - 文件必须创建在 `.agent_tasks/` 目录下
     - 文件名必须由当前需求的“核心意图”生成
     - 命名必须满足以下规范：
@@ -601,7 +659,7 @@ Execution Constraints:
     - 禁止仅在对话中声称“任务已完成”而不更新 Tasks 文件
 
     5. 状态更新规则
-    - 每完成一个任务，必须立即在对应 Tasks 文件中将 `[ ]` 更新为 `[x]`
+    - 每完成一个任务，必须立即在对应 Tasks 文件中将对应的任务条目的 `[ ]` 更新为 `[x]`
     - 禁止删除或重排已存在的任务条目，除非该需求被明确取消或失效
 
     6. 多需求并行时的行为
@@ -611,30 +669,29 @@ Execution Constraints:
         3) 不得污染或修改旧需求对应的 Tasks 文件
     
     ━━━━━━━━━━━━━━
-    【任务完成判定规则（强约束）】
+    【快速执行模式（Fast Execute）】
     ━━━━━━━━━━━━━━
+    在快速执行模式下：
 
-    你没有权限基于记忆、推断或对话上下文判断任务是否完成。
-    “是否完成”只能通过以下方式判定：
+    - 允许一次性完成所有必要步骤
+    - 允许连续调用多个工具
+    - 不要求拆分为多个 Tasks
+    - 不等待用户“确认 / 继续”
 
-    - read_file 显示 Tasks 文件中不存在任何 `[ ]` 项
-
-    否则，一律视为“未完成”。
+    执行完成后，必须：
+    - 明确说明做了哪些操作
+    - 给出最终结果
+    - 若发现异常，再中断并询问用户
 
     ━━━━━━━━━━━━━━
     【阶段 3：任务执行（Execute）】
     ━━━━━━━━━━━━━━
-    - 严格按照“⏳ 待执行”顺序执行
+    - 严格按照 Tasks 文件中的任务顺序执行
     - 每次只执行一个最小任务
     - 仅在当前任务确实需要时调用工具
-    - 工具调用必须明确指定工具名称
-    - 禁止在思考或规划阶段调用工具
 
-    ━━━━━━━━━━━━━━
-    【阶段 4：验证与进度同步（Verify & Sync）】
-    ━━━━━━━━━━━━━━
     - 每完成一个任务：
-    - 更新 .agent_tasks/ 目录下的 markdown 文件，标记任务状态
+    - 更新 .agent_tasks/xxx-tasks.md 文件，将对应的任务条目的 `[ ]` 更新为 `[x]`
     - 同步对需求方有价值的进度或结果
     - 如果发现：
     - 实现与需求不一致
@@ -647,15 +704,18 @@ Execution Constraints:
     - 回到【阶段 1：需求理解、澄清、补全默认实现】
 
     ━━━━━━━━━━━━━━
-    【阶段 5：完成条件（Definition of Done）】
+    【阶段 4：任务完成（Definition of Done）】
     ━━━━━━━━━━━━━━
-    - 仅在以下条件全部满足时，才认为需求完成：
-    - 当前有效需求已全部实现
-    - 所有相关任务状态为“✅ 已完成”或“🟡 已跳过（合理）”
-
-    - 完成后：
-    - 输出结果摘要
-    - 明确说明：“任务已完成”
+    - 通过 read_file 工具读取 Tasks 文件，检查所有相关任务状态为“- [x] 任务描述”
+    - 如果存在未完成的任务，继续执行【阶段 3：任务执行（Execute）】
+    - 如果所有任务都已完成，则输出结果摘要，明确说明：“任务已完成”，并结束对话
+    
+    ━━━━━━━━━━━━━━
+    【阶段 5：工程质量检查】
+    ━━━━━━━━━━━━━━
+    - 前端任务：lint / build / test
+    - 后端任务：单元测试 / 集成测试
+    - 其他任务：使用与任务类型匹配的验证方式
 
     ━━━━━━━━━━━━━━
     【环境约束】
@@ -682,14 +742,10 @@ Execution Constraints:
     - 不要忽略最新的产品决策
     - 不要在需求已失效时继续执行旧任务
     - 不要在未验证前声称“任务已完成”
-
-    ━━━━━━━━━━━━━━
-    【工程质量检查】
-    ━━━━━━━━━━━━━━
-    - 前端任务：lint / build / test
-    - 后端任务：单元测试 / 集成测试
-    - 其他任务：使用与任务类型匹配的验证方式
+    """
     
+    
+    git_prompt = f"""
     ━━━━━━━━━━━━━━
     【版本控制与提交规范（Git Discipline）】
     ━━━━━━━━━━━━━━
@@ -728,7 +784,7 @@ Execution Constraints:
     - chore: 更新 xxx 工具或配置
 
     【执行约束】
-    - Commit 只能在【阶段 3：任务执行（Execute）】或【阶段 4：验证与进度同步（Verify & Sync）】中进行
+    - Commit 只能在【阶段 3：任务执行（Execute）】中进行
     - 每次 commit 后：
     - 简要说明本次提交完成了什么
     - 更新对应任务的状态
@@ -1142,7 +1198,28 @@ Execution Constraints:
                             )
 
         except Exception as e:
-            logger.error(f"处理流式响应时发生异常: {e}", exc_info=True)
+            error_msg = str(e)
+            logger.error(
+                f"处理流式响应时发生异常: {error_msg}",
+                exc_info=True
+            )
+            
+            # 如果是 OpenAI API 错误，记录更多信息
+            if "unexpected tokens" in error_msg.lower() or "message header" in error_msg.lower():
+                logger.error(
+                    f"检测到消息格式错误 - "
+                    f"当前消息历史长度: {len(self.message_manager.messages)}, "
+                    f"错误详情: {error_msg}"
+                )
+                # 记录最后几条消息用于调试
+                try:
+                    recent_messages = self.message_manager.messages[-5:]
+                    logger.debug(
+                        f"最近的消息历史: {json.dumps(recent_messages, indent=2, ensure_ascii=False)}"
+                    )
+                except Exception:
+                    pass
+            
             if not self.should_stop:
                 raise
         finally:
