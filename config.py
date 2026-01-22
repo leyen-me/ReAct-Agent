@@ -59,7 +59,7 @@ class Config:
             Dict[str, Any]: 包含所有默认配置的字典
         """
         return {
-            "execution_model": "openai/gpt-oss-120b",  # 用于执行计划的小模型
+            "model": "openai/gpt-oss-120b",  # 用于执行计划的小模型
             "api_key": None,
             "base_url": "https://integrate.api.nvidia.com/v1",
             "operating_system": Config.detect_operating_system(),  # 自动检测操作系统
@@ -95,14 +95,6 @@ class Config:
             with open(config_file, 'r', encoding='utf-8') as f:
                 file_config = json.load(f)
                 
-                # 迁移旧的 model 配置到 execution_model
-                if "model" in file_config and "execution_model" not in file_config:
-                    old_model = file_config.get("model")
-                    if old_model:
-                        file_config["execution_model"] = old_model
-                    # 删除旧的 model 配置
-                    del file_config["model"]
-                
                 # 合并默认值，确保配置文件中有所有配置项
                 # 如果配置文件中缺少某些项，使用默认值补充
                 merged_config = default_config.copy()
@@ -113,9 +105,7 @@ class Config:
                     merged_config["operating_system"] = Config.detect_operating_system()
                 
                 # 如果配置文件缺少某些项或 operating_system 被更新，更新配置文件
-                if file_config != merged_config or "model" in file_config:
-                    # 确保删除旧的 model 配置
-                    merged_config.pop("model", None)
+                if file_config != merged_config:
                     try:
                         with open(config_file, 'w', encoding='utf-8') as f:
                             json.dump(merged_config, f, indent=2, ensure_ascii=False)
@@ -163,8 +153,8 @@ class Config:
         
         # 模型配置
         # 执行模型：用于执行任务
-        self.execution_model: str = self._get_config_value(
-            config_dict, "execution_model", "EXECUTION_MODEL", "openai/gpt-oss-120b"
+        self.model: str = self._get_config_value(
+            config_dict, "model", "MODEL", "openai/gpt-oss-120b"
         )
         self.api_key: Optional[str] = self._get_config_value(
             config_dict, "api_key", "OPENAI_API_KEY", None

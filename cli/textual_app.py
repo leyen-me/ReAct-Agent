@@ -1165,9 +1165,9 @@ class ConfigEditScreen(ModalScreen[bool]):
             with ScrollableContainer(id="config-content"):
                 with Vertical(id="config-form"):
 
-                    with Horizontal(classes="config-row config-row-execution_model"):
+                    with Horizontal(classes="config-row config-row-model"):
                         yield Static("执行模型", classes="config-label")
-                        yield Input(value="openai/gpt-oss-120b", classes="config-input", id="config-execution_model")
+                        yield Input(value="openai/gpt-oss-120b", classes="config-input", id="config-model")
                     
                     with Horizontal(classes="config-row config-row-api_key"):
                         yield Static("API Key", classes="config-label")
@@ -1656,8 +1656,8 @@ class ReActAgentApp(App):
     
     def _get_model_info(self) -> str:
         """获取模型信息"""
-        execution_model = getattr(config, 'execution_model', 'unknown')
-        return f"[#8b5cf6]■[/] Build [dim]{execution_model}[/]"
+        model = getattr(config, 'model', 'unknown')
+        return f"[#8b5cf6]■[/] Build [dim]{model}[/]"
     
     def _get_status_info(self) -> str:
         """获取状态信息"""
@@ -2737,7 +2737,7 @@ Title:"""
                 # 调用 AI 生成标题
                 # 使用较低的 temperature 以获得更确定性的结果（最佳实践：0.3-0.5 for structured tasks）
                 response = self.agent.client.chat.completions.create(
-                    model=config.execution_model,
+                    model=config.model,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}

@@ -757,7 +757,7 @@ Execution Constraints:
                 try:
                     stream_response: Stream[ChatCompletionChunk] = (
                         self.client.chat.completions.create(
-                            model=config.execution_model,  # 使用执行模型
+                            model=config.model,  # 使用执行模型
                             messages=self.message_manager.get_messages(),
                             stream=True,
                             temperature=0.7,
