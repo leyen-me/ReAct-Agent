@@ -699,6 +699,23 @@ Execution Constraints:
         
         return False
 
+    def _clean_content(self, content: str) -> str:
+        """
+        清理 content，移除 "assistantfinal" 字段
+        
+        Args:
+            content: 原始内容
+            
+        Returns:
+            清理后的内容
+        """
+        if not content:
+            return content
+        
+        # 简单匹配并移除 assistantfinal 这个词
+        cleaned = re.sub(r'assistantfinal', '', content, flags=re.IGNORECASE)
+        return cleaned.strip()
+
     def stop_chat(self) -> None:
         """停止当前对话"""
         self.should_stop = True
@@ -932,7 +949,8 @@ Execution Constraints:
                 # 如果有部分内容，先保存
                 if content.strip():
                     self.message_manager.add_assistant_content(reasoning_content)
-                    self.message_manager.add_assistant_content(content)
+                    cleaned_content = self._clean_content(content)
+                    self.message_manager.add_assistant_content(cleaned_content)
                 # 添加系统消息说明用户中断了对话
                 self.message_manager.messages.append(
                     {
@@ -1009,7 +1027,8 @@ Execution Constraints:
                     if reasoning_content.strip():
                         self.message_manager.add_assistant_content(reasoning_content)
                     if content.strip():
-                        self.message_manager.add_assistant_content(content)
+                        cleaned_content = self._clean_content(content)
+                        self.message_manager.add_assistant_content(cleaned_content)
                     # 添加用户消息，提示继续执行
                     fake_call_message = "抱歉，我刚刚在思考中假装调用了工具，现在我将会继续完成任务。"
                     self.message_manager.add_assistant_content(fake_call_message)
@@ -1023,5 +1042,6 @@ Execution Constraints:
                 if reasoning_content.strip():
                     self.message_manager.add_assistant_content(reasoning_content)
                 if content.strip():
-                    self.message_manager.add_assistant_content(content)
+                    cleaned_content = self._clean_content(content)
+                    self.message_manager.add_assistant_content(cleaned_content)
                 break
