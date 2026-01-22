@@ -481,7 +481,7 @@ ask "显示任务进度统计"
 
 ### 核心配置
 
-- **模型配置**：通过 `PLANNING_MODEL` 和 `EXECUTION_MODEL` 环境变量设置
+- **模型配置**：通过 `MODEL` 和 `MODEL` 环境变量设置
 - **API 配置**：通过 `OPENAI_API_KEY` 和 `OPENAI_BASE_URL` 环境变量设置
 - **工作目录**：默认使用项目根目录下的 `workspace` 文件夹，所有文件操作都限制在此目录内
 - **日志记录**：所有日志自动保存到 `.agent_logs/` 目录（按日期分文件），可通过命令面板（输入 `/` 选择 `Logs`）查看，不会污染 TUI 界面

@@ -43,7 +43,6 @@ from cli.chat_widgets import (
 from config import config
 from utils.history_manager import HistoryManager, ChatHistory
 from logger_config import get_all_log_files
-from task_planner import StepStatus
 
 
 class ChatInput(TextArea):
@@ -681,153 +680,6 @@ class FilePickerScreen(ModalScreen[str]):
             self.dismiss(path)
 
 
-class PlanViewerScreen(ModalScreen[None]):
-    """计划查看对话框"""
-    
-    BINDINGS = [
-        Binding("escape", "dismiss", "关闭"),
-    ]
-    
-    CSS = """
-    PlanViewerScreen {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.7);
-    }
-    
-    #planviewer-container {
-        width: 90%;
-        height: 85%;
-        background: #2d2d2d;
-        border: none;
-        padding: 0;
-    }
-    
-    #planviewer-header {
-        height: 3;
-        background: #2d2d2d;
-        padding: 0 2;
-        margin-top: 1;
-        border-bottom: solid #404040;
-        align-vertical: middle;
-    }
-    
-    #planviewer-title {
-        width: 1fr;
-        color: #ffffff;
-        text-style: bold;
-    }
-    
-    #planviewer-hint {
-        width: auto;
-        color: #a0a0a0;
-    }
-    
-    #planviewer-content {
-        height: 1fr;
-        padding: 1 2;
-        background: #1e1e1e;
-        border: none;
-        overflow-y: auto;
-        scrollbar-color: #404040;
-        scrollbar-color-hover: #505050;
-        scrollbar-size: 0 1;
-    }
-    
-    #planviewer-text {
-        width: 100%;
-        height: auto;
-        background: #1e1e1e;
-        border: none;
-        color: #ffffff;
-    }
-    """
-    
-    def __init__(self, plan):
-        super().__init__()
-        self.plan = plan
-    
-    def compose(self) -> ComposeResult:
-        with Container(id="planviewer-container"):
-            with Horizontal(id="planviewer-header"):
-                yield Static("📋 任务计划详情", id="planviewer-title")
-                yield Static("[dim]ESC[/] 关闭", id="planviewer-hint")
-            with ScrollableContainer(id="planviewer-content"):
-                yield Static("", id="planviewer-text", markup=True)
-    
-    def on_mount(self) -> None:
-        plan_content = self._format_plan_content()
-        static_widget = self.query_one("#planviewer-text", Static)
-        static_widget.update(plan_content)
-    
-    def _format_plan_content(self) -> str:
-        """格式化计划内容"""
-        plan = self.plan
-        progress = plan.get_progress()
-        
-        # 构建计划显示内容
-        plan_lines = [
-            f"[bold]📋 任务计划[/bold]",
-            f"[dim]任务描述:[/] {plan.task_description}",
-            f"[dim]创建时间:[/] {plan.created_at.strftime('%Y-%m-%d %H:%M:%S')}",
-            "",
-            f"[bold]进度概览[/bold]",
-            f"  总步骤: {progress['total']}",
-            f"  ✅ 已完成: {progress['completed']}",
-            f"  🔄 执行中: {progress['in_progress']}",
-            f"  ⏳ 待执行: {progress['pending']}",
-            f"  ❌ 失败: {progress['failed']}",
-            f"  完成度: {progress['progress_percent']:.1f}%",
-            "",
-            f"[bold]执行步骤[/bold]",
-        ]
-        
-        # 添加每个步骤的详细信息
-        for step in plan.steps:
-            status_icon = {
-                StepStatus.PENDING: "⏳",
-                StepStatus.IN_PROGRESS: "🔄",
-                StepStatus.COMPLETED: "✅",
-                StepStatus.FAILED: "❌",
-                StepStatus.SKIPPED: "⏭️",
-            }.get(step.status, "❓")
-            
-            # 根据状态设置颜色
-            if step.status == StepStatus.COMPLETED:
-                step_line = f"  {status_icon} [#22c55e]步骤 {step.step_number}:[/] {step.description}"
-            elif step.status == StepStatus.FAILED:
-                step_line = f"  {status_icon} [#ef4444]步骤 {step.step_number}:[/] {step.description}"
-            elif step.status == StepStatus.IN_PROGRESS:
-                step_line = f"  {status_icon} [#3b82f6]步骤 {step.step_number}:[/] {step.description}"
-            else:
-                step_line = f"  {status_icon} [dim]步骤 {step.step_number}:[/] {step.description}"
-            
-            plan_lines.append(step_line)
-            
-            # 显示预期工具
-            if step.expected_tools:
-                plan_lines.append(f"    [dim]工具:[/] {', '.join(step.expected_tools)}")
-            
-            # 显示结果或错误
-            if step.status == StepStatus.COMPLETED and step.result:
-                result_display = step.result[:300] + "..." if len(step.result) > 300 else step.result
-                plan_lines.append(f"    [#22c55e]✓ 结果:[/] {result_display}")
-            elif step.status == StepStatus.FAILED and step.error:
-                plan_lines.append(f"    [#ef4444]✗ 错误:[/] {step.error}")
-            
-            # 显示时间信息
-            if step.start_time:
-                plan_lines.append(f"    [dim]开始:[/] {step.start_time.strftime('%H:%M:%S')}")
-            if step.end_time:
-                plan_lines.append(f"    [dim]结束:[/] {step.end_time.strftime('%H:%M:%S')}")
-                if step.start_time:
-                    duration = (step.end_time - step.start_time).total_seconds()
-                    plan_lines.append(f"    [dim]耗时:[/] {duration:.1f}s")
-            
-            plan_lines.append("")  # 空行分隔
-        
-        return "\n".join(plan_lines)
-
-
 class LogViewerScreen(ModalScreen[None]):
     """日志查看对话框"""
     
@@ -1312,11 +1164,7 @@ class ConfigEditScreen(ModalScreen[bool]):
                 yield Static("[dim]ESC[/] 取消  [dim]Ctrl+S[/] 保存", id="config-hint")
             with ScrollableContainer(id="config-content"):
                 with Vertical(id="config-form"):
-                    # 模型配置
-                    with Horizontal(classes="config-row config-row-planning_model"):
-                        yield Static("规划模型", classes="config-label")
-                        yield Input(value="openai/gpt-oss-120b", classes="config-input", id="config-planning_model")
-                    
+
                     with Horizontal(classes="config-row config-row-execution_model"):
                         yield Static("执行模型", classes="config-label")
                         yield Input(value="openai/gpt-oss-120b", classes="config-input", id="config-execution_model")
@@ -1366,15 +1214,6 @@ class ConfigEditScreen(ModalScreen[bool]):
                     with Horizontal(classes="config-row config-row-log_separator_length"):
                         yield Static("日志分隔符长度", classes="config-label")
                         yield Input(value="20", classes="config-input", id="config-log_separator_length")
-                    
-                    # 任务规划配置
-                    with Horizontal(classes="config-row config-row-enable_task_planning"):
-                        yield Static("启用任务规划", classes="config-label")
-                        yield Input(value="false", classes="config-input", id="config-enable_task_planning")
-                    
-                    with Horizontal(classes="config-row config-row-max_plan_steps"):
-                        yield Static("最大计划步骤", classes="config-label")
-                        yield Input(value="6", classes="config-input", id="config-max_plan_steps")
     
     def on_mount(self) -> None:
         """挂载时加载配置"""
@@ -1489,23 +1328,6 @@ class ReActAgentApp(App):
         width: auto;
         color: #ffffff;
         text-style: bold;
-    }
-    
-    #header-plan-status {
-        width: 1fr;
-        color: #8b5cf6;
-        text-align: right;
-        text-overflow: ellipsis;
-        overflow: hidden;
-    }
-    
-    #header-plan-status:focus {
-        text-style: underline;
-    }
-    
-    #header-plan-status.clickable:hover {
-        color: #7c3aed;
-        text-style: underline;
     }
     
     /* ===== Main 聊天区域 ===== */
@@ -1751,7 +1573,6 @@ class ReActAgentApp(App):
             # Header
             with Horizontal(id="app-header"):
                 yield Static(self._get_title(), id="header-title")
-                yield Static("", id="header-plan-status")
             
             # Main: 聊天区域
             with ScrollableContainer(id="main-container"):
@@ -1836,12 +1657,7 @@ class ReActAgentApp(App):
     def _get_model_info(self) -> str:
         """获取模型信息"""
         execution_model = getattr(config, 'execution_model', 'unknown')
-        planning_model = getattr(config, 'planning_model', 'unknown')
-        # 如果规划模型和执行模型相同，只显示一个
-        if planning_model == execution_model:
-            return f"[#8b5cf6]■[/] Build [dim]{execution_model}[/]"
-        else:
-            return f"[#8b5cf6]■[/] Build [dim]planning:{planning_model} execution:{execution_model}[/]"
+        return f"[#8b5cf6]■[/] Build [dim]{execution_model}[/]"
     
     def _get_status_info(self) -> str:
         """获取状态信息"""
@@ -1873,24 +1689,6 @@ class ReActAgentApp(App):
         except Exception:
             pass
     
-    def update_plan_status(self, status: str) -> None:
-        """更新规划状态显示"""
-        try:
-            plan_status_widget = self.query_one("#header-plan-status", Static)
-            # 限制长度，超出部分用省略号
-            max_length = 60
-            if len(status) > max_length:
-                status = status[:max_length-3] + "..."
-            plan_status_widget.update(status)
-            
-            # 如果有计划状态文本，添加可点击样式
-            if status:
-                plan_status_widget.add_class("clickable")
-            else:
-                plan_status_widget.remove_class("clickable")
-        except Exception:
-            pass
-    
     def refresh_status(self) -> None:
         """刷新状态栏"""
         try:
@@ -1915,15 +1713,6 @@ class ReActAgentApp(App):
         self.query_one("#user-input", ChatInput).focus()
         # 延迟刷新状态，确保 token 信息显示（等待 message_manager 初始化）
         self.set_timer(0.2, lambda: self.refresh_status())
-    
-    @on(Click, "#header-plan-status")
-    def on_plan_status_click(self, event: Click) -> None:
-        """处理计划状态点击事件"""
-        # 检查是否有计划可以显示
-        if hasattr(self.agent, "current_plan") and self.agent.current_plan is not None:
-            self._open_plan_viewer()
-            event.stop()
-            return
     
     @on(Click)
     def on_click(self, event: Click) -> None:
@@ -2019,26 +1808,6 @@ class ReActAgentApp(App):
             input_widget.text = ""
         self.action_open_palette()
     
-    def _open_plan_viewer(self) -> None:
-        """打开计划查看弹窗"""
-        # 如果已经有弹窗打开，不重复打开
-        if isinstance(self.screen, ModalScreen):
-            return
-        
-        # 检查是否有当前计划
-        if not hasattr(self.agent, "current_plan") or self.agent.current_plan is None:
-            return
-        
-        def handle_close(result: None) -> None:
-            # 关闭后聚焦到输入框
-            input_widget = self.query_one("#user-input", ChatInput)
-            input_widget.focus()
-        
-        # 移除 user-input 的焦点
-        input_widget = self.query_one("#user-input", ChatInput)
-        input_widget.blur()
-        self.push_screen(PlanViewerScreen(self.agent.current_plan), handle_close)
-    
     def _open_log_viewer(self) -> None:
         # 如果已经有弹窗打开，不重复打开
         if isinstance(self.screen, ModalScreen):
@@ -2130,7 +1899,6 @@ class ReActAgentApp(App):
             ("new", "New", "新建对话"),
             ("help", "Help", "显示帮助"),
             ("status", "Status", "上下文使用情况"),
-            ("plan", "Plan", "查看任务计划进度"),
             ("messages", "Messages", "消息历史"),
             ("history", "History", "历史记录"),
             ("logs", "Logs", "查看日志"),
@@ -2155,9 +1923,6 @@ class ReActAgentApp(App):
                 input_widget.focus()
             elif cmd_id == "status":
                 self._show_status()
-                input_widget.focus()
-            elif cmd_id == "plan":
-                self._show_plan()
                 input_widget.focus()
             elif cmd_id == "messages":
                 self._show_messages()
@@ -2217,88 +1982,6 @@ class ReActAgentApp(App):
             chat_container.mount(status_msg)
             self._scroll_to_bottom()
         
-        self.query_one("#user-input", ChatInput).focus()
-    
-    def _show_plan(self) -> None:
-        """显示任务计划进度"""
-        chat_container = self.query_one("#chat-log", Vertical)
-        
-        # 检查是否有当前计划
-        if not hasattr(self.agent, "current_plan") or self.agent.current_plan is None:
-            no_plan_msg = ContentMessage("[dim]当前没有任务计划[/]", allow_markup=True)
-            chat_container.mount(no_plan_msg)
-            self._scroll_to_bottom()
-            self.query_one("#user-input", ChatInput).focus()
-            return
-        
-        plan = self.agent.current_plan
-        progress = plan.get_progress()
-        
-        # 构建计划显示内容
-        plan_lines = [
-            f"[bold]📋 任务计划[/bold]",
-            f"[dim]任务描述:[/] {plan.task_description}",
-            f"[dim]创建时间:[/] {plan.created_at.strftime('%Y-%m-%d %H:%M:%S')}",
-            "",
-            f"[bold]进度概览[/bold]",
-            f"  总步骤: {progress['total']}",
-            f"  ✅ 已完成: {progress['completed']}",
-            f"  🔄 执行中: {progress['in_progress']}",
-            f"  ⏳ 待执行: {progress['pending']}",
-            f"  ❌ 失败: {progress['failed']}",
-            f"  完成度: {progress['progress_percent']:.1f}%",
-            "",
-            f"[bold]执行步骤[/bold]",
-        ]
-        
-        # 添加每个步骤的详细信息
-        for step in plan.steps:
-            status_icon = {
-                StepStatus.PENDING: "⏳",
-                StepStatus.IN_PROGRESS: "🔄",
-                StepStatus.COMPLETED: "✅",
-                StepStatus.FAILED: "❌",
-                StepStatus.SKIPPED: "⏭️",
-            }.get(step.status, "❓")
-            
-            # 根据状态设置颜色
-            if step.status == StepStatus.COMPLETED:
-                step_line = f"  {status_icon} [#22c55e]步骤 {step.step_number}:[/] {step.description}"
-            elif step.status == StepStatus.FAILED:
-                step_line = f"  {status_icon} [#ef4444]步骤 {step.step_number}:[/] {step.description}"
-            elif step.status == StepStatus.IN_PROGRESS:
-                step_line = f"  {status_icon} [#3b82f6]步骤 {step.step_number}:[/] {step.description}"
-            else:
-                step_line = f"  {status_icon} [dim]步骤 {step.step_number}:[/] {step.description}"
-            
-            plan_lines.append(step_line)
-            
-            # 显示预期工具
-            if step.expected_tools:
-                plan_lines.append(f"    [dim]工具:[/] {', '.join(step.expected_tools)}")
-            
-            # 显示结果或错误
-            if step.status == StepStatus.COMPLETED and step.result:
-                result_display = step.result[:150] + "..." if len(step.result) > 150 else step.result
-                plan_lines.append(f"    [#22c55e]✓ 结果:[/] {result_display}")
-            elif step.status == StepStatus.FAILED and step.error:
-                plan_lines.append(f"    [#ef4444]✗ 错误:[/] {step.error}")
-            
-            # 显示时间信息
-            if step.start_time:
-                plan_lines.append(f"    [dim]开始:[/] {step.start_time.strftime('%H:%M:%S')}")
-            if step.end_time:
-                plan_lines.append(f"    [dim]结束:[/] {step.end_time.strftime('%H:%M:%S')}")
-                if step.start_time:
-                    duration = (step.end_time - step.start_time).total_seconds()
-                    plan_lines.append(f"    [dim]耗时:[/] {duration:.1f}s")
-            
-            plan_lines.append("")  # 空行分隔
-        
-        plan_content = "\n".join(plan_lines)
-        plan_msg = ContentMessage(plan_content, allow_markup=True)
-        chat_container.mount(plan_msg)
-        self._scroll_to_bottom()
         self.query_one("#user-input", ChatInput).focus()
     
     def _show_messages(self) -> None:
@@ -2485,10 +2168,7 @@ class ReActAgentApp(App):
         input_widget._showing_placeholder = False
         
         # 检查是否是命令
-        if message == "/plan":
-            self._show_plan()
-            return
-        elif message == "/history":
+        if message == "/history":
             self._open_history_screen()
             return
         elif message == "/config":
@@ -2581,18 +2261,11 @@ class ReActAgentApp(App):
                         lambda: app._add_output(text, end_newline)
                     )
             
-            def plan_status_callback(status: str) -> None:
-                """规划状态回调，更新 header 显示"""
-                app.call_from_thread(lambda: app.update_plan_status(status))
-            
             def status_callback() -> None:
                 """状态更新回调，实时更新token和耗时显示"""
                 app.call_from_thread(lambda: app.refresh_status())
             
-            # 清空规划状态
-            app.call_from_thread(lambda: app.update_plan_status(""))
-            
-            self.agent.chat(message, output_callback, plan_status_callback, status_callback)
+            self.agent.chat(message, output_callback, status_callback)
             
             # 最后确保当前消息已更新（如果还有内容且消息组件存在，已经通过流式更新显示过了）
             # 只有在没有消息组件的情况下才需要 flush（这种情况应该不会发生）
@@ -2612,8 +2285,6 @@ class ReActAgentApp(App):
             )
         finally:
             app = self.app
-            # 清空规划状态
-            app.call_from_thread(lambda: app.update_plan_status(""))
             app.call_from_thread(lambda: app._finish_chat())
     
     def _finish_chat(self) -> None:
@@ -2672,11 +2343,6 @@ class ReActAgentApp(App):
             # 获取标题（如果没有则使用第一条用户消息的前15个字符）
             title = self.current_chat_title or (user_messages[0].get("content", "")[:15] if user_messages else "未命名对话")
             
-            # 获取任务计划（如果有）
-            current_plan = None
-            if hasattr(self.agent, "current_plan") and self.agent.current_plan is not None:
-                current_plan = self.agent.current_plan.to_dict()
-            
             # 保存或更新历史记录（如果有 current_history_id 则更新，否则创建新的）
             saved_id = self.history_manager.save_chat(
                 title=title,
@@ -2685,7 +2351,6 @@ class ReActAgentApp(App):
                 history_id=self.current_history_id,  # 如果有当前 ID 则更新，否则创建新的
                 chat_count=self.chat_count,
                 last_chat_duration=self.last_chat_duration,
-                current_plan=current_plan,
             )
             # 更新当前历史记录 ID
             self.current_history_id = saved_id
@@ -2794,42 +2459,6 @@ class ReActAgentApp(App):
             
             # 恢复历史记录 ID（后续更新会使用这个 ID）
             self.current_history_id = history.history_id
-            
-            # 恢复任务计划（如果有）
-            if history.current_plan and hasattr(self.agent, "task_planner"):
-                try:
-                    from task_planner import TaskPlan, PlanStep, StepStatus
-                    from datetime import datetime
-                    
-                    plan_data = history.current_plan
-                    steps = []
-                    for step_data in plan_data.get("steps", []):
-                        step = PlanStep(
-                            step_number=step_data["step_number"],
-                            description=step_data["description"],
-                            expected_tools=step_data.get("expected_tools", []),
-                            status=StepStatus(step_data.get("status", "pending")),
-                            result=step_data.get("result"),
-                            error=step_data.get("error"),
-                            start_time=datetime.fromisoformat(step_data["start_time"]) if step_data.get("start_time") else None,
-                            end_time=datetime.fromisoformat(step_data["end_time"]) if step_data.get("end_time") else None,
-                        )
-                        steps.append(step)
-                    
-                    plan = TaskPlan(
-                        task_description=plan_data["task_description"],
-                        steps=steps,
-                        created_at=datetime.fromisoformat(plan_data["created_at"]),
-                        current_step=plan_data.get("current_step", 0),
-                    )
-                    self.agent.current_plan = plan
-                except Exception as e:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.debug(f"恢复任务计划失败: {e}")
-                    self.agent.current_plan = None
-            else:
-                self.agent.current_plan = None
             
             # 恢复聊天界面显示
             self._restore_chat_display(history.messages)
@@ -3007,8 +2636,6 @@ class ReActAgentApp(App):
         self.is_generating_title = False
         # 重置对话轮数
         self.chat_count = 0
-        # 重置任务计划
-        self.agent.current_plan = None
         # 重置历史记录 ID（新建对话时生成新的 ID）
         self.current_history_id = None
         # 刷新 header 和状态
@@ -3107,10 +2734,10 @@ Now generate a title for this user message:"""
 
 Title:"""
                 
-                # 调用 AI 生成标题（使用规划模型）
+                # 调用 AI 生成标题
                 # 使用较低的 temperature 以获得更确定性的结果（最佳实践：0.3-0.5 for structured tasks）
                 response = self.agent.client.chat.completions.create(
-                    model=config.planning_model,
+                    model=config.execution_model,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt}

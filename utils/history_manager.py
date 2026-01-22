@@ -24,7 +24,6 @@ class ChatHistory:
         updated_at: Optional[str] = None,
         chat_count: int = 0,
         last_chat_duration: Optional[float] = None,
-        current_plan: Optional[Dict[str, Any]] = None,
     ):
         """
         初始化对话历史记录
@@ -38,7 +37,6 @@ class ChatHistory:
             updated_at: 更新时间（ISO 格式字符串）
             chat_count: 对话轮数
             last_chat_duration: 最后一轮对话耗时（秒）
-            current_plan: 当前任务计划（如果有）
         """
         self.history_id = history_id or str(uuid.uuid4())
         self.title = title
@@ -48,7 +46,6 @@ class ChatHistory:
         self.updated_at = updated_at or datetime.now().isoformat()
         self.chat_count = chat_count
         self.last_chat_duration = last_chat_duration
-        self.current_plan = current_plan
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -61,7 +58,6 @@ class ChatHistory:
             "updated_at": self.updated_at,
             "chat_count": self.chat_count,
             "last_chat_duration": self.last_chat_duration,
-            "current_plan": self.current_plan,
         }
     
     @classmethod
@@ -76,7 +72,6 @@ class ChatHistory:
             updated_at=data.get("updated_at"),
             chat_count=data.get("chat_count", 0),
             last_chat_duration=data.get("last_chat_duration"),
-            current_plan=data.get("current_plan"),
         )
 
 
@@ -133,7 +128,6 @@ class HistoryManager:
         history_id: Optional[str] = None,
         chat_count: int = 0,
         last_chat_duration: Optional[float] = None,
-        current_plan: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         保存或更新对话历史
@@ -145,7 +139,6 @@ class HistoryManager:
             history_id: 历史记录唯一 ID（如果提供则更新现有记录，否则创建新记录）
             chat_count: 对话轮数
             last_chat_duration: 最后一轮对话耗时（秒）
-            current_plan: 当前任务计划（如果有）
             
         Returns:
             历史记录 ID
@@ -161,7 +154,6 @@ class HistoryManager:
                     existing_history.updated_at = datetime.now().isoformat()
                     existing_history.chat_count = chat_count
                     existing_history.last_chat_duration = last_chat_duration
-                    existing_history.current_plan = current_plan
                     # 移动到列表开头（最新的在前）
                     self._histories.pop(i)
                     self._histories.insert(0, existing_history)
@@ -178,7 +170,6 @@ class HistoryManager:
             updated_at=datetime.now().isoformat(),
             chat_count=chat_count,
             last_chat_duration=last_chat_duration,
-            current_plan=current_plan,
         )
         
         # 添加到列表开头（最新的在前）

@@ -59,7 +59,6 @@ class Config:
             Dict[str, Any]: 包含所有默认配置的字典
         """
         return {
-            "planning_model": "openai/gpt-oss-120b",  # 用于规划和判断的智能模型
             "execution_model": "openai/gpt-oss-120b",  # 用于执行计划的小模型
             "api_key": None,
             "base_url": "https://integrate.api.nvidia.com/v1",
@@ -71,8 +70,6 @@ class Config:
             "max_context_tokens": "128000",
             "user_language_preference": "中文",
             "log_separator_length": "20",
-            "enable_task_planning": "false",
-            "max_plan_steps": "6",
         }
     
     def _load_config_file(self) -> Dict[str, Any]:
@@ -98,11 +95,10 @@ class Config:
             with open(config_file, 'r', encoding='utf-8') as f:
                 file_config = json.load(f)
                 
-                # 迁移旧的 model 配置到 planning_model 和 execution_model
-                if "model" in file_config and "planning_model" not in file_config:
+                # 迁移旧的 model 配置到 execution_model
+                if "model" in file_config and "execution_model" not in file_config:
                     old_model = file_config.get("model")
                     if old_model:
-                        file_config["planning_model"] = old_model
                         file_config["execution_model"] = old_model
                     # 删除旧的 model 配置
                     del file_config["model"]
@@ -166,11 +162,7 @@ class Config:
         config_dict = self._load_config_file()
         
         # 模型配置
-        # 规划模型：用于判断是否需要规划和创建计划
-        self.planning_model: str = self._get_config_value(
-            config_dict, "planning_model", "PLANNING_MODEL", "openai/gpt-oss-120b"
-        )
-        # 执行模型：用于执行计划
+        # 执行模型：用于执行任务
         self.execution_model: str = self._get_config_value(
             config_dict, "execution_model", "EXECUTION_MODEL", "openai/gpt-oss-120b"
         )
@@ -237,17 +229,6 @@ class Config:
             config_dict, "log_separator_length", "LOG_SEPARATOR_LENGTH", "20"
         )
         self.log_separator_length: int = int(log_separator_length_value)
-        
-        # 任务规划配置
-        enable_task_planning_value = self._get_config_value(
-            config_dict, "enable_task_planning", "ENABLE_TASK_PLANNING", "false"
-        )
-        self.enable_task_planning: bool = str(enable_task_planning_value).lower() == "true"
-        
-        max_plan_steps_value = self._get_config_value(
-            config_dict, "max_plan_steps", "MAX_PLAN_STEPS", "6"
-        )
-        self.max_plan_steps: int = int(max_plan_steps_value)
     
     def save_config_file(self, config_dict: Dict[str, Any]) -> bool:
         """保存配置到文件

@@ -34,12 +34,8 @@ from tools import (
     GitCommitTool,
     GitBranchTool,
     GitLogTool,
-    UpdateStepStatusTool,
-    MoveToNextStepTool,
-    GetPlanStatusTool,
 )
 from tool_executor import create_tool_executor
-from task_planner import TaskPlanner, TaskPlan, PlanStep, StepStatus
 
 logger = logging.getLogger(__name__)
 
@@ -253,21 +249,11 @@ class ReActAgent:
         self.message_manager = MessageManager(
             self._get_system_prompt(), config.max_context_tokens
         )
-        # 初始化任务规划器
-        available_tool_names = [tool.name for tool in self.tools]
-        self.task_planner = TaskPlanner(self.client, available_tool_names)
-        self.current_plan: Optional[TaskPlan] = None  # 当前任务计划
-        self.enable_planning: bool = config.enable_task_planning  # 是否启用规划功能
         self.chat_count = 0
         self.should_stop = False  # 中断标志
 
     def _create_tools(self) -> List[Tool]:
         """创建工具列表"""
-
-        # 创建任务计划工具的回调函数
-        def get_plan() -> Optional[TaskPlan]:
-            return self.current_plan
-
         tools = [
             ReadFileTool(config.work_dir),
             ReadCodeBlockTool(config.work_dir),
@@ -290,10 +276,6 @@ class ReActAgent:
             GitCommitTool(config.work_dir),
             GitBranchTool(config.work_dir),
             GitLogTool(config.work_dir),
-            # 任务计划管理工具
-            # UpdateStepStatusTool(config.work_dir, get_plan),
-            # MoveToNextStepTool(config.work_dir, get_plan),
-            # GetPlanStatusTool(config.work_dir, get_plan),
         ]
         return tools
 
@@ -733,127 +715,10 @@ Execution Constraints:
         """停止当前对话"""
         self.should_stop = True
 
-    def set_planning_enabled(self, enabled: bool) -> None:
-        """设置是否启用规划功能"""
-        self.enable_planning = enabled
-
-    def _should_create_plan(
-        self,
-        task_message: str,
-        plan_status_callback: Optional[Callable[[str], None]] = None,
-    ) -> Tuple[bool, str]:
-        """
-        判断是否应该创建计划（使用 LLM 智能判断）
-
-        Args:
-            task_message: 任务消息
-            plan_status_callback: 可选的规划状态回调函数，用于更新 header 显示
-
-        Returns:
-            (是否需要规划, 判断原因)
-        """
-        if not self.enable_planning:
-            return False, "规划功能已禁用"
-
-        # 如果已经有计划在执行，不创建新计划
-        if self.current_plan and self.current_plan.get_progress()["completed"] < len(
-            self.current_plan.steps
-        ):
-            return False, "已有计划正在执行中"
-
-        # 清理消息，去除首尾空白
-        message = task_message.strip()
-
-        # 空消息不需要规划
-        if not message:
-            return False, "消息为空"
-
-        # 使用 LLM 智能判断是否需要规划（完全交给模型判断，不预设规则）
-        try:
-            if plan_status_callback:
-                plan_status_callback("🔍 判断是否需要规划...")
-
-            # 构建标准的判断提示词（参考 OpenAI/Anthropic 最佳实践）
-            system_prompt = """You are a task analysis assistant. Your role is to determine whether a user's request requires detailed task planning before execution.
-
-Task planning is needed when:
-- The request requires using tools (file operations, command execution, Git operations, etc.)
-- The request involves multiple steps or complex workflows
-- The request needs to be broken down into smaller actionable steps
-
-Task planning is NOT needed when:
-- The request is a simple greeting or expression of gratitude
-- The request is a straightforward knowledge question that can be answered directly
-- The request is a simple informational query
-- The request can reasonably be completed in 1–3 actions, even if it uses tools
-
-Respond with only "yes" or "no" followed by a brief reason in parentheses."""
-
-            user_prompt = f"""Analyze the following user request and determine if it requires detailed task planning:
-
-User request: "{message}"
-
-Respond with: "yes (reason)" or "no (reason)"."""
-
-            # 使用流式输出（使用规划模型）
-            stream_response = self.client.chat.completions.create(
-                model=config.planning_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.1,  # Very low temperature for deterministic classification
-                stream=True,
-                extra_body={"thinking": {"type": "disabled"}},
-            )
-
-            result = ""
-            try:
-                for chunk in stream_response:
-                    if chunk.choices and len(chunk.choices) > 0:
-                        delta = chunk.choices[0].delta
-                        if hasattr(delta, "content") and delta.content:
-                            result += delta.content
-                            if plan_status_callback:
-                                plan_status_callback(f"🔍 判断中: {result[:30]}...")
-            finally:
-                try:
-                    stream_response.close()
-                except:
-                    pass
-
-            result = result.strip()
-            result_lower = result.lower()
-
-            # 解析结果：提取 yes/no 和原因
-            needs_planning = any(
-                result_lower.startswith(prefix) for prefix in ["yes", "y"]
-            )
-
-            # 提取原因（如果有）
-            reason = "LLM判断"
-            if "(" in result and ")" in result:
-                try:
-                    reason = result.split("(")[1].split(")")[0].strip()
-                except:
-                    pass
-
-            logger.debug(
-                f"规划判断: '{message}' -> {needs_planning} (原因: {reason}, LLM回答: {result})"
-            )
-            return needs_planning, reason
-
-        except Exception as e:
-            logger.warning(f"规划判断失败: {e}，默认不规划")
-            if plan_status_callback:
-                plan_status_callback(f"⚠️ 判断失败")
-            return False, f"判断失败: {str(e)}"
-
     def chat(
         self,
         task_message: str,
         output_callback: Optional[Callable[[str, bool], None]] = None,
-        plan_status_callback: Optional[Callable[[str], None]] = None,
         status_callback: Optional[Callable[[], None]] = None,
     ) -> None:
         """
@@ -863,8 +728,6 @@ Respond with: "yes (reason)" or "no (reason)"."""
             task_message: 用户任务消息
             output_callback: 可选的输出回调函数，接受 (text, end_newline) 参数
                             如果提供，将使用回调而不是 print
-            plan_status_callback: 可选的规划状态回调函数，接受 (status_text) 参数
-                                 用于更新 header 中的规划状态显示
             status_callback: 可选的状态更新回调函数，用于实时更新UI状态（如token使用量）
         """
         # 重置中断标志
@@ -876,71 +739,6 @@ Respond with: "yes (reason)" or "no (reason)"."""
                 output_callback(text, end_newline)
             else:
                 print(text, end="\n" if end_newline else "", flush=True)
-
-        # 定义规划状态更新函数
-        def update_plan_status(status: str):
-            if plan_status_callback:
-                plan_status_callback(status)
-
-        # 任务规划阶段 - 显示判断结果
-        needs_planning, _reason = self._should_create_plan(
-            task_message, update_plan_status
-        )
-
-        if needs_planning:
-            update_plan_status("📋 分析任务中...")
-
-            try:
-                self.current_plan = self.task_planner.create_plan(
-                    task_message, update_plan_status
-                )
-
-                # 更新规划状态为进度显示
-                progress = self.current_plan.get_progress()
-                update_plan_status(
-                    f"📋 计划完成 ({len(self.current_plan.steps)} 步) | 进度: {progress['completed']}/{progress['total']}"
-                )
-
-                # 将完整的计划信息添加到消息中，让模型知道计划并可以管理它
-                plan_info = f"\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                plan_info += (
-                    f"📋 任务执行计划（共 {len(self.current_plan.steps)} 步）\n"
-                )
-                plan_info += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                plan_info += f"任务描述：{self.current_plan.task_description}\n\n"
-                plan_info += f"当前进度：{progress['completed']}/{progress['total']} 已完成 ({progress['progress_percent']:.1f}%)\n"
-                plan_info += f"待执行：{progress['pending']} | 执行中：{progress['in_progress']} | 失败：{progress['failed']}\n\n"
-                plan_info += f"执行步骤：\n"
-                for step in self.current_plan.steps:
-                    status_icon = {
-                        StepStatus.PENDING: "⏳",
-                        StepStatus.IN_PROGRESS: "🔄",
-                        StepStatus.COMPLETED: "✅",
-                        StepStatus.FAILED: "❌",
-                        StepStatus.SKIPPED: "⏭️",
-                    }.get(step.status, "❓")
-                    plan_info += (
-                        f"{status_icon} 步骤 {step.step_number}: {step.description}"
-                    )
-                    if step.expected_tools:
-                        plan_info += f" [预期工具: {', '.join(step.expected_tools)}]"
-                    plan_info += f"\n"
-                    if step.status == StepStatus.COMPLETED and step.result:
-                        plan_info += f"   ✓ 结果: {step.result[:100]}{'...' if len(step.result) > 100 else ''}\n"
-                    elif step.status == StepStatus.FAILED and step.error:
-                        plan_info += f"   ✗ 错误: {step.error}\n"
-                plan_info += f"\n重要提示：你需要使用任务计划管理工具（update_step_status, move_to_next_step, get_plan_status）来主动管理计划的执行进度。\n"
-                plan_info += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                task_message = f"{task_message}{plan_info}"
-
-            except Exception as e:
-                logger.error(f"规划失败: {e}")
-                update_plan_status(f"⚠️ 规划失败: {str(e)[:30]}")
-                self.current_plan = None
-        else:
-            logger.debug(f"直接执行任务: {task_message}")
-            # 清除规划状态
-            update_plan_status("")
 
         self.message_manager.add_user_message(task_message)
         # 重置 reasoning content 追踪（每次新的对话轮次）
@@ -958,27 +756,9 @@ Respond with: "yes (reason)" or "no (reason)"."""
                 break
             self.chat_count += 1
 
-            # 如果有任务计划，在每次循环开始时将当前计划状态传递给大模型
-            if self.current_plan:
-                progress = self.current_plan.get_progress()
-                current_step = self.current_plan.get_current_step()
-                plan_status_info = f"\n[任务计划状态更新]\n"
-                plan_status_info += f"进度: {progress['completed']}/{progress['total']} 已完成 ({progress['progress_percent']:.1f}%)\n"
-                plan_status_info += f"待执行: {progress['pending']} | 执行中: {progress['in_progress']} | 失败: {progress['failed']}\n"
-                if current_step:
-                    plan_status_info += f"当前步骤: {current_step.step_number} - {current_step.description} (状态: {current_step.status.value})\n"
-                plan_status_info += f"提示: 使用任务计划管理工具（update_step_status, move_to_next_step, get_plan_status）来管理计划进度。\n"
-                # 将计划状态作为系统消息添加到消息列表中（只在当前循环中使用）
-                # 注意：这里不直接修改message_manager.messages，而是在API调用时临时添加
-                messages_with_plan = self.message_manager.get_messages() + [
-                    {"role": "system", "content": plan_status_info}
-                ]
-            else:
-                messages_with_plan = self.message_manager.get_messages()
-
             logger.debug(f"=== Chat Round {self.chat_count} ===")
             logger.debug(
-                f"Messages: {json.dumps(messages_with_plan, indent=2, ensure_ascii=False)}"
+                f"Messages: {json.dumps(self.message_manager.get_messages(), indent=2, ensure_ascii=False)}"
             )
 
             # 调用 API（带重试机制）
@@ -990,7 +770,7 @@ Respond with: "yes (reason)" or "no (reason)"."""
                     stream_response: Stream[ChatCompletionChunk] = (
                         self.client.chat.completions.create(
                             model=config.execution_model,  # 使用执行模型
-                            messages=messages_with_plan,  # 使用包含计划状态的消息
+                            messages=self.message_manager.get_messages(),
                             stream=True,
                             temperature=0.7,
                             top_p=0.8,
@@ -1200,19 +980,6 @@ Respond with: "yes (reason)" or "no (reason)"."""
                     delattr(self, "_current_reasoning")
 
             if tool_call_acc:
-                # 如果有任务计划，更新UI显示（但不自动更新计划状态，由大模型自己管理）
-                if self.current_plan:
-                    progress = self.current_plan.get_progress()
-                    current_step = self.current_plan.get_current_step()
-                    if current_step:
-                        update_plan_status(
-                            f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%) | 步骤 {current_step.step_number}"
-                        )
-                    else:
-                        update_plan_status(
-                            f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%)"
-                        )
-
                 for tc_id, tc_data in tool_call_acc.items():
                     # logger.info(f"=== Tool Call ===")
                     # logger.debug(f"name: {tc_data['name']}")
@@ -1240,30 +1007,6 @@ Respond with: "yes (reason)" or "no (reason)"."""
                         tool_result = tool_call_result
                         tool_error = None
 
-                    # 检查是否是任务计划管理工具，如果是则更新UI显示
-                    if self.current_plan and tc_data["name"] in [
-                        "update_step_status",
-                        "move_to_next_step",
-                        "get_plan_status",
-                    ]:
-                        # 解析工具结果以更新UI
-                        try:
-                            if isinstance(
-                                tool_call_result, dict
-                            ) and tool_call_result.get("success"):
-                                progress = self.current_plan.get_progress()
-                                current_step = self.current_plan.get_current_step()
-                                if current_step:
-                                    update_plan_status(
-                                        f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%) | 步骤 {current_step.step_number}"
-                                    )
-                                else:
-                                    update_plan_status(
-                                        f"📋 执行中: {progress['completed']}/{progress['total']} ({progress['progress_percent']:.0f}%)"
-                                    )
-                        except:
-                            pass
-
                     self.message_manager.add_assistant_tool_call_result(
                         tc_data["id"], result_content
                     )
@@ -1288,16 +1031,6 @@ Respond with: "yes (reason)" or "no (reason)"."""
                 
                 # logger.info(f"=== Final Answer ===")
                 # logger.info(content)
-
-                # 如果有任务计划，更新UI显示最终进度（但不自动更新计划状态）
-                if self.current_plan:
-                    final_progress = self.current_plan.get_progress()
-                    if final_progress["total"] > 0:
-                        # 更新 header 中的规划状态
-                        status_text = f"✅ 完成: {final_progress['completed']}/{final_progress['total']} ({final_progress['progress_percent']:.0f}%)"
-                        if final_progress["failed"] > 0:
-                            status_text += f" ⚠️{final_progress['failed']}"
-                        update_plan_status(status_text)
 
                 if reasoning_content.strip():
                     self.message_manager.add_assistant_content(reasoning_content)
