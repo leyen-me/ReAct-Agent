@@ -99,6 +99,12 @@ ReAct Agent 是一个基于 ReAct（Reasoning and Acting）模式的智能开发
 - NVIDIA NIM API
 - 兼容OpenAI格式的其他API服务
 
+## 模型推荐
+
+deepseek-ai/deepseek-v3.1-terminus
+minimaxai/minimax-m2
+openai/gpt-oss-120b
+
 ## 📦 分发方式
 
 ### 使用 GitHub Actions 自动打包（推荐）
