@@ -75,7 +75,23 @@ class ChatInput(TextArea):
     def _clear_placeholder(self) -> None:
         """清除 placeholder"""
         if self._showing_placeholder:
+            # 先标记这是程序设置的文本变化，避免触发文件选择等逻辑
+            app = self.app
+            if app:
+                if not hasattr(app, '_programmatic_value_set'):
+                    app._programmatic_value_set = False
+                # 在清除之前就设置标志，确保事件处理时能检测到
+                app._programmatic_value_set = True
+                # 延迟重置标志
+                def reset_flag():
+                    if app:
+                        app._programmatic_value_set = False
+                app.set_timer(0.3, reset_flag)
+            
+            # 先设置标志为 False，但保持 _showing_placeholder 为 True 直到清除完成
+            # 这样在清除过程中，on_input_changed 可以通过 _showing_placeholder 检查拦截
             self.clear()
+            # 清除后再设置为 False
             self._showing_placeholder = False
             self.remove_class("placeholder")
     
@@ -1748,6 +1764,22 @@ class ReActAgentApp(App):
         
         # 如果已经有弹窗打开，不处理触发逻辑，避免嵌套弹窗
         if isinstance(self.screen, ModalScreen):
+            return
+        
+        # 如果正在显示 placeholder，不触发（避免清除 placeholder 时误触发）
+        if hasattr(input_widget, '_showing_placeholder') and input_widget._showing_placeholder:
+            return
+        
+        # 如果文本等于 placeholder 文本，不触发（避免 placeholder 文本本身触发）
+        if text == input_widget.placeholder:
+            return
+        
+        # 如果是程序设置的文本变化（比如清除 placeholder、插入文件路径等），不触发
+        if hasattr(self, '_programmatic_value_set') and self._programmatic_value_set:
+            return
+        
+        # 如果文本为空，不触发（避免清除 placeholder 时误触发）
+        if not text or not text.strip():
             return
         
         # 检查是否应该触发文件选择（类似Cursor的行为）
