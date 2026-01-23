@@ -1769,6 +1769,20 @@ class ReActAgentApp(App):
         input_widget = self.query_one("#user-input", ChatInput)
         current_value = input_widget.text
         
+        # 获取当前光标位置（字符索引）
+        try:
+            cursor_location = input_widget.cursor_location
+            document = input_widget.document
+            # 计算字符索引：前面所有行的字符数 + 当前列
+            # 注意：每行末尾的换行符也算一个字符
+            char_index = 0
+            for i in range(cursor_location.line):
+                char_index += len(document.get_line(i)) + 1  # +1 是换行符
+            char_index += cursor_location.column
+        except Exception:
+            # 如果获取失败，使用文本长度（末尾）
+            char_index = len(current_value)
+        
         # 检查是否应该触发文件选择（与on_input_changed中的逻辑保持一致）
         should_trigger = (
             current_value.endswith(" @") or  # 情况1: 需求+空格+@
@@ -1777,20 +1791,34 @@ class ReActAgentApp(App):
         )
         
         if should_trigger:
-            # 根据不同的情况删除相应的"@"符号
+            # 根据不同的情况删除相应的"@"符号，并计算插入位置
+            insert_position = None
+            
             if current_value.endswith(" @"):
                 # 情况1: 删除末尾的" @"
                 new_value = current_value[:-2]
+                # 插入位置在删除" @"后的位置（即原文本末尾-2的位置）
+                insert_position = len(new_value)
             elif current_value.startswith("@ "):
                 # 情况2: 删除开头的"@ "
                 new_value = current_value[2:]
+                # 插入位置在开头（0）
+                insert_position = 0
             elif " @ " in current_value:
                 # 情况3: 删除最后一个" @ "（用户通常是在最后输入@）
-                # 保留空格，将" @ "替换为" "
-                parts = current_value.rsplit(" @ ", 1)
-                new_value = parts[0] + " " + parts[1] if len(parts) == 2 else current_value
+                # 找到最后一个" @ "的位置
+                last_at_pos = current_value.rfind(" @ ")
+                if last_at_pos != -1:
+                    # 删除" @ "，保留空格
+                    new_value = current_value[:last_at_pos] + " " + current_value[last_at_pos + 3:]
+                    # 插入位置在删除" @ "后的位置（即原" @ "的位置）
+                    insert_position = last_at_pos + 1  # +1 是因为保留了空格
+                else:
+                    new_value = current_value
+                    insert_position = char_index
             else:
                 new_value = current_value
+                insert_position = char_index
             
             # 标记这是程序设置的文本
             self._programmatic_value_set = True
@@ -1801,17 +1829,46 @@ class ReActAgentApp(App):
             # 设置新值（此时没有焦点，不会选中）
             input_widget.text = new_value
             
-            # 立即尝试设置光标位置到文本末尾（即使没有焦点）
+            # 设置光标位置到插入位置
             def set_cursor_immediately():
                 try:
-                    # 使用 document.end 获取文档末尾位置
-                    end_location = input_widget.document.end
-                    input_widget.cursor_location = end_location
+                    # 将字符索引转换为 Location
+                    document = input_widget.document
+                    line = 0
+                    col = insert_position
+                    for i in range(len(document.lines)):
+                        line_len = len(document.get_line(i)) + 1  # +1 是换行符
+                        if col < line_len:
+                            line = i
+                            break
+                        col -= line_len
+                    else:
+                        # 如果超出范围，使用最后一行
+                        line = len(document.lines) - 1
+                        col = len(document.get_line(line))
+                    
+                    from textual.geometry import Location
+                    location = Location(line, col)
+                    input_widget.cursor_location = location
                 except Exception:
                     # 如果失败，尝试使用 move_cursor
                     try:
-                        end_location = input_widget.document.end
-                        input_widget.move_cursor(end_location, select=False)
+                        document = input_widget.document
+                        line = 0
+                        col = insert_position
+                        for i in range(len(document.lines)):
+                            line_len = len(document.get_line(i)) + 1
+                            if col < line_len:
+                                line = i
+                                break
+                            col -= line_len
+                        else:
+                            line = len(document.lines) - 1
+                            col = len(document.get_line(line))
+                        
+                        from textual.geometry import Location
+                        location = Location(line, col)
+                        input_widget.move_cursor(location, select=False)
                     except Exception:
                         pass
             
@@ -1821,25 +1878,54 @@ class ReActAgentApp(App):
             # 延迟恢复焦点
             def restore_focus():
                 input_widget.focus()
-                # 再次确保光标在末尾（因为恢复焦点可能会重置光标）
-                def ensure_cursor_end():
+                # 再次确保光标在正确位置
+                def ensure_cursor_position():
                     if input_widget.has_focus and self._programmatic_value_set:
                         try:
-                            end_location = input_widget.document.end
-                            input_widget.cursor_location = end_location
+                            document = input_widget.document
+                            line = 0
+                            col = insert_position
+                            for i in range(len(document.lines)):
+                                line_len = len(document.get_line(i)) + 1
+                                if col < line_len:
+                                    line = i
+                                    break
+                                col -= line_len
+                            else:
+                                line = len(document.lines) - 1
+                                col = len(document.get_line(line))
+                            
+                            from textual.geometry import Location
+                            location = Location(line, col)
+                            input_widget.cursor_location = location
                         except Exception:
                             try:
-                                end_location = input_widget.document.end
-                                input_widget.move_cursor(end_location, select=False)
+                                document = input_widget.document
+                                line = 0
+                                col = insert_position
+                                for i in range(len(document.lines)):
+                                    line_len = len(document.get_line(i)) + 1
+                                    if col < line_len:
+                                        line = i
+                                        break
+                                    col -= line_len
+                                else:
+                                    line = len(document.lines) - 1
+                                    col = len(document.get_line(line))
+                                
+                                from textual.geometry import Location
+                                location = Location(line, col)
+                                input_widget.move_cursor(location, select=False)
                             except Exception:
-                                try:
-                                    input_widget.action_end()
-                                except AttributeError:
-                                    pass
+                                pass
                         self._programmatic_value_set = False
-                self.set_timer(0.05, ensure_cursor_end)
+                self.set_timer(0.05, ensure_cursor_position)
             self.set_timer(0.1, restore_focus)
-        self._open_file_picker()
+            
+            # 传递插入位置给文件选择器
+            self._open_file_picker(insert_position)
+        else:
+            self._open_file_picker()
     
     def _open_palette_from_slash(self) -> None:
         input_widget = self.query_one("#user-input", ChatInput)
@@ -1862,7 +1948,7 @@ class ReActAgentApp(App):
         input_widget.blur()
         self.push_screen(LogViewerScreen(), handle_close)
     
-    def _open_file_picker(self) -> None:
+    def _open_file_picker(self, insert_position: int | None = None) -> None:
         # 如果已经有弹窗打开，不重复打开
         if isinstance(self.screen, ModalScreen):
             return
@@ -1871,7 +1957,18 @@ class ReActAgentApp(App):
             input_widget = self.query_one("#user-input", ChatInput)
             if file_path:
                 current = input_widget.text
-                new_value = f"{current}`{file_path}` "
+                
+                # 如果指定了插入位置，在指定位置插入；否则插入到末尾
+                if insert_position is not None:
+                    # 在指定位置插入文件路径
+                    file_path_text = f"`{file_path}` "
+                    new_value = current[:insert_position] + file_path_text + current[insert_position:]
+                    # 插入后，光标应该在插入内容的末尾
+                    new_cursor_position = insert_position + len(file_path_text)
+                else:
+                    # 默认行为：插入到末尾
+                    new_value = f"{current}`{file_path}` "
+                    new_cursor_position = len(new_value)
                 
                 # 标记这是程序设置的文本
                 self._programmatic_value_set = True
@@ -1882,19 +1979,53 @@ class ReActAgentApp(App):
                 # 设置新值（此时没有焦点，不会选中）
                 input_widget.text = new_value
                 
-                # 立即尝试设置光标位置到文本末尾（即使没有焦点）
+                # 立即尝试设置光标位置到插入内容的末尾
                 def set_cursor_immediately():
                     try:
-                        # 使用 document.end 获取文档末尾位置
-                        end_location = input_widget.document.end
-                        input_widget.cursor_location = end_location
+                        # 将字符索引转换为 Location
+                        document = input_widget.document
+                        line = 0
+                        col = new_cursor_position
+                        for i in range(len(document.lines)):
+                            line_len = len(document.get_line(i)) + 1  # +1 是换行符
+                            if col < line_len:
+                                line = i
+                                break
+                            col -= line_len
+                        else:
+                            # 如果超出范围，使用最后一行
+                            line = len(document.lines) - 1
+                            col = len(document.get_line(line))
+                        
+                        from textual.geometry import Location
+                        location = Location(line, col)
+                        input_widget.cursor_location = location
                     except Exception:
                         # 如果失败，尝试使用 move_cursor
                         try:
-                            end_location = input_widget.document.end
-                            input_widget.move_cursor(end_location, select=False)
+                            document = input_widget.document
+                            line = 0
+                            col = new_cursor_position
+                            for i in range(len(document.lines)):
+                                line_len = len(document.get_line(i)) + 1
+                                if col < line_len:
+                                    line = i
+                                    break
+                                col -= line_len
+                            else:
+                                line = len(document.lines) - 1
+                                col = len(document.get_line(line))
+                            
+                            from textual.geometry import Location
+                            location = Location(line, col)
+                            input_widget.move_cursor(location, select=False)
                         except Exception:
-                            pass
+                            # 如果都失败了，使用末尾位置
+                            try:
+                                end_location = input_widget.document.end
+                                input_widget.cursor_location = end_location
+                            except Exception:
+                                pass
                 
                 # 延迟设置光标位置，确保文档已更新
                 self.set_timer(0.05, set_cursor_immediately)
@@ -1902,23 +2033,51 @@ class ReActAgentApp(App):
                 # 延迟恢复焦点
                 def restore_focus():
                     input_widget.focus()
-                    # 再次确保光标在末尾（因为恢复焦点可能会重置光标）
-                    def ensure_cursor_end():
+                    # 再次确保光标在正确位置
+                    def ensure_cursor_position():
                         if input_widget.has_focus and self._programmatic_value_set:
                             try:
-                                end_location = input_widget.document.end
-                                input_widget.cursor_location = end_location
+                                document = input_widget.document
+                                line = 0
+                                col = new_cursor_position
+                                for i in range(len(document.lines)):
+                                    line_len = len(document.get_line(i)) + 1
+                                    if col < line_len:
+                                        line = i
+                                        break
+                                    col -= line_len
+                                else:
+                                    line = len(document.lines) - 1
+                                    col = len(document.get_line(line))
+                                
+                                from textual.geometry import Location
+                                location = Location(line, col)
+                                input_widget.cursor_location = location
                             except Exception:
                                 try:
-                                    end_location = input_widget.document.end
-                                    input_widget.move_cursor(end_location, select=False)
+                                    document = input_widget.document
+                                    line = 0
+                                    col = new_cursor_position
+                                    for i in range(len(document.lines)):
+                                        line_len = len(document.get_line(i)) + 1
+                                        if col < line_len:
+                                            line = i
+                                            break
+                                        col -= line_len
+                                    else:
+                                        line = len(document.lines) - 1
+                                        col = len(document.get_line(line))
+                                    
+                                    from textual.geometry import Location
+                                    location = Location(line, col)
+                                    input_widget.move_cursor(location, select=False)
                                 except Exception:
                                     try:
                                         input_widget.action_end()
                                     except AttributeError:
                                         pass
                             self._programmatic_value_set = False
-                    self.set_timer(0.05, ensure_cursor_end)
+                    self.set_timer(0.05, ensure_cursor_position)
                 self.set_timer(0.1, restore_focus)
             else:
                 # 无论是否选择文件，关闭弹窗后都聚焦到 user-input
