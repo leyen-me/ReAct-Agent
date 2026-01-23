@@ -1750,7 +1750,17 @@ class ReActAgentApp(App):
         if isinstance(self.screen, ModalScreen):
             return
         
-        if text.endswith("@"):
+        # 检查是否应该触发文件选择（类似Cursor的行为）
+        # 情况1: 文本以" @"结尾（需求+空格+@）
+        # 情况2: 文本以"@ "开头（@+空格+需求）
+        # 情况3: 文本中包含" @ "（需求1+空格+@+空格+需求2）
+        should_trigger_file_picker = (
+            text.endswith(" @") or  # 情况1: 需求+空格+@
+            text.startswith("@ ") or  # 情况2: @+空格+需求
+            " @ " in text  # 情况3: 需求1+空格+@+空格+需求2
+        )
+        
+        if should_trigger_file_picker:
             self.set_timer(0.05, self._open_file_picker_from_at)
         elif text == "/":
             self.set_timer(0.05, self._open_palette_from_slash)
@@ -1758,8 +1768,29 @@ class ReActAgentApp(App):
     def _open_file_picker_from_at(self) -> None:
         input_widget = self.query_one("#user-input", ChatInput)
         current_value = input_widget.text
-        if current_value.endswith("@"):
-            new_value = current_value[:-1]
+        
+        # 检查是否应该触发文件选择（与on_input_changed中的逻辑保持一致）
+        should_trigger = (
+            current_value.endswith(" @") or  # 情况1: 需求+空格+@
+            current_value.startswith("@ ") or  # 情况2: @+空格+需求
+            " @ " in current_value  # 情况3: 需求1+空格+@+空格+需求2
+        )
+        
+        if should_trigger:
+            # 根据不同的情况删除相应的"@"符号
+            if current_value.endswith(" @"):
+                # 情况1: 删除末尾的" @"
+                new_value = current_value[:-2]
+            elif current_value.startswith("@ "):
+                # 情况2: 删除开头的"@ "
+                new_value = current_value[2:]
+            elif " @ " in current_value:
+                # 情况3: 删除最后一个" @ "（用户通常是在最后输入@）
+                # 保留空格，将" @ "替换为" "
+                parts = current_value.rsplit(" @ ", 1)
+                new_value = parts[0] + " " + parts[1] if len(parts) == 2 else current_value
+            else:
+                new_value = current_value
             
             # 标记这是程序设置的文本
             self._programmatic_value_set = True
