@@ -129,6 +129,11 @@ class MessageManager:
             context_info += "\n━━━━━━━━━━━━━━\n【历史上下文总结】\n━━━━━━━━━━━━━━\n"
             for i, summary in enumerate(self.context_summaries, 1):
                 context_info += f"\n段 {i} 总结：\n{summary}\n"
+            # 重要：如果有历史总结，说明有未完成的任务，应该自动继续执行
+            context_info += "\n重要提示：\n"
+            context_info += "- 如果历史总结中包含未完成的任务或下一步计划，你必须自动继续执行，不要等待用户输入\n"
+            context_info += "- 新段创建后，你应该立即根据历史总结中的\"下一步计划\"继续执行任务\n"
+            context_info += "- 只有在所有任务都完成后，或者遇到需要用户决策的问题时，才应该询问用户\n"
         
         return self.base_system_prompt + context_info
 
@@ -500,6 +505,17 @@ class ReActAgent:
         # 创建新段
         self.message_manager.create_new_segment_with_summary(summary)
         logger.info("已创建新对话段")
+        
+        # 在新段中添加一条系统消息，指示模型继续执行任务
+        # 这样模型就知道应该继续执行，而不是等待用户输入
+        continue_message = (
+            "上下文已总结并创建新段。请根据历史总结中的\"下一步计划\"自动继续执行任务，"
+            "不要等待用户输入。只有在所有任务都完成后，或遇到需要用户决策的问题时，才应该询问用户。"
+        )
+        self.message_manager.messages.append(
+            {"role": "system", "content": continue_message}
+        )
+        logger.info("已添加继续执行提示消息")
 
     def _get_system_prompt(self) -> str:
         """生成系统提示词"""
