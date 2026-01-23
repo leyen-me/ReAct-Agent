@@ -272,6 +272,11 @@ class MessageManager:
                 f"剩余消息数: {len(self.messages)}"
             )
 
+    def add_system_message(self, content: str) -> None:
+        """添加系统消息"""
+        self.messages.append({"role": "system", "content": f"{content}"})
+        logger.debug(f"已添加系统消息 - 长度: {len(content)}")
+
     def add_user_message(self, content: str) -> None:
         """添加用户消息"""
         self.messages.append({"role": "user", "content": f"{content}"})
@@ -380,6 +385,122 @@ class MessageManager:
             所有段的消息列表
         """
         return self.segments.copy()
+    
+    def get_all_messages(self) -> List[Dict[str, str]]:
+        """
+        获取所有段的消息合并为一个列表（用于导出和保存历史记录）
+        
+        注意：这个方法会合并所有段的消息，包括历史总结信息。
+        每个段之间会插入一个标记消息，表示段的分隔。
+
+        Returns:
+            所有消息的合并列表
+        """
+        all_messages = []
+        for i, segment in enumerate(self.segments):
+            # 添加段分隔标记（除了第一段）
+            if i > 0:
+                all_messages.append({
+                    "role": "system",
+                    "content": f"[段 {i + 1} 开始 - 上下文已总结并创建新段]"
+                })
+            # 添加该段的所有消息
+            all_messages.extend(segment.copy())
+        return all_messages
+    
+    def load_messages(self, messages: List[Dict[str, str]]) -> None:
+        """
+        从消息列表加载并恢复多段结构（用于加载历史记录）
+        
+        这个方法会尝试识别段分隔标记，将消息恢复到多个段中。
+        如果没有段分隔标记，则将所有消息放入第一个段。
+
+        Args:
+            messages: 消息列表
+        """
+        # 清空现有段
+        self.segments = []
+        self.context_summaries = []
+        
+        # 查找段分隔标记
+        segment_boundaries = []
+        for i, msg in enumerate(messages):
+            if msg.get("role") == "system":
+                content = msg.get("content", "")
+                if "[段" in content and "开始" in content:
+                    segment_boundaries.append(i)
+        
+        # 如果没有段分隔标记，将所有消息放入第一个段
+        if not segment_boundaries:
+            # 创建第一个段
+            new_segment = []
+            for msg in messages:
+                # 跳过系统消息中的上下文使用情况（会在创建新段时自动添加）
+                if msg.get("role") == "system":
+                    content = msg.get("content", "")
+                    # 如果包含基础系统提示词，保留；否则跳过（可能是上下文信息）
+                    if "Microsoft" in content or "微软" in content:
+                        # 提取基础系统提示词（去除上下文信息部分）
+                        base_content = content.split("━━━━━━━━━━━━━━")[0].strip()
+                        if base_content:
+                            new_segment.append({"role": "system", "content": base_content})
+                else:
+                    new_segment.append(msg.copy())
+            
+            if new_segment:
+                self.segments.append(new_segment)
+                self.current_segment_index = 0
+                self.messages = self.segments[0]
+        else:
+            # 根据段分隔标记分割消息
+            start_idx = 0
+            for boundary in segment_boundaries:
+                # 添加当前段的消息（不包括分隔标记）
+                segment_messages = messages[start_idx:boundary]
+                if segment_messages:
+                    # 处理第一个段：需要包含系统提示词
+                    if len(self.segments) == 0:
+                        # 查找系统消息
+                        system_msg = None
+                        other_messages = []
+                        for msg in segment_messages:
+                            if msg.get("role") == "system":
+                                content = msg.get("content", "")
+                                if "Microsoft" in content or "微软" in content:
+                                    system_msg = msg
+                            else:
+                                other_messages.append(msg)
+                        
+                        if system_msg:
+                            new_segment = [system_msg] + other_messages
+                        else:
+                            new_segment = segment_messages
+                    else:
+                        new_segment = segment_messages
+                    
+                    self.segments.append(new_segment)
+                
+                start_idx = boundary + 1  # 跳过分隔标记
+            
+            # 添加最后一段
+            if start_idx < len(messages):
+                last_segment = messages[start_idx:]
+                if last_segment:
+                    self.segments.append(last_segment)
+            
+            # 设置当前段为最后一段
+            if self.segments:
+                self.current_segment_index = len(self.segments) - 1
+                self.messages = self.segments[self.current_segment_index]
+        
+        # 重置 token 计数（加载历史记录时无法准确知道 token 使用情况）
+        self.current_tokens = 0
+        self.estimated_tokens = 0
+        
+        logger.info(
+            f"已加载消息历史 - 总段数: {len(self.segments)}, "
+            f"当前段索引: {self.current_segment_index}"
+        )
 
     def get_token_usage_percent(self) -> float:
         """

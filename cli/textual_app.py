@@ -2269,7 +2269,8 @@ class ReActAgentApp(App):
             self._scroll_to_bottom()
             return
         
-        messages = self.agent.message_manager.get_messages()
+        # 使用 get_all_messages() 获取所有段的消息
+        messages = self.agent.message_manager.get_all_messages()
         
         if not messages:
             error_msg = ContentMessage("[#ef4444]错误: 没有消息可导出[/]", allow_markup=True)
@@ -2288,6 +2289,7 @@ class ReActAgentApp(App):
             md_lines.append("# 对话导出\n")
             md_lines.append(f"**导出时间**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             md_lines.append(f"**消息总数**: {len(messages)}\n")
+            md_lines.append(f"**总段数**: {len(self.agent.message_manager.segments)}\n")
             md_lines.append("\n---\n\n")
             
             # 遍历消息并格式化
@@ -2533,7 +2535,8 @@ class ReActAgentApp(App):
             if not hasattr(self.agent, "message_manager"):
                 return
             
-            messages = self.agent.message_manager.get_messages()
+            # 使用 get_all_messages() 获取所有段的消息
+            messages = self.agent.message_manager.get_all_messages()
             # 只保存有实际对话内容的记录（至少有一条用户消息和一条助手消息）
             user_messages = [m for m in messages if m.get("role") == "user"]
             assistant_messages = [m for m in messages if m.get("role") == "assistant"]
@@ -2627,7 +2630,7 @@ class ReActAgentApp(App):
             
             # 如果当前有未保存的对话，先保存
             if hasattr(self.agent, "message_manager"):
-                messages = self.agent.message_manager.get_messages()
+                messages = self.agent.message_manager.get_all_messages()
                 user_messages = [m for m in messages if m.get("role") == "user"]
                 assistant_messages = [m for m in messages if m.get("role") == "assistant"]
                 if user_messages and assistant_messages:
@@ -2643,12 +2646,8 @@ class ReActAgentApp(App):
             
             # 恢复消息历史
             if hasattr(self.agent, "message_manager"):
-                # 保留系统消息，替换其他消息
-                system_message = self.agent.message_manager.messages[0] if self.agent.message_manager.messages else None
-                self.agent.message_manager.messages = history.messages.copy()
-                # 如果原系统消息存在且历史记录中没有系统消息，则添加
-                if system_message and not any(m.get("role") == "system" for m in history.messages):
-                    self.agent.message_manager.messages.insert(0, system_message)
+                # 使用 load_messages() 方法恢复多段结构
+                self.agent.message_manager.load_messages(history.messages)
                 
                 # 恢复 token 使用情况（使用历史记录中的值）
                 used_tokens = history.token_usage.get("used", 0)
@@ -2835,11 +2834,14 @@ class ReActAgentApp(App):
         chat_container.remove_children()
         # 重置 agent 的消息历史
         if hasattr(self.agent, "message_manager"):
-            # 保留系统消息，清空其他消息
-            if self.agent.message_manager.messages:
-                system_message = self.agent.message_manager.messages[0]
-                self.agent.message_manager.messages = [system_message]
-            self.agent.message_manager.current_tokens = 0
+            # 重新创建第一个段（保留系统提示词）
+            mm = self.agent.message_manager
+            base_system_prompt = mm.base_system_prompt
+            mm.segments = []
+            mm.context_summaries = []
+            mm._create_new_segment()
+            mm.current_tokens = 0
+            mm.estimated_tokens = 0
         # 重置对话标题
         self.current_chat_title = None
         self.is_generating_title = False
