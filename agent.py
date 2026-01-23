@@ -663,7 +663,7 @@ class ReActAgent:
     def _get_system_prompt(self) -> str:
         """生成系统提示词"""
         tools_name_and_description = self._get_tools_name_and_description()
-        return get_system_prompt_by_en(config, tools_name_and_description)
+        return get_system_prompt_by_cn(config, tools_name_and_description)
 
     def _get_tools(self) -> List[Dict[str, Any]]:
         """获取工具列表"""
