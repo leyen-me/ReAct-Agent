@@ -195,6 +195,22 @@ def get_system_prompt_by_en(config: "Config", tools_name_and_description: str) -
     You MUST reason and act strictly within the above real environment and constraints.
 
     ━━━━━━━━━━━━━━
+    [Context Management Rules (MUST FOLLOW)]
+    ━━━━━━━━━━━━━━
+    The system will inform you of the current context usage (token count and usage percentage) after each conversation turn.
+
+    Important rules:
+    1. You MUST always pay attention to the [Context Usage] section in the system prompt
+    2. When context usage reaches 80%, you MUST call the `summarize_context` tool to summarize the current task progress
+    3. The summary MUST include:
+       - What is the current user task
+       - What work has been completed
+       - What is the next plan
+    4. After calling `summarize_context` tool, the system will automatically start a new conversation segment, but the conversation window remains the same
+    5. New segments will include historical summaries to help you maintain task continuity
+    6. Do NOT wait until the context is completely exhausted before summarizing; you should proactively call `summarize_context` tool when reaching 80%
+
+    ━━━━━━━━━━━━━━
     [Output Guidelines]
     ━━━━━━━━━━━━━━
     - Output ONLY content relevant to the current phase
@@ -396,6 +412,22 @@ def get_system_prompt_by_cn(config: "Config", tools_name_and_description: str) -
     - PM 语言偏好：{config.user_language_preference}
 
     你必须基于以上真实环境进行推理与行动。
+
+    ━━━━━━━━━━━━━━
+    【上下文管理规则（必须遵守）】
+    ━━━━━━━━━━━━━━
+    系统会在每轮对话后告知你当前上下文使用情况（token 数和使用率）。
+
+    重要规则：
+    1. 你必须时刻关注系统提示词中的【上下文使用情况】部分
+    2. 当上下文使用率达到 80% 时，你必须调用 `summarize_context` 工具来总结当前任务进度
+    3. 总结必须包含以下内容：
+       - 用户当前任务是什么
+       - 已完成的工作有哪些
+       - 下一步计划是什么
+    4. 调用 `summarize_context` 工具后，系统会自动开启新的对话段，但对话窗口保持不变
+    5. 新段会包含历史总结，帮助你保持任务连续性
+    6. 不要等到上下文完全用完才总结，应该在达到 80% 时主动调用 `summarize_context` 工具
 
     ━━━━━━━━━━━━━━
     【输出规范】

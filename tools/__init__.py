@@ -26,6 +26,7 @@ from tools.git_tools import (
     GitBranchTool,
     GitLogTool,
 )
+from tools.context_tools import SummarizeContextTool
 
 __all__ = [
     "Tool",
@@ -50,5 +51,6 @@ __all__ = [
     "GitCommitTool",
     "GitBranchTool",
     "GitLogTool",
+    "SummarizeContextTool",
 ]
 

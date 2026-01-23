@@ -34,6 +34,7 @@ from tools import (
     GitCommitTool,
     GitBranchTool,
     GitLogTool,
+    SummarizeContextTool,
 )
 from tool_executor import create_tool_executor
 
@@ -41,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 
 class MessageManager:
-    """消息管理器"""
+    """消息管理器（支持多段上下文）"""
 
     def __init__(self, system_prompt: str, max_context_tokens: int):
         """
@@ -52,13 +53,84 @@ class MessageManager:
             max_context_tokens: 最大上下文 token 数
         """
         self.max_context_tokens = max_context_tokens
-        self.messages: List[Dict[str, str]] = [
-            {"role": "system", "content": system_prompt}
-        ]
+        # 每个段最多使用 80% 的上下文
+        self.segment_max_tokens = int(max_context_tokens * 0.8)
+        # 系统提示词模板（不包含上下文信息）
+        self.base_system_prompt = system_prompt
+        # 消息段列表：每个段是一个消息列表
+        # segments = [messages1, messages2, messages3, ...]
+        # 每个段最多使用 80% 的上下文
+        self.segments: List[List[Dict[str, str]]] = []
+        # 当前段的索引
+        self.current_segment_index: int = -1
+        # 当前段的消息列表
+        self.messages: List[Dict[str, str]] = []
         # 当前实际使用的 token 数（从 API 响应获取）
         self.current_tokens: int = 0
         # 估算的 token 数（用于实时显示，在流式过程中更新）
         self.estimated_tokens: int = 0
+        # 上下文总结（用于新段）
+        self.context_summaries: List[str] = []
+        # 初始化第一个段
+        self._create_new_segment()
+
+    def _create_new_segment(self) -> None:
+        """创建新的消息段"""
+        # 创建新段，包含系统提示词（此时 current_tokens 为 0，所以使用率会是 0%）
+        new_segment = [
+            {"role": "system", "content": self._get_system_prompt_with_context()}
+        ]
+        self.segments.append(new_segment)
+        self.current_segment_index = len(self.segments) - 1
+        self.messages = self.segments[self.current_segment_index]
+        # 重置 token 计数（新段开始时为 0）
+        self.current_tokens = 0
+        self.estimated_tokens = 0
+        logger.info(
+            f"创建新消息段 - 段索引: {self.current_segment_index}, "
+            f"总段数: {len(self.segments)}, "
+            f"历史总结数: {len(self.context_summaries)}"
+        )
+
+    def _get_system_prompt_with_context(self) -> str:
+        """
+        获取包含上下文使用情况的系统提示词
+
+        Returns:
+            包含上下文信息的系统提示词
+        """
+        # 计算当前段的使用情况
+        usage_percent = self.get_token_usage_percent()
+        current_tokens = self.current_tokens
+        remaining_tokens = self.get_remaining_tokens()
+        segment_max = self.segment_max_tokens
+        
+        # 添加上下文使用情况信息
+        context_info = f"""
+
+━━━━━━━━━━━━━━
+【上下文使用情况（必须关注）】
+━━━━━━━━━━━━━━
+当前上下文使用情况：
+- 当前段已使用 token 数: {current_tokens}
+- 当前段最大 token 数: {segment_max}
+- 当前段使用率: {usage_percent:.2f}%
+- 当前段剩余 token 数: {remaining_tokens}
+- 总段数: {len(self.segments)}
+
+重要提示：
+- 当上下文使用率达到 80% 时，你必须调用 `summarize_context` 工具来总结当前任务进度
+- 总结应包含：用户当前任务、已完成的工作、下一步计划
+- 调用 `summarize_context` 工具后，系统会自动开启新的对话段，但对话窗口保持不变
+"""
+        
+        # 如果有历史总结，添加到系统提示词中
+        if self.context_summaries:
+            context_info += "\n━━━━━━━━━━━━━━\n【历史上下文总结】\n━━━━━━━━━━━━━━\n"
+            for i, summary in enumerate(self.context_summaries, 1):
+                context_info += f"\n段 {i} 总结：\n{summary}\n"
+        
+        return self.base_system_prompt + context_info
 
     def update_token_usage(self, prompt_tokens: int) -> None:
         """
@@ -77,7 +149,14 @@ class MessageManager:
             f"使用率: {self.get_token_usage_percent():.2f}%"
         )
 
-        self._manage_context()
+        # 检查是否需要创建新段（使用率达到 80%）
+        if self.get_token_usage_percent() >= 80.0:
+            logger.warning(
+                f"当前段使用率已达到 {self.get_token_usage_percent():.2f}%，"
+                f"需要总结并创建新段"
+            )
+            # 注意：这里不立即创建新段，而是让模型主动总结
+            # 模型会在回复中总结，然后我们检测到总结后创建新段
 
     def estimate_tokens(self, text: str) -> int:
         """
@@ -163,22 +242,24 @@ class MessageManager:
         return max(0, self.max_context_tokens - self.estimated_tokens)
 
     def _manage_context(self) -> None:
-        """管理上下文，当超过限制时删除旧消息（保留系统消息）"""
+        """
+        管理上下文，当超过段限制时删除旧消息（保留系统消息）
+        注意：现在使用分段管理，不再需要删除旧消息
+        """
+        # 如果当前段超过限制，删除旧消息（保留系统消息）
         removed_count = 0
         while (
-            self.current_tokens > self.max_context_tokens
+            self.current_tokens > self.segment_max_tokens
             and len(self.messages) > 1
         ):
             # 保留系统消息，删除第一个非系统消息
             removed_message = self.messages.pop(1)
             removed_count += 1
             logger.debug(
-                f"上下文已满，删除旧消息 - "
-                f"当前使用: {self.current_tokens}/{self.max_context_tokens}, "
+                f"当前段已满，删除旧消息 - "
+                f"当前使用: {self.current_tokens}/{self.segment_max_tokens}, "
                 f"消息角色: {removed_message.get('role', 'unknown')}"
             )
-            # 注意：删除消息后，下次 API 调用时会重新计算 token 数
-            # 这里我们暂时保持 current_tokens 不变，等待下次 API 响应更新
 
         if removed_count > 0:
             logger.info(
@@ -275,27 +356,72 @@ class MessageManager:
         return cleaned_messages
 
     def get_messages(self) -> List[Dict[str, str]]:
-        """获取所有消息（已验证和清理）"""
+        """
+        获取当前段的消息（已验证和清理）
+        注意：只返回当前段的消息，不包含历史段
+        """
+        # 更新系统提示词以包含最新的上下文信息
+        if self.messages and self.messages[0].get("role") == "system":
+            self.messages[0]["content"] = self._get_system_prompt_with_context()
+        
         messages = self.messages.copy()
         return self._validate_and_clean_messages(messages)
+    
+    def get_all_segments(self) -> List[List[Dict[str, str]]]:
+        """
+        获取所有段的消息（用于调试或导出）
+
+        Returns:
+            所有段的消息列表
+        """
+        return self.segments.copy()
 
     def get_token_usage_percent(self) -> float:
         """
-        获取当前 token 使用百分比
+        获取当前段 token 使用百分比
 
         Returns:
             使用百分比（0-100）
         """
-        return (self.current_tokens / self.max_context_tokens) * 100
+        if self.segment_max_tokens == 0:
+            return 0.0
+        return (self.current_tokens / self.segment_max_tokens) * 100
 
     def get_remaining_tokens(self) -> int:
         """
-        获取剩余可用 token 数
+        获取当前段剩余可用 token 数
 
         Returns:
             剩余 token 数
         """
-        return max(0, self.max_context_tokens - self.current_tokens)
+        return max(0, self.segment_max_tokens - self.current_tokens)
+    
+    def should_create_new_segment(self) -> bool:
+        """
+        判断是否应该创建新段
+
+        Returns:
+            如果使用率达到 80% 或以上，返回 True
+        """
+        return self.get_token_usage_percent() >= 80.0
+    
+    def create_new_segment_with_summary(self, summary: str) -> None:
+        """
+        使用总结创建新段
+
+        Args:
+            summary: 当前段的总结内容
+        """
+        if summary:
+            self.context_summaries.append(summary)
+            logger.info(f"已保存段 {self.current_segment_index + 1} 的总结")
+        
+        # 创建新段
+        self._create_new_segment()
+        logger.info(
+            f"已创建新段 - 当前段索引: {self.current_segment_index}, "
+            f"历史总结数: {len(self.context_summaries)}"
+        )
 
 
 class ReActAgent:
@@ -353,10 +479,27 @@ class ReActAgent:
             GitCommitTool(config.work_dir),
             GitBranchTool(config.work_dir),
             GitLogTool(config.work_dir),
+            # 总结上下文工具，需要回调函数来创建新段
+            SummarizeContextTool(
+                config.work_dir,
+                on_summarize_callback=self._handle_context_summary
+            ),
         ]
         logger.debug(f"工具列表创建完成 - 工具数量: {len(tools)}")
         logger.debug(f"工具名称: {[tool.name for tool in tools]}")
         return tools
+    
+    def _handle_context_summary(self, summary: str) -> None:
+        """
+        处理上下文总结回调
+        
+        Args:
+            summary: 总结内容
+        """
+        logger.info(f"收到上下文总结，长度: {len(summary)}")
+        # 创建新段
+        self.message_manager.create_new_segment_with_summary(summary)
+        logger.info("已创建新对话段")
 
     def _get_system_prompt(self) -> str:
         """生成系统提示词"""
@@ -806,6 +949,7 @@ class ReActAgent:
 
         return reasoning_content, content, tool_call_acc, usage
 
+
     def _update_token_usage(
         self, usage: Any, status_callback: Optional[Callable[[], None]]
     ) -> None:
@@ -833,13 +977,21 @@ class ReActAgent:
         self.message_manager.update_token_usage(prompt_tokens)
         self._clear_current_reasoning()
 
+        usage_percent = self.message_manager.get_token_usage_percent()
         logger.info(
             f"Token 使用量更新 - "
             f"prompt: {prompt_tokens}, "
             f"completion: {completion_tokens}, "
             f"total: {total_tokens}, "
-            f"使用率: {self.message_manager.get_token_usage_percent():.2f}%"
+            f"使用率: {usage_percent:.2f}%"
         )
+
+        # 如果使用率达到 80%，记录警告（模型应该主动总结）
+        if usage_percent >= 80.0:
+            logger.warning(
+                f"当前段使用率已达到 {usage_percent:.2f}%，"
+                f"模型应该在下次回复中主动总结上下文"
+            )
 
         if status_callback:
             status_callback()
@@ -896,6 +1048,9 @@ class ReActAgent:
                             f"工具执行成功 - ID: {tc_id}, 工具: {tool_name}, "
                             f"结果长度: {len(str(tool_result))}"
                         )
+                        # 如果是总结上下文工具，输出提示信息
+                        if tool_name == "summarize_context":
+                            logger.info("上下文总结工具执行成功，已创建新对话段")
                     else:
                         logger.error(
                             f"工具执行失败 - ID: {tc_id}, 工具: {tool_name}, "
