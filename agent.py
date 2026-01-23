@@ -315,13 +315,16 @@ class ReActAgent:
             api_key=config.api_key,
             base_url=config.base_url,
         )
+        self.chat_count = 0
+        self.should_stop = False  # 中断标志（需要在创建工具执行器之前初始化）
         self.tools = self._create_tools()
-        self.tool_executor = create_tool_executor(self.tools)
+        # 传递 should_stop 检查函数给工具执行器
+        # 使用 lambda 确保每次调用时都获取最新的 should_stop 值
+        self.tool_executor = create_tool_executor(self.tools, lambda: self.should_stop)
+        logger.debug(f"工具执行器已创建，should_stop 检查函数: {self.tool_executor.should_stop_check is not None}")
         self.message_manager = MessageManager(
             self._get_system_prompt(), config.max_context_tokens
         )
-        self.chat_count = 0
-        self.should_stop = False  # 中断标志
 
         logger.info(f"Agent 初始化完成 - 工具数量: {len(self.tools)}")
 
@@ -863,8 +866,9 @@ class ReActAgent:
 
     def stop_chat(self) -> None:
         """停止当前对话"""
-        logger.info("收到停止对话请求")
+        logger.info("收到停止对话请求，设置 should_stop = True")
         self.should_stop = True
+        logger.debug(f"should_stop 已设置为: {self.should_stop}")
 
     def _call_api_with_retry(
         self, max_retries: int = 3
@@ -1258,6 +1262,11 @@ class ReActAgent:
         logger.info(f"开始执行 {len(tool_call_acc)} 个工具调用")
 
         for tc_id, tc_data in tool_call_acc.items():
+            # 检查是否应该停止（在执行每个工具之前）
+            if self.should_stop:
+                logger.info("工具执行被用户中断，停止执行剩余工具")
+                return
+            
             tool_name = tc_data["name"]
             tool_args = tc_data["arguments"]
 
@@ -1273,6 +1282,11 @@ class ReActAgent:
             # 执行工具
             try:
                 tool_call_result = self.tool_executor.execute(tool_name, tool_args)
+                
+                # 执行后再次检查是否应该停止（不执行后续工具）
+                if self.should_stop:
+                    logger.info("工具执行后被用户中断，停止执行剩余工具")
+                    return
 
                 # 处理返回结果
                 if isinstance(tool_call_result, dict):

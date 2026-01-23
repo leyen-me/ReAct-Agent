@@ -4,10 +4,13 @@
 import subprocess
 import os
 import time
+import logging
 from pathlib import Path
 from typing import Dict, Any
 
 from tools.base import Tool
+
+logger = logging.getLogger(__name__)
 
 
 class RunCommandTool(Tool):
@@ -102,8 +105,22 @@ class RunCommandTool(Tool):
                     stdin=subprocess.PIPE,
                 )
                 
-                # 等待几秒，收集初始输出
-                time.sleep(3)
+                # 等待几秒，收集初始输出，期间检查中断
+                wait_time = 3.0
+                check_interval = 0.5  # 每0.5秒检查一次
+                elapsed = 0.0
+                while elapsed < wait_time:
+                    if self.should_stop():
+                        # 用户中断，终止进程
+                        logger.info(f"检测到中断，正在终止命令进程: {command}")
+                        try:
+                            process.terminate()
+                            process.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                        return "命令执行被用户中断"
+                    time.sleep(check_interval)
+                    elapsed += check_interval
                 
                 # 检查进程是否还在运行
                 if process.poll() is None:
@@ -127,29 +144,57 @@ class RunCommandTool(Tool):
             except Exception as e:
                 return f"执行命令失败: {e}"
         else:
-            # 普通命令，正常执行
+            # 普通命令，使用 Popen 以便能够中断
             try:
-                result = subprocess.run(
+                process = subprocess.Popen(
                     command,
                     shell=True,
                     cwd=str(self.work_dir),
-                    capture_output=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
-                    timeout=timeout,
                     encoding="utf-8",
                     errors="replace",
                     env=env,
-                    # 通过 input 提供自动输入，回答所有可能的 yes/no 提示
-                    # 提供多个 y 和回车，处理多个交互式提示
-                    input="y\n" * 20,
+                    stdin=subprocess.PIPE,
                 )
                 
-                if result.returncode == 0:
-                    return f"命令执行成功:\n标准输出:\n{result.stdout}\n标准错误:\n{result.stderr}"
-                else:
-                    return f"命令执行失败（返回码: {result.returncode}）:\n标准输出:\n{result.stdout}\n标准错误:\n{result.stderr}"
-            except subprocess.TimeoutExpired:
-                return f"命令执行超时（超过 {timeout} 秒）"
+                # 轮询检查进程状态和中断标志
+                check_interval = 0.5  # 每0.5秒检查一次
+                start_time = time.time()
+                
+                while True:
+                    # 检查是否超时
+                    elapsed = time.time() - start_time
+                    if elapsed > timeout:
+                        process.kill()
+                        return f"命令执行超时（超过 {timeout} 秒）"
+                    
+                    # 检查是否应该停止
+                    if self.should_stop():
+                        # 用户中断，终止进程
+                        logger.info(f"检测到中断，正在终止命令进程: {command}")
+                        try:
+                            process.terminate()
+                            stdout, stderr = process.communicate(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            stdout, stderr = process.communicate()
+                        return "命令执行被用户中断"
+                    
+                    # 检查进程是否完成
+                    returncode = process.poll()
+                    if returncode is not None:
+                        # 进程已完成
+                        stdout, stderr = process.communicate()
+                        if returncode == 0:
+                            return f"命令执行成功:\n标准输出:\n{stdout}\n标准错误:\n{stderr}"
+                        else:
+                            return f"命令执行失败（返回码: {returncode}）:\n标准输出:\n{stdout}\n标准错误:\n{stderr}"
+                    
+                    # 等待一段时间后再次检查
+                    time.sleep(check_interval)
+                    
             except Exception as e:
                 return f"执行命令失败: {e}"
 

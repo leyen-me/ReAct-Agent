@@ -3,7 +3,7 @@
 
 import re
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, Callable
 from abc import ABC, abstractmethod
 
 from utils import validate_path
@@ -28,7 +28,33 @@ class Tool(ABC):
         # 将大驼峰转换为小写下划线
         name = re.sub(r'(?<!^)(?=[A-Z])', '_', class_name).lower()
         self.name = name
+        self._should_stop_check: Optional[Callable[[], bool]] = None
         self._init_metadata()
+    
+    def set_should_stop_check(self, should_stop_check: Optional[Callable[[], bool]]) -> None:
+        """
+        设置中断检查函数
+        
+        Args:
+            should_stop_check: 检查是否应该停止的函数，返回 True 表示应该停止
+        """
+        self._should_stop_check = should_stop_check
+    
+    def should_stop(self) -> bool:
+        """
+        检查是否应该停止
+        
+        Returns:
+            True 表示应该停止，False 表示继续执行
+        """
+        if self._should_stop_check:
+            result = self._should_stop_check()
+            if result:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"工具 {self.name} 检测到中断标志")
+            return result
+        return False
     
     def _init_metadata(self) -> None:
         """初始化元数据，子类可以重写"""
