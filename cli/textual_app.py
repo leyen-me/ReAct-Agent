@@ -1832,43 +1832,31 @@ class ReActAgentApp(App):
             # 设置光标位置到插入位置
             def set_cursor_immediately():
                 try:
-                    # 将字符索引转换为 Location
-                    document = input_widget.document
-                    line = 0
-                    col = insert_position
-                    for i in range(len(document.lines)):
-                        line_len = len(document.get_line(i)) + 1  # +1 是换行符
-                        if col < line_len:
-                            line = i
-                            break
-                        col -= line_len
+                    # 将字符索引转换为 (line, col) 元组
+                    # 使用文本内容计算
+                    text_before = new_value[:insert_position]
+                    line = text_before.count('\n')
+                    last_newline = text_before.rfind('\n')
+                    if last_newline == -1:
+                        col = insert_position
                     else:
-                        # 如果超出范围，使用最后一行
-                        line = len(document.lines) - 1
-                        col = len(document.get_line(line))
+                        col = insert_position - last_newline - 1
                     
-                    from textual.geometry import Location
-                    location = Location(line, col)
-                    input_widget.cursor_location = location
+                    # cursor_location 是一个 (line, column) 元组
+                    input_widget.cursor_location = (line, col)
                 except Exception:
                     # 如果失败，尝试使用 move_cursor
                     try:
-                        document = input_widget.document
-                        line = 0
-                        col = insert_position
-                        for i in range(len(document.lines)):
-                            line_len = len(document.get_line(i)) + 1
-                            if col < line_len:
-                                line = i
-                                break
-                            col -= line_len
+                        text_before = new_value[:insert_position]
+                        line = text_before.count('\n')
+                        last_newline = text_before.rfind('\n')
+                        if last_newline == -1:
+                            col = insert_position
                         else:
-                            line = len(document.lines) - 1
-                            col = len(document.get_line(line))
+                            col = insert_position - last_newline - 1
                         
-                        from textual.geometry import Location
-                        location = Location(line, col)
-                        input_widget.move_cursor(location, select=False)
+                        # 使用 move_cursor，它接受 (line, col) 元组
+                        input_widget.move_cursor((line, col), select=False)
                     except Exception:
                         pass
             
@@ -1882,40 +1870,29 @@ class ReActAgentApp(App):
                 def ensure_cursor_position():
                     if input_widget.has_focus and self._programmatic_value_set:
                         try:
-                            document = input_widget.document
-                            line = 0
-                            col = insert_position
-                            for i in range(len(document.lines)):
-                                line_len = len(document.get_line(i)) + 1
-                                if col < line_len:
-                                    line = i
-                                    break
-                                col -= line_len
+                            # 使用文本内容计算位置
+                            text_before = new_value[:insert_position]
+                            line = text_before.count('\n')
+                            last_newline = text_before.rfind('\n')
+                            if last_newline == -1:
+                                col = insert_position
                             else:
-                                line = len(document.lines) - 1
-                                col = len(document.get_line(line))
+                                col = insert_position - last_newline - 1
                             
-                            from textual.geometry import Location
-                            location = Location(line, col)
-                            input_widget.cursor_location = location
+                            # cursor_location 是一个 (line, column) 元组
+                            input_widget.cursor_location = (line, col)
                         except Exception:
                             try:
-                                document = input_widget.document
-                                line = 0
-                                col = insert_position
-                                for i in range(len(document.lines)):
-                                    line_len = len(document.get_line(i)) + 1
-                                    if col < line_len:
-                                        line = i
-                                        break
-                                    col -= line_len
+                                text_before = new_value[:insert_position]
+                                line = text_before.count('\n')
+                                last_newline = text_before.rfind('\n')
+                                if last_newline == -1:
+                                    col = insert_position
                                 else:
-                                    line = len(document.lines) - 1
-                                    col = len(document.get_line(line))
+                                    col = insert_position - last_newline - 1
                                 
-                                from textual.geometry import Location
-                                location = Location(line, col)
-                                input_widget.move_cursor(location, select=False)
+                                # 使用 move_cursor，它接受 (line, col) 元组
+                                input_widget.move_cursor((line, col), select=False)
                             except Exception:
                                 pass
                         self._programmatic_value_set = False
@@ -1965,10 +1942,38 @@ class ReActAgentApp(App):
                     new_value = current[:insert_position] + file_path_text + current[insert_position:]
                     # 插入后，光标应该在插入内容的末尾
                     new_cursor_position = insert_position + len(file_path_text)
+                    # 确保光标位置不会超出文本长度
+                    if new_cursor_position > len(new_value):
+                        new_cursor_position = len(new_value)
                 else:
                     # 默认行为：插入到末尾
                     new_value = f"{current}`{file_path}` "
                     new_cursor_position = len(new_value)
+                
+                # 辅助函数：将字符索引转换为 Location
+                def char_index_to_location(char_index: int, text: str) -> tuple[int, int]:
+                    """将字符索引转换为 (line, column)"""
+                    if char_index < 0:
+                        return 0, 0
+                    
+                    if char_index >= len(text):
+                        # 如果超出范围，使用最后一行末尾
+                        lines = text.split('\n')
+                        return len(lines) - 1, len(lines[-1])
+                    
+                    # 计算前面的行数
+                    text_before = text[:char_index]
+                    line = text_before.count('\n')
+                    
+                    # 计算当前行的列号
+                    # 找到最后一个换行符的位置
+                    last_newline = text_before.rfind('\n')
+                    if last_newline == -1:
+                        col = char_index
+                    else:
+                        col = char_index - last_newline - 1
+                    
+                    return line, col
                 
                 # 标记这是程序设置的文本
                 self._programmatic_value_set = True
@@ -1976,109 +1981,83 @@ class ReActAgentApp(App):
                 # 先移除焦点，避免设置值时自动选中所有文本
                 input_widget.blur()
                 
-                # 设置新值（此时没有焦点，不会选中）
-                input_widget.text = new_value
+                # 使用 load_text 方法，它可能更好地保持光标位置
+                # 但首先需要计算好位置（元组格式）
+                line, col = char_index_to_location(new_cursor_position, new_value)
+                target_location = (line, col)
                 
-                # 立即尝试设置光标位置到插入内容的末尾
-                def set_cursor_immediately():
+                # 设置新值
+                input_widget.load_text(new_value)
+                
+                # 立即设置光标位置
+                def set_cursor_position():
                     try:
-                        # 将字符索引转换为 Location
-                        document = input_widget.document
-                        line = 0
-                        col = new_cursor_position
-                        for i in range(len(document.lines)):
-                            line_len = len(document.get_line(i)) + 1  # +1 是换行符
-                            if col < line_len:
-                                line = i
-                                break
-                            col -= line_len
-                        else:
-                            # 如果超出范围，使用最后一行
-                            line = len(document.lines) - 1
-                            col = len(document.get_line(line))
+                        # 确保使用最新的文本内容
+                        current_text = input_widget.text
+                        # 重新计算位置（以防文本有变化）
+                        line, col = char_index_to_location(new_cursor_position, current_text)
                         
-                        from textual.geometry import Location
-                        location = Location(line, col)
-                        input_widget.cursor_location = location
+                        # cursor_location 是一个 (line, column) 元组
+                        input_widget.cursor_location = (line, col)
                     except Exception:
-                        # 如果失败，尝试使用 move_cursor
+                        # 如果失败，尝试使用保存的 target_location
                         try:
-                            document = input_widget.document
-                            line = 0
-                            col = new_cursor_position
-                            for i in range(len(document.lines)):
-                                line_len = len(document.get_line(i)) + 1
-                                if col < line_len:
-                                    line = i
-                                    break
-                                col -= line_len
-                            else:
-                                line = len(document.lines) - 1
-                                col = len(document.get_line(line))
-                            
-                            from textual.geometry import Location
-                            location = Location(line, col)
-                            input_widget.move_cursor(location, select=False)
+                            input_widget.cursor_location = target_location
                         except Exception:
-                            # 如果都失败了，使用末尾位置
+                            # 如果还是失败，尝试使用 move_cursor
                             try:
-                                end_location = input_widget.document.end
-                                input_widget.cursor_location = end_location
+                                current_text = input_widget.text
+                                line, col = char_index_to_location(new_cursor_position, current_text)
+                                
+                                # 使用 move_cursor，它接受 (line, col) 元组
+                                input_widget.move_cursor((line, col), select=False)
                             except Exception:
                                 pass
                 
-                # 延迟设置光标位置，确保文档已更新
-                self.set_timer(0.05, set_cursor_immediately)
+                # 立即尝试设置光标位置
+                set_cursor_position()
+                
+                # 延迟再次设置光标位置，确保文档已完全更新
+                self.set_timer(0.05, set_cursor_position)
+                self.set_timer(0.1, set_cursor_position)
                 
                 # 延迟恢复焦点
                 def restore_focus():
+                    # 在恢复焦点之前，先设置光标位置
+                    try:
+                        current_text = input_widget.text
+                        line, col = char_index_to_location(new_cursor_position, current_text)
+                        
+                        # cursor_location 是一个 (line, column) 元组
+                        input_widget.cursor_location = (line, col)
+                    except Exception:
+                        pass
+                    
                     input_widget.focus()
-                    # 再次确保光标在正确位置
+                    
+                    # 再次确保光标在正确位置（恢复焦点后可能会重置光标）
                     def ensure_cursor_position():
                         if input_widget.has_focus and self._programmatic_value_set:
                             try:
-                                document = input_widget.document
-                                line = 0
-                                col = new_cursor_position
-                                for i in range(len(document.lines)):
-                                    line_len = len(document.get_line(i)) + 1
-                                    if col < line_len:
-                                        line = i
-                                        break
-                                    col -= line_len
-                                else:
-                                    line = len(document.lines) - 1
-                                    col = len(document.get_line(line))
+                                current_text = input_widget.text
+                                line, col = char_index_to_location(new_cursor_position, current_text)
                                 
-                                from textual.geometry import Location
-                                location = Location(line, col)
-                                input_widget.cursor_location = location
+                                # cursor_location 是一个 (line, column) 元组
+                                input_widget.cursor_location = (line, col)
                             except Exception:
                                 try:
-                                    document = input_widget.document
-                                    line = 0
-                                    col = new_cursor_position
-                                    for i in range(len(document.lines)):
-                                        line_len = len(document.get_line(i)) + 1
-                                        if col < line_len:
-                                            line = i
-                                            break
-                                        col -= line_len
-                                    else:
-                                        line = len(document.lines) - 1
-                                        col = len(document.get_line(line))
+                                    current_text = input_widget.text
+                                    line, col = char_index_to_location(new_cursor_position, current_text)
                                     
-                                    from textual.geometry import Location
-                                    location = Location(line, col)
-                                    input_widget.move_cursor(location, select=False)
+                                    # 使用 move_cursor，它接受 (line, col) 元组
+                                    input_widget.move_cursor((line, col), select=False)
                                 except Exception:
-                                    try:
-                                        input_widget.action_end()
-                                    except AttributeError:
-                                        pass
+                                    pass
                             self._programmatic_value_set = False
+                    # 延迟一点时间，确保焦点已经恢复
                     self.set_timer(0.05, ensure_cursor_position)
-                self.set_timer(0.1, restore_focus)
+                    self.set_timer(0.15, ensure_cursor_position)
+                self.set_timer(0.2, restore_focus)
             else:
                 # 无论是否选择文件，关闭弹窗后都聚焦到 user-input
                 input_widget.focus()
