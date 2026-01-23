@@ -86,6 +86,10 @@ class MessageManager:
         # 重置 token 计数（新段开始时为 0）
         self.current_tokens = 0
         self.estimated_tokens = 0
+        
+        # 添加上下文使用情况的系统消息（新段开始时为 0%）
+        self._update_context_usage_message()
+        
         logger.info(
             f"创建新消息段 - 段索引: {self.current_segment_index}, "
             f"总段数: {len(self.segments)}, "
@@ -94,39 +98,14 @@ class MessageManager:
 
     def _get_system_prompt_with_context(self) -> str:
         """
-        获取包含上下文使用情况的系统提示词
+        获取系统提示词（包含历史总结，但不包含上下文使用情况）
 
         Returns:
-            包含上下文信息的系统提示词
+            系统提示词
         """
-        # 计算当前段的使用情况
-        usage_percent = self.get_token_usage_percent()
-        current_tokens = self.current_tokens
-        remaining_tokens = self.get_remaining_tokens()
-        segment_max = self.segment_max_tokens
-        
-        # 添加上下文使用情况信息
-        context_info = f"""
-
-━━━━━━━━━━━━━━
-【上下文使用情况（必须关注）】
-━━━━━━━━━━━━━━
-当前上下文使用情况：
-- 当前段已使用 token 数: {current_tokens}
-- 当前段最大 token 数: {segment_max}
-- 当前段使用率: {usage_percent:.2f}%
-- 当前段剩余 token 数: {remaining_tokens}
-- 总段数: {len(self.segments)}
-
-重要提示：
-- 当上下文使用率达到 80% 时，你必须调用 `summarize_context` 工具来总结当前任务进度
-- 总结应包含：用户当前任务、已完成的工作、下一步计划
-- 调用 `summarize_context` 工具后，系统会自动开启新的对话段，但对话窗口保持不变
-"""
-        
         # 如果有历史总结，添加到系统提示词中
         if self.context_summaries:
-            context_info += "\n━━━━━━━━━━━━━━\n【历史上下文总结】\n━━━━━━━━━━━━━━\n"
+            context_info = "\n━━━━━━━━━━━━━━\n【历史上下文总结】\n━━━━━━━━━━━━━━\n"
             for i, summary in enumerate(self.context_summaries, 1):
                 context_info += f"\n段 {i} 总结：\n{summary}\n"
             # 重要：如果有历史总结，说明有未完成的任务，应该自动继续执行
@@ -134,8 +113,47 @@ class MessageManager:
             context_info += "- 如果历史总结中包含未完成的任务或下一步计划，你必须自动继续执行，不要等待用户输入\n"
             context_info += "- 新段创建后，你应该立即根据历史总结中的\"下一步计划\"继续执行任务\n"
             context_info += "- 只有在所有任务都完成后，或者遇到需要用户决策的问题时，才应该询问用户\n"
+            return self.base_system_prompt + context_info
         
-        return self.base_system_prompt + context_info
+        return self.base_system_prompt
+    
+    def _get_context_usage_message(self) -> str:
+        """
+        生成极简化的上下文使用情况系统消息（极限压缩 token）
+
+        Returns:
+            极简化的上下文使用情况消息
+        """
+        usage_percent = self.get_token_usage_percent()
+        current_tokens = self.current_tokens
+        remaining_tokens = self.get_remaining_tokens()
+        
+        # 极简化格式：只保留核心数字信息
+        # 格式：上下文: {已用}/{最大} ({使用率}%) 剩余:{剩余} 段:{段数}
+        message = f"上下文: {current_tokens}/{self.segment_max_tokens} ({usage_percent:.1f}%) 剩余:{remaining_tokens} 段:{len(self.segments)}"
+        
+        return message
+
+    def _update_context_usage_message(self) -> None:
+        """
+        更新或添加上下文使用情况的系统消息（极简化格式）
+        如果最后一条系统消息是上下文使用情况消息，则更新它；否则添加新的
+        """
+        context_message = self._get_context_usage_message()
+        
+        # 检查最后一条消息是否是上下文使用情况消息（极简化格式：以"上下文:"开头）
+        if self.messages and self.messages[-1].get("role") == "system":
+            last_content = self.messages[-1].get("content", "")
+            # 检测极简化格式：以"上下文:"或"Context:"开头
+            if last_content.startswith("上下文:") or last_content.startswith("Context:"):
+                # 更新最后一条消息
+                self.messages[-1]["content"] = context_message
+                logger.debug("已更新上下文使用情况系统消息")
+                return
+        
+        # 如果没有找到，添加新的系统消息
+        self.add_system_message(context_message)
+        logger.debug("已添加上下文使用情况系统消息")
 
     def update_token_usage(self, prompt_tokens: int) -> None:
         """
@@ -154,6 +172,10 @@ class MessageManager:
             f"使用率: {self.get_token_usage_percent():.2f}%"
         )
 
+        # 在每轮对话后更新或添加上下文使用情况的系统消息
+        # 这样模型能及时看到最新的使用情况
+        self._update_context_usage_message()
+        
         # 检查是否需要创建新段（使用率达到 80%）
         if self.get_token_usage_percent() >= 80.0:
             logger.warning(

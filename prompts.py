@@ -203,18 +203,16 @@ def get_system_prompt_by_en(config: "Config", tools_name_and_description: str) -
     ━━━━━━━━━━━━━━
     [Context Management Rules (MUST FOLLOW)]
     ━━━━━━━━━━━━━━
-    The system will inform you of the current context usage (token count and usage percentage) after each conversation turn.
+    The system will inform you of the current context usage after each turn via system messages (format: Context: used/max (percent%) remaining:remaining segments:count).
 
     Important rules:
-    1. You MUST always pay attention to the [Context Usage] section in the system prompt
-    2. When context usage reaches 80%, you MUST call the `summarize_context` tool to summarize the current task progress
-    3. The summary MUST include:
-       - What is the current user task
-       - What work has been completed
-       - What is the next plan
-    4. After calling `summarize_context` tool, the system will automatically start a new conversation segment, but the conversation window remains the same
-    5. New segments will include historical summaries to help you maintain task continuity
-    6. Do NOT wait until the context is completely exhausted before summarizing; you should proactively call `summarize_context` tool when reaching 80%
+    1. You MUST always pay attention to context usage system messages after each turn
+    2. When usage reaches 80%, you MUST immediately call `summarize_context` tool to summarize current task progress
+    3. If usage ≥90%, call `summarize_context` immediately, do NOT wait
+    4. Summary MUST include: current user task, completed work, next plan
+    5. After calling `summarize_context`, system will automatically start a new segment, but conversation window remains the same
+    6. New segments include historical summaries to help maintain task continuity
+    7. Do NOT wait until context is exhausted; proactively call `summarize_context` when reaching 80%
 
     ━━━━━━━━━━━━━━
     [Output Guidelines]
@@ -427,18 +425,16 @@ def get_system_prompt_by_cn(config: "Config", tools_name_and_description: str) -
     ━━━━━━━━━━━━━━
     【上下文管理规则（必须遵守）】
     ━━━━━━━━━━━━━━
-    系统会在每轮对话后告知你当前上下文使用情况（token 数和使用率）。
+    系统会在每轮对话后通过系统消息告知你当前上下文使用情况（格式：上下文: 已用/最大 (使用率%) 剩余:剩余数 段:段数）。
 
     重要规则：
-    1. 你必须时刻关注系统提示词中的【上下文使用情况】部分
-    2. 当上下文使用率达到 80% 时，你必须调用 `summarize_context` 工具来总结当前任务进度
-    3. 总结必须包含以下内容：
-       - 用户当前任务是什么
-       - 已完成的工作有哪些
-       - 下一步计划是什么
-    4. 调用 `summarize_context` 工具后，系统会自动开启新的对话段，但对话窗口保持不变
-    5. 新段会包含历史总结，帮助你保持任务连续性
-    6. 不要等到上下文完全用完才总结，应该在达到 80% 时主动调用 `summarize_context` 工具
+    1. 你必须时刻关注每轮对话后的上下文使用情况系统消息
+    2. 当使用率达到 80% 时，必须立即调用 `summarize_context` 工具总结当前任务进度
+    3. 如果使用率 ≥90%，请立即调用 `summarize_context` 工具，不要等待
+    4. 总结必须包含：用户当前任务、已完成的工作、下一步计划
+    5. 调用 `summarize_context` 后，系统会自动开启新对话段，但对话窗口保持不变
+    6. 新段会包含历史总结，帮助你保持任务连续性
+    7. 不要等到上下文完全用完才总结，应该在达到 80% 时主动调用 `summarize_context` 工具
 
     ━━━━━━━━━━━━━━
     【输出规范】
