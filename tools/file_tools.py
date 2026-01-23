@@ -50,10 +50,10 @@ def _check_dependency_files(path: str) -> str:
 
 
 class ReadFileTool(Tool):
-    """读取文件内容"""
+    """读取文件内容（带行号）"""
     
     def _get_description(self) -> str:
-        return "读取文件内容"
+        return "读取文件内容，返回的内容包含行号信息，格式为 '行号 | 内容'。这对于后续使用 EditFileByLineTool 进行基于行号的编辑非常有用。"
     
     def _get_parameters(self) -> Dict[str, Any]:
         return {
@@ -75,7 +75,15 @@ class ReadFileTool(Tool):
         
         try:
             with open(path, "r", encoding="utf-8") as file:
-                return file.read()
+                lines = file.readlines()
+            
+            # 格式化输出，每行包含行号
+            result_lines = []
+            for i, line in enumerate(lines, start=1):
+                # 保持原有内容，但添加行号前缀
+                result_lines.append(f"{i:4d} | {line.rstrip()}")
+            
+            return "\n".join(result_lines)
         except Exception as e:
             return f"读取文件失败: {e}"
 
@@ -413,6 +421,105 @@ class EditFileTool(Tool):
                 file.write(new_content)
             
             return f"文件 {path} 编辑成功，已替换 {count} 处匹配的文本"
+        except Exception as e:
+            return f"编辑文件失败: {e}"
+
+
+class EditFileByLineTool(Tool):
+    """根据行号编辑文件内容"""
+    
+    def _get_description(self) -> str:
+        return "根据行号编辑文件内容，替换指定行范围的内容。这比 EditFileTool 更方便，因为不需要提供完整的 old_string，只需要指定起始行号和结束行号即可。建议先使用 ReadFileTool 查看文件内容（带行号），然后使用此工具进行编辑。"
+    
+    def _get_parameters(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "文件绝对路径"},
+                "start_line": {"type": "number", "description": "起始行号（从1开始，包含此行）"},
+                "end_line": {"type": "number", "description": "结束行号（从1开始，包含此行）。如果只替换单行，则 end_line 等于 start_line"},
+                "new_string": {"type": "string", "description": "替换后的新文本内容。如果替换多行，可以包含换行符"},
+            },
+            "required": ["path", "start_line", "end_line", "new_string"],
+        }
+    
+    def run(self, parameters: Dict[str, Any]) -> str:
+        path = parameters["path"]
+        start_line = parameters["start_line"]
+        end_line = parameters["end_line"]
+        new_string = parameters["new_string"]
+        
+        is_valid, error = self.validate_path(path)
+        if not is_valid:
+            return f"文件路径错误: {error}"
+        
+        if not os.path.exists(path):
+            return f"文件 {path} 不存在"
+        
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                lines = file.readlines()
+            
+            total_lines = len(lines)
+            
+            # 验证行号
+            if start_line < 1 or start_line > total_lines:
+                return f"起始行号 {start_line} 超出范围（文件共有 {total_lines} 行）"
+            
+            if end_line < 1 or end_line > total_lines:
+                return f"结束行号 {end_line} 超出范围（文件共有 {total_lines} 行）"
+            
+            if start_line > end_line:
+                return f"起始行号 {start_line} 不能大于结束行号 {end_line}"
+            
+            # 构建新内容
+            # 保留 start_line 之前的行
+            new_lines = lines[:start_line - 1]
+            
+            # 处理新内容
+            if new_string:
+                # 将 new_string 按行分割
+                new_content_lines = new_string.split('\n')
+                
+                # 如果 new_string 以换行符结尾，split 后最后会有一个空字符串
+                # 这表示新内容最后一行是空行，需要保留
+                has_trailing_newline = new_string.endswith('\n')
+                
+                # 添加新行
+                for i, line in enumerate(new_content_lines):
+                    # 判断是否是最后一行
+                    is_last_line = (i == len(new_content_lines) - 1)
+                    
+                    if is_last_line:
+                        # 最后一行：需要判断是否添加换行符
+                        # 如果 end_line 之后还有内容，则必须添加换行符
+                        # 如果 end_line 是文件最后一行，则根据原文件最后一行是否有换行符来决定
+                        if end_line < total_lines:
+                            # end_line 之后还有内容，必须添加换行符
+                            new_lines.append(line + '\n')
+                        else:
+                            # end_line 是文件最后一行
+                            # 如果原文件最后一行有换行符，或者 new_string 以换行符结尾，则添加换行符
+                            if total_lines > 0 and lines[-1].endswith('\n'):
+                                new_lines.append(line + '\n')
+                            elif has_trailing_newline:
+                                new_lines.append(line + '\n')
+                            else:
+                                new_lines.append(line)
+                    else:
+                        # 不是最后一行，必须添加换行符
+                        new_lines.append(line + '\n')
+            
+            # 保留 end_line 之后的行
+            if end_line < total_lines:
+                new_lines.extend(lines[end_line:])
+            
+            # 写入文件
+            with open(path, "w", encoding="utf-8") as file:
+                file.writelines(new_lines)
+            
+            replaced_lines = end_line - start_line + 1
+            return f"文件 {path} 编辑成功，已替换第 {start_line}-{end_line} 行（共 {replaced_lines} 行）"
         except Exception as e:
             return f"编辑文件失败: {e}"
 
