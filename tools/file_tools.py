@@ -10,6 +10,45 @@ from tools.base import Tool
 from utils import load_gitignore, should_ignore, filter_dirs
 
 
+def _check_dependency_files(path: str) -> str:
+    """
+    检查目录中是否存在依赖配置文件，如果存在则返回提示信息
+    
+    Args:
+        path: 目录路径
+        
+    Returns:
+        提示信息字符串，如果没有依赖文件则返回空字符串
+    """
+    dependency_hints = []
+    
+    # 常见的依赖配置文件
+    dependency_files = {
+        'package.json': 'Node.js 项目（依赖可能已安装在 node_modules 中，但该目录被隐藏）',
+        'package-lock.json': 'Node.js 项目（依赖可能已安装在 node_modules 中，但该目录被隐藏）',
+        'yarn.lock': 'Yarn 项目（依赖可能已安装在 node_modules 中，但该目录被隐藏）',
+        'pnpm-lock.yaml': 'pnpm 项目（依赖可能已安装在 node_modules 中，但该目录被隐藏）',
+        'requirements.txt': 'Python 项目（依赖可能已安装在 venv/env 中，但该目录被隐藏）',
+        'pyproject.toml': 'Python 项目（依赖可能已安装在 venv/env 中，但该目录被隐藏）',
+        'Pipfile': 'Python pipenv 项目（依赖可能已安装在虚拟环境中，但该目录被隐藏）',
+        'go.mod': 'Go 项目（依赖可能已安装在 vendor 中，但该目录被隐藏）',
+        'pom.xml': 'Java Maven 项目（依赖可能已安装在 target 中，但该目录被隐藏）',
+        'build.gradle': 'Java Gradle 项目（依赖可能已安装在 build 中，但该目录被隐藏）',
+        'Cargo.toml': 'Rust 项目（依赖可能已安装在 target 中，但该目录被隐藏）',
+    }
+    
+    for dep_file, hint in dependency_files.items():
+        dep_path = os.path.join(path, dep_file)
+        if os.path.exists(dep_path) and os.path.isfile(dep_path):
+            dependency_hints.append(hint)
+            break  # 每个项目类型只提示一次
+    
+    if dependency_hints:
+        return f"\n\n注意：{dependency_hints[0]}"
+    
+    return ""
+
+
 class ReadFileTool(Tool):
     """读取文件内容"""
     
@@ -190,7 +229,7 @@ class ListFilesTool(Tool):
     """列出文件列表"""
     
     def _get_description(self) -> str:
-        return "列出文件列表"
+        return "列出文件列表。注意：此工具会自动忽略一些常见目录（如 node_modules、venv、.git 等）和 .gitignore 中指定的文件，以避免输出过多无关内容。如果看不到依赖安装目录但存在依赖配置文件（如 package.json、requirements.txt），说明依赖已安装但目录被隐藏。"
     
     def _get_parameters(self) -> Dict[str, Any]:
         return {
@@ -229,7 +268,10 @@ class ListFilesTool(Tool):
                 else:
                     items.append(full_path)
             
-            return "\n".join(items) if items else "目录为空"
+            result = "\n".join(items) if items else "目录为空"
+            # 添加依赖文件检测提示
+            hint = _check_dependency_files(path)
+            return result + hint
         except Exception as e:
             return f"列出文件失败: {e}"
 
@@ -238,7 +280,7 @@ class TreeFilesTool(Tool):
     """显示目录树结构"""
     
     def _get_description(self) -> str:
-        return "显示目录树结构"
+        return "显示目录树结构。注意：此工具会自动忽略一些常见目录（如 node_modules、venv、.git 等）和 .gitignore 中指定的文件，以避免输出过多无关内容。如果看不到依赖安装目录但存在依赖配置文件（如 package.json、requirements.txt），说明依赖已安装但目录被隐藏。"
     
     def _get_parameters(self) -> Dict[str, Any]:
         return {
@@ -311,9 +353,13 @@ class TreeFilesTool(Tool):
         try:
             tree = self._build_tree(path, path, max_depth=max_depth, gitignore_spec=gitignore_spec)
             if not tree:
-                return "目录为空或所有内容都被忽略"
+                result = "目录为空或所有内容都被忽略"
+            else:
+                result = f"{path}\n{tree}"
             
-            return f"{path}\n{tree}"
+            # 添加依赖文件检测提示
+            hint = _check_dependency_files(path)
+            return result + hint
         except Exception as e:
             return f"显示目录树失败: {e}"
 
