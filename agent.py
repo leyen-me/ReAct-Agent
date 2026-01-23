@@ -798,11 +798,14 @@ class ReActAgent:
                         model=config.model,
                         messages=messages,
                         stream=True,
-                        temperature=0.7,
-                        top_p=0.8,
-                        max_tokens=65535,
+                        temperature=0.2,
+                        top_p=0.9,
+                        frequency_penalty=0.2,
+                        presence_penalty=0.0,
                         tools=tools,
+                        max_tokens=8192,
                         tool_choice="auto",
+                        stream_options={"include_usage": True}
                     )
                 )
                 logger.info(f"API 调用成功 (重试次数: {retry_count})")

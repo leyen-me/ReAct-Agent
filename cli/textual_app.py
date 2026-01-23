@@ -1979,9 +1979,6 @@ class ReActAgentApp(App):
             elif cmd_id == "status":
                 self._show_status()
                 input_widget.focus()
-            elif cmd_id == "messages":
-                self._show_messages()
-                input_widget.focus()
             elif cmd_id == "history":
                 self._open_history_screen()
             elif cmd_id == "config":
@@ -2035,72 +2032,6 @@ class ReActAgentApp(App):
             chat_container.mount(status_msg)
             self._scroll_to_bottom()
         
-        self.query_one("#user-input", ChatInput).focus()
-    
-    def _show_messages(self) -> None:
-        chat_container = self.query_one("#chat-log", Vertical)
-        
-        if not hasattr(self.agent, "message_manager"):
-            return
-        
-        messages = self.agent.message_manager.get_messages()
-        
-        # 显示标题
-        title_msg = ContentMessage(f"[dim]消息历史 (共 {len(messages)} 条):[/]", allow_markup=True)
-        chat_container.mount(title_msg)
-        
-        # 显示每条消息，统一使用 HistoryMessage，用颜色区分角色
-        for i, message in enumerate(messages, 1):
-            role = message.get("role", "unknown")
-            content = message.get("content", "")
-            tool_calls = message.get("tool_calls", [])
-            
-            # 根据角色设置不同的颜色和格式
-            if role == "system":
-                # 系统消息：红色
-                role_label = "[#ef4444][SYSTEM][/]"
-                content_display = content[:500] + ('...' if len(content) > 500 else '')
-                display_content = f"[dim][{i}][/] {role_label}\n{content_display}"
-            elif role == "user":
-                # 用户消息：蓝色
-                role_label = "[#3b82f6][USER][/]"
-                content_display = content[:500] + ('...' if len(content) > 500 else '')
-                display_content = f"[dim][{i}][/] {role_label}\n{content_display}"
-            elif role == "assistant":
-                # 助手消息：如果有工具调用，显示工具调用信息；否则显示内容
-                if tool_calls:
-                    role_label = "[#22c55e][ASSISTANT - 工具调用][/]"
-                    tool_info = []
-                    for tool_call in tool_calls:
-                        if "function" in tool_call:
-                            func = tool_call["function"]
-                            name = func.get("name", "unknown")
-                            args = func.get("arguments", "")
-                            args_display = args[:200] + ('...' if len(args) > 200 else '')
-                            tool_info.append(f"工具: {name}\n参数: {args_display}")
-                    display_content = f"[dim][{i}][/] {role_label}\n" + "\n".join(tool_info)
-                else:
-                    role_label = "[#8b5cf6][ASSISTANT][/]"
-                    content_display = content[:500] + ('...' if len(content) > 500 else '')
-                    display_content = f"[dim][{i}][/] {role_label}\n{content_display}"
-            elif role == "tool":
-                # 工具结果消息：绿色
-                role_label = "[#22c55e][TOOL RESULT][/]"
-                tool_call_id = message.get("tool_call_id", "")
-                tool_id_display = tool_call_id[:20] + ('...' if len(tool_call_id) > 20 else '')
-                content_display = content[:500] + ('...' if len(content) > 500 else '')
-                display_content = f"[dim][{i}][/] {role_label} {tool_id_display}\n{content_display}"
-            else:
-                # 未知角色：灰色
-                role_label = f"[#7d8590][{role.upper()}][/]"
-                content_display = content[:500] + ('...' if len(content) > 500 else '')
-                display_content = f"[dim][{i}][/] {role_label}\n{content_display}"
-            
-            # 使用 HistoryMessage 显示
-            msg = HistoryMessage(display_content)
-            chat_container.mount(msg)
-        
-        self._scroll_to_bottom()
         self.query_one("#user-input", ChatInput).focus()
     
     def _export_messages(self) -> None:
