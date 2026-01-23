@@ -524,6 +524,85 @@ class EditFileByLineTool(Tool):
             return f"编辑文件失败: {e}"
 
 
+class EditFileByPositionTool(Tool):
+    """根据字符位置编辑文件内容（精确到游标位置）"""
+    
+    def _get_description(self) -> str:
+        return "根据字符偏移量精确编辑文件内容，支持在任意字符位置插入、删除或替换。这是最精确的编辑方式，可以精确到单个字符位置。字符位置从0开始计数（文件第一个字符的位置是0）。如果 start_position == end_position，则是在该位置插入；如果 new_string 为空，则是删除指定范围的内容；否则是替换指定范围的内容。"
+    
+    def _get_parameters(self) -> Dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "文件绝对路径"},
+                "start_position": {"type": "number", "description": "起始字符位置（从0开始，包含此位置）。文件第一个字符的位置是0"},
+                "end_position": {"type": "number", "description": "结束字符位置（从0开始，不包含此位置）。如果 start_position == end_position，则是在该位置插入内容；如果 start_position < end_position，则是替换或删除该范围的内容"},
+                "new_string": {"type": "string", "description": "新文本内容。如果为空字符串，则删除指定范围的内容；如果不为空，则替换或插入该内容"},
+            },
+            "required": ["path", "start_position", "end_position", "new_string"],
+        }
+    
+    def run(self, parameters: Dict[str, Any]) -> str:
+        path = parameters["path"]
+        start_position = int(parameters["start_position"])
+        end_position = int(parameters["end_position"])
+        new_string = parameters["new_string"]
+        
+        is_valid, error = self.validate_path(path)
+        if not is_valid:
+            return f"文件路径错误: {error}"
+        
+        if not os.path.exists(path):
+            return f"文件 {path} 不存在"
+        
+        if start_position < 0:
+            return f"起始位置 {start_position} 不能为负数"
+        
+        if end_position < start_position:
+            return f"结束位置 {end_position} 不能小于起始位置 {start_position}"
+        
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                content = file.read()
+            
+            total_chars = len(content)
+            
+            # 验证位置范围
+            if start_position > total_chars:
+                return f"起始位置 {start_position} 超出范围（文件共有 {total_chars} 个字符）"
+            
+            if end_position > total_chars:
+                return f"结束位置 {end_position} 超出范围（文件共有 {total_chars} 个字符）"
+            
+            # 执行编辑操作
+            if start_position == end_position:
+                # 插入操作
+                new_content = content[:start_position] + new_string + content[start_position:]
+                operation = "插入"
+                details = f"在位置 {start_position} 插入了 {len(new_string)} 个字符"
+            elif not new_string:
+                # 删除操作
+                deleted_text = content[start_position:end_position]
+                new_content = content[:start_position] + content[end_position:]
+                operation = "删除"
+                deleted_chars = end_position - start_position
+                details = f"删除了位置 {start_position}-{end_position} 的 {deleted_chars} 个字符"
+            else:
+                # 替换操作
+                new_content = content[:start_position] + new_string + content[end_position:]
+                operation = "替换"
+                replaced_chars = end_position - start_position
+                details = f"替换了位置 {start_position}-{end_position} 的 {replaced_chars} 个字符为 {len(new_string)} 个字符"
+            
+            # 写入文件
+            with open(path, "w", encoding="utf-8") as file:
+                file.write(new_content)
+            
+            return f"文件 {path} 编辑成功，{operation}操作：{details}"
+        except Exception as e:
+            return f"编辑文件失败: {e}"
+
+
 class CreateFolderTool(Tool):
     """创建文件夹"""
     
