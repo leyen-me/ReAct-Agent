@@ -662,22 +662,21 @@ class FilePickerScreen(ModalScreen[str]):
         """使用路径关闭对话框"""
         from pathlib import Path
         try:
-            work_dir_path = Path(self.work_dir).resolve()
             file_path = Path(path).resolve()
             if file_path.is_file():
-                # 计算相对路径
-                try:
-                    relative_path = file_path.relative_to(work_dir_path)
-                    self.dismiss(str(relative_path))
-                except ValueError:
-                    # 如果文件不在工作目录内，使用绝对路径
-                    self.dismiss(str(file_path))
+                # 始终返回绝对路径，为模型提供更完整的信息
+                self.dismiss(str(file_path))
             else:
                 # 如果是目录，不关闭对话框，让用户继续选择
                 pass
         except Exception:
-            # 如果出错，直接使用原始路径
-            self.dismiss(path)
+            # 如果出错，尝试解析为绝对路径
+            try:
+                abs_path = Path(path).resolve()
+                self.dismiss(str(abs_path))
+            except Exception:
+                # 如果仍然出错，直接使用原始路径
+                self.dismiss(path)
 
 
 class LogViewerScreen(ModalScreen[None]):
