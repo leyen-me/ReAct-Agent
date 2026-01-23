@@ -131,7 +131,7 @@ def get_system_prompt_by_en(config: "Config", tools_name_and_description: str) -
     - Claiming "task completed" in conversation WITHOUT updating the Tasks file is strictly forbidden
 
     5. Status Update Rules
-    - After completing any task, you MUST invoke the `edit_file` tool to update the task checkbox from `[ ]` to `[x]`
+    - After completing any task, you MUST invoke the `edit_file_by_line` tool to update the task checkbox from `[ ]` to `[x]` (use line numbers from read_file)
     - Task status MUST remain real-time and accurate
     - Existing task entries MUST NOT be deleted or reordered unless the requirement is explicitly canceled or invalidated
 
@@ -162,6 +162,13 @@ def get_system_prompt_by_en(config: "Config", tools_name_and_description: str) -
     - Execute tasks strictly in the order defined in the Tasks file
     - Execute only ONE minimal task at a time
     - Invoke tools ONLY when necessary for the current task
+    
+    File editing tool selection (IMPORTANT):
+    - ⭐ ALWAYS prefer `edit_file_by_line` over `edit_file` for file editing
+    - Use `edit_file_by_line` when: editing single lines, multiple consecutive lines, or when you know the line numbers
+    - Use `edit_file` ONLY when: you need to replace ALL occurrences in a file (replace_all=true) or replace non-consecutive code blocks
+    - Always use `read_file` first to see line numbers before editing
+    - This avoids large old_string parameters and improves efficiency
 
     After completing each task:
     - Update the corresponding checkbox in `.agent_tasks/xxx-tasks.md` from `[ ]` to `[x]`
@@ -354,7 +361,7 @@ def get_system_prompt_by_cn(config: "Config", tools_name_and_description: str) -
     - 禁止仅在对话中声称"任务已完成"而不更新 Tasks 文件
 
     5. 状态更新规则
-    - 在完成任一任务后，必须调用 edit_file 工具，将 Tasks 文件中该任务条目前的复选框从 [ ] 更新为 [x]，确保任务状态实时同步。
+    - 在完成任一任务后，必须调用 edit_file_by_line 工具（先使用 read_file 查看行号），将 Tasks 文件中该任务条目前的复选框从 [ ] 更新为 [x]，确保任务状态实时同步。
     - 禁止删除或重排已存在的任务条目，除非该需求被明确取消或失效
 
     6. 多需求并行时的行为
@@ -384,6 +391,13 @@ def get_system_prompt_by_cn(config: "Config", tools_name_and_description: str) -
     - 严格按照 Tasks 文件中的任务顺序执行
     - 每次只执行一个最小任务
     - 仅在当前任务确实需要时调用工具
+    
+    文件编辑工具选择（重要）：
+    - ⭐ 优先使用 `edit_file_by_line` 而不是 `edit_file` 进行文件编辑
+    - 使用 `edit_file_by_line` 的场景：编辑单行、多行连续内容，或已知行号时
+    - 仅在以下情况使用 `edit_file`：需要替换文件中所有匹配项（replace_all=true）或替换非连续的代码块
+    - 编辑前先使用 `read_file` 查看行号
+    - 这样可以避免大段 old_string 参数，提高效率
 
     - 每完成一个任务：
     - 更新 .agent_tasks/xxx-tasks.md 文件，将对应的任务条目的 `[ ]` 更新为 `[x]`

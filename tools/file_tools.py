@@ -373,10 +373,10 @@ class TreeFilesTool(Tool):
 
 
 class EditFileTool(Tool):
-    """编辑文件内容（部分替换）"""
+    """编辑文件内容（部分替换）- 仅在特殊场景使用"""
     
     def _get_description(self) -> str:
-        return "编辑文件内容（部分替换），只替换匹配的文本部分，保留文件其他内容不变。这是推荐的文件编辑方式，类似于 Cursor 的部分替换功能。"
+        return "编辑文件内容（基于文本匹配替换）。⚠️ 注意：优先使用 EditFileByLineTool（基于行号编辑），它更高效且不需要提供完整的 old_string。仅在以下特殊场景使用此工具：1) 需要一次替换文件中所有匹配的文本（使用 replace_all=true）；2) 需要替换跨行的非连续代码块。其他情况请使用 EditFileByLineTool。"
     
     def _get_parameters(self) -> Dict[str, Any]:
         return {
@@ -426,10 +426,10 @@ class EditFileTool(Tool):
 
 
 class EditFileByLineTool(Tool):
-    """根据行号编辑文件内容"""
+    """根据行号编辑文件内容 - 推荐使用"""
     
     def _get_description(self) -> str:
-        return "根据行号编辑文件内容，替换指定行范围的内容。这比 EditFileTool 更方便，因为不需要提供完整的 old_string，只需要指定起始行号和结束行号即可。建议先使用 ReadFileTool 查看文件内容（带行号），然后使用此工具进行编辑。"
+        return "⭐ 推荐：根据行号编辑文件内容，替换指定行范围的内容。这是主要的文件编辑方式，比 EditFileTool 更高效，因为不需要提供完整的 old_string，只需要指定起始行号和结束行号即可。使用步骤：1) 先用 ReadFileTool 查看文件内容（带行号）；2) 确定要编辑的行号范围；3) 使用此工具进行编辑。支持单行或多行替换。"
     
     def _get_parameters(self) -> Dict[str, Any]:
         return {
