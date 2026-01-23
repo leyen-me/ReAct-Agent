@@ -2843,20 +2843,25 @@ class ReActAgentApp(App):
             # 第二次按 Ctrl+C，真正退出
             self.exit()
         else:
-            # 第一次按 Ctrl+C，显示提示
-            self._quit_confirmed = True
-            self.add_system_message("按 Ctrl+C 再次确认退出")
-            
-            # 取消之前的定时器（如果存在）
-            if self._quit_timer is not None:
-                self._quit_timer.stop()
-            
-            # 设置定时器，3秒后重置确认状态
-            def reset_quit_confirmed():
-                self._quit_confirmed = False
-                self._quit_timer = None
-            
-            self._quit_timer = self.set_timer(3.0, reset_quit_confirmed)
+            # 第一次按 Ctrl+C
+            if self.is_processing:
+                # 如果有正在进行的对话，停止对话
+                self.action_stop_chat()
+            else:
+                # 如果没有正在进行的对话，进入退出确认流程
+                self._quit_confirmed = True
+                self.add_system_message("按 Ctrl+C 再次确认退出")
+                
+                # 取消之前的定时器（如果存在）
+                if self._quit_timer is not None:
+                    self._quit_timer.stop()
+                
+                # 设置定时器，3秒后重置确认状态
+                def reset_quit_confirmed():
+                    self._quit_confirmed = False
+                    self._quit_timer = None
+                
+                self._quit_timer = self.set_timer(3.0, reset_quit_confirmed)
     
     def _generate_chat_title_async(self, first_message: str) -> None:
         """异步生成对话标题"""
