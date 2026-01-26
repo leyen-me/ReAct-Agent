@@ -34,9 +34,6 @@ from tools.code_execution_tools import (
     ExecTool,
 )
 
-# Git 操作工具
-from tools.git_tools import GitTool
-
 # 系统命令工具
 from tools.system_tools import (
     ShellTool,
@@ -73,8 +70,6 @@ __all__ = [
     "RunTool",
     "ExecuteTool",
     "ExecTool",
-    # Git 操作工具
-    "GitTool",
     # 系统命令工具
     "ShellTool",
     "TerminalTool",

@@ -38,8 +38,6 @@ from tools import (
     RunTool,
     ExecuteTool,
     ExecTool,
-    # Git 操作工具
-    GitTool,
     # 系统命令工具
     ShellTool,
     TerminalTool,
@@ -659,8 +657,6 @@ class ReActAgent:
             RunTool(config.work_dir),
             ExecuteTool(config.work_dir),
             ExecTool(config.work_dir),
-            # Git 操作工具（统一使用 GitTool，通过 action 参数区分操作）
-            GitTool(config.work_dir),
             # 系统命令工具
             ShellTool(config.work_dir, timeout=config.command_timeout),
             TerminalTool(config.work_dir),

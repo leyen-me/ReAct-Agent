@@ -484,8 +484,7 @@ agent/
 │   ├── base.py           # 工具基类
 │   ├── file_tools.py     # 文件操作工具
 │   ├── command_tools.py  # 命令执行工具
-│   ├── search_tools.py   # 代码搜索工具
-│   └── git_tools.py      # Git 管理工具
+│   └── search_tools.py   # 代码搜索工具
 ├── utils/                # 工具函数模块
 │   ├── __init__.py
 │   ├── formatter.py      # 格式化工具
@@ -669,7 +668,6 @@ agent/
 │     📄 file_tools.py                                                       │
 │     📄 command_tools.py                                                    │
 │     📄 search_tools.py                                                     │
-│     📄 git_tools.py                                                        │
 │   📄 agent.py                                                              │
 │   📄 config.py                                                             │
 │   📄 main.py                                                               │

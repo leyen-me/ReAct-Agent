@@ -42,10 +42,9 @@ hiddenimports = [
     # tools 模块及其子模块
     'tools',
     'tools.base',
+    'tools.code_execution_tools',
     'tools.file_tools',
-    'tools.command_tools',
-    'tools.search_tools',
-    'tools.git_tools',
+    'tools.system_tools',
 ]
 
 # 收集所有 tools 子模块
