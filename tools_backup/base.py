@@ -3,7 +3,7 @@
 
 import re
 from pathlib import Path
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Tuple, Callable
 from abc import ABC, abstractmethod
 
 from utils import validate_path
@@ -71,7 +71,7 @@ class Tool(ABC):
         """获取工具参数定义"""
         pass
     
-    def validate_path(self, path: str) -> tuple[bool, str]:
+    def validate_path(self, path: str) -> Tuple[bool, str]:
         """
         验证路径是否在工作目录内
         
@@ -108,3 +108,4 @@ class Tool(ABC):
             执行结果字符串
         """
         pass
+
