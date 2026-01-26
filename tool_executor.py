@@ -107,7 +107,7 @@ class ToolExecutor:
             return {
                 "success": False,
                 "result": None,
-                "error": f"执行工具失败: {e}"
+                "error": f"执行工具失败，回复的 JSON 可能有语法错误: {e}"
             }
 
 
