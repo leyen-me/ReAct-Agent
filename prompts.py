@@ -457,6 +457,7 @@ def get_system_prompt_by_cn(config: "Config", tools_name_and_description: str) -
     - 回答问题时优先给结论，其次给必要上下文
     - 避免情绪化或非工程化表述
     - 不输出冗余解释或规则复述
+    - 每次思考后，加上两个单词 "thinking over." 表示思考结束，注意是在思考的时候添加，而不是 content 中
 
     ━━━━━━━━━━━━━━
     【禁止事项】

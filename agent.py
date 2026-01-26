@@ -825,10 +825,10 @@ class ReActAgent:
                         frequency_penalty=0,
                         presence_penalty=0,
                         tools=tools,
-                        max_tokens=4096,
+                        max_tokens=8192,
                         tool_choice="auto",
                         stream_options={"include_usage": True, "continuous_usage_stats": True},
-                        extra_body={"reasoning_effort": "high"}
+                        extra_body={"reasoning_effort": "medium"}
                     )
                 )
                 logger.info(f"API 调用成功 (重试次数: {retry_count})")
