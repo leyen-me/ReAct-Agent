@@ -310,6 +310,15 @@ class MessageManager:
         """添加助手内容"""
         self.messages.append({"role": "assistant", "content": f"{content}"})
         logger.debug(f"已添加助手回复 - 长度: {len(content)}")
+    
+    def add_assistant_reasoning(self, content: str) -> None:
+        """添加助手思考内容（不会加载到上下文，但会保留在记录中）"""
+        self.messages.append({
+            "role": "assistant", 
+            "content": f"{content}",
+            "_is_reasoning": True  # 内部标记，表示这是思考内容
+        })
+        logger.debug(f"已添加助手思考内容 - 长度: {len(content)}")
 
     def add_assistant_tool_call_result(self, tool_call_id: str, content: str) -> None:
         """添加助手工具调用结果"""
@@ -360,6 +369,10 @@ class MessageManager:
             cleaned_msg = msg.copy()
             role = cleaned_msg.get("role")
             
+            # 移除内部标记字段（如 _is_reasoning），这些字段不应该发送给 API
+            if "_is_reasoning" in cleaned_msg:
+                del cleaned_msg["_is_reasoning"]
+            
             # 确保 content 字段的类型正确
             if "content" in cleaned_msg:
                 content = cleaned_msg["content"]
@@ -393,12 +406,17 @@ class MessageManager:
         """
         获取当前段的消息（已验证和清理）
         注意：只返回当前段的消息，不包含历史段
+        思考内容会被过滤掉，不会加载到上下文
         """
         # 更新系统提示词以包含最新的上下文信息
         if self.messages and self.messages[0].get("role") == "system":
             self.messages[0]["content"] = self._get_system_prompt_with_context()
         
-        messages = self.messages.copy()
+        # 过滤掉思考内容（标记为 _is_reasoning 的消息）
+        messages = [
+            msg for msg in self.messages.copy() 
+            if not msg.get("_is_reasoning", False)
+        ]
         return self._validate_and_clean_messages(messages)
     
     def get_all_segments(self) -> List[List[Dict[str, str]]]:
@@ -810,7 +828,7 @@ class ReActAgent:
                         max_tokens=4096,
                         tool_choice="auto",
                         stream_options={"include_usage": True, "continuous_usage_stats": True},
-                        extra_body={"reasoning_effort": "low"}
+                        extra_body={"reasoning_effort": "high"}
                     )
                 )
                 logger.info(f"API 调用成功 (重试次数: {retry_count})")
@@ -1280,7 +1298,7 @@ class ReActAgent:
 
             # 保存内容
             if reasoning_content.strip():
-                self.message_manager.add_assistant_content(reasoning_content)
+                self.message_manager.add_assistant_reasoning(reasoning_content)
             if content.strip():
                 cleaned_content = self._clean_content(content)
                 self.message_manager.add_assistant_content(cleaned_content)
@@ -1299,7 +1317,7 @@ class ReActAgent:
 
         # 保存最终回复
         if reasoning_content.strip():
-            self.message_manager.add_assistant_content(reasoning_content)
+            self.message_manager.add_assistant_reasoning(reasoning_content)
             logger.debug(f"已保存思考内容，长度: {len(reasoning_content)}")
 
         if content.strip():
@@ -1327,8 +1345,9 @@ class ReActAgent:
         logger.info("处理用户中断请求")
 
         # 保存部分内容
+        if reasoning_content.strip():
+            self.message_manager.add_assistant_reasoning(reasoning_content)
         if content.strip():
-            self.message_manager.add_assistant_content(reasoning_content)
             cleaned_content = self._clean_content(content)
             self.message_manager.add_assistant_content(cleaned_content)
             logger.debug("已保存中断前的部分内容")
