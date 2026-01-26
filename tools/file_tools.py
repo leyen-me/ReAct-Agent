@@ -158,21 +158,38 @@ class ListFilesTool(Tool):
             return f"路径 {path} 不是目录"
         
         files = []
+        # 规范化工作目录路径，避免符号链接问题
+        work_dir_resolved = self.work_dir.resolve()
+        
         if recursive:
             for file_path in abs_path.rglob("*"):
                 if file_path.is_file():
                     if pattern is None or file_path.match(pattern):
-                        files.append(str(file_path.relative_to(self.work_dir)))
+                        # 使用 resolve() 规范化路径，然后计算相对路径
+                        file_path_resolved = file_path.resolve()
+                        try:
+                            rel_path = file_path_resolved.relative_to(work_dir_resolved)
+                            files.append(str(rel_path))
+                        except ValueError:
+                            # 如果路径不在工作目录内，跳过
+                            continue
         else:
             for file_path in abs_path.iterdir():
                 if file_path.is_file():
                     if pattern is None or file_path.match(pattern):
-                        files.append(str(file_path.relative_to(self.work_dir)))
+                        # 使用 resolve() 规范化路径，然后计算相对路径
+                        file_path_resolved = file_path.resolve()
+                        try:
+                            rel_path = file_path_resolved.relative_to(work_dir_resolved)
+                            files.append(str(rel_path))
+                        except ValueError:
+                            # 如果路径不在工作目录内，跳过
+                            continue
         
         return json.dumps(files, ensure_ascii=False)
 
 
-class SearchTool(Tool):
+class FileSearchTool(Tool):
     """在代码库或文档中全文搜索关键字或正则表达式"""
     
     def _get_description(self) -> str:
@@ -218,6 +235,8 @@ class SearchTool(Tool):
         
         matches = []
         gitignore_spec = load_gitignore(str(self.work_dir))
+        # 规范化工作目录路径，避免符号链接问题
+        work_dir_resolved = self.work_dir.resolve()
         
         # 遍历文件
         for file_path in abs_path.rglob("*"):
@@ -243,7 +262,13 @@ class SearchTool(Tool):
                                 matched = True
                         
                         if matched:
-                            rel_path = str(file_path.relative_to(self.work_dir))
+                            # 使用 resolve() 规范化路径，然后计算相对路径
+                            file_path_resolved = file_path.resolve()
+                            try:
+                                rel_path = str(file_path_resolved.relative_to(work_dir_resolved))
+                            except ValueError:
+                                # 如果路径不在工作目录内，跳过
+                                continue
                             matches.append({
                                 "file": rel_path,
                                 "line": line_num,
