@@ -9,8 +9,8 @@ client = openai.OpenAI(
 response = client.chat.completions.create(
     model="openai/gpt-oss-120b",
     messages=[
-        {"role": "system", "content": "You are a helpful assistant. 在思考结束时，必须添加两个单词 'thinking over.' 表示思考结束。"},
-        {"role": "user", "content": "Hello, how are you?"},
+        {"role": "system", "content": "You are a helpful assistant. 始终使用中文回答 "},
+        {"role": "user", "content": "i have may tools, example: [ print_tree, search, open_file, read_file, write_file, list_files, run, shell, git ...], 还有哪些, 包括详细的参数"},
     ],
     temperature=0.3,
     top_p=1,
