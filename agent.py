@@ -692,12 +692,16 @@ class ReActAgent:
 
     def _get_system_prompt(self) -> str:
         """生成系统提示词"""
-        tools_name_and_description = self._get_tools_name_and_description()
-        return get_system_prompt_by_cn(config, tools_name_and_description)
+        tools_names = self._get_tools_names()
+        return get_system_prompt_by_cn(config, tools_names)
 
     def _get_tools(self) -> List[Dict[str, Any]]:
         """获取工具列表"""
         return [{"type": "function", "function": tool.to_dict()} for tool in self.tools]
+    
+    def _get_tools_names(self) -> str:
+        """获取工具名称"""
+        return ", ".join([tool.name for tool in self.tools])
     
     def _get_tools_name_and_description(self) -> str:
         """获取工具名称和描述"""
