@@ -29,7 +29,7 @@ def initialize_application() -> Tuple[ReActAgent, CommandProcessor]:
         sys.exit(1)
     
     # 设置日志
-    log_file_path = setup_logging()
+    setup_logging()
     
     # 启动时检查更新（已禁用）
     # try:

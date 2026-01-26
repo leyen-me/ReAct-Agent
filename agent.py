@@ -802,14 +802,15 @@ class ReActAgent:
                         model=config.model,
                         messages=messages,
                         stream=True,
-                        temperature=0.2,
-                        top_p=0.9,
-                        frequency_penalty=0.2,
-                        presence_penalty=0.0,
+                        temperature=0.3,
+                        top_p=1,
+                        frequency_penalty=0,
+                        presence_penalty=0,
                         tools=tools,
-                        max_tokens=8192,
+                        max_tokens=4096,
                         tool_choice="auto",
-                        stream_options={"include_usage": True}
+                        stream_options={"include_usage": True, "continuous_usage_stats": True},
+                        extra_body={"reasoning_effort": "low"}
                     )
                 )
                 logger.info(f"API 调用成功 (重试次数: {retry_count})")
