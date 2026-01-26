@@ -10,33 +10,31 @@ from openai import OpenAI, Stream
 from openai.types.chat import ChatCompletionChunk
 
 from config import config
-from prompts import get_system_prompt_by_cn, get_system_prompt_by_en
+from prompts import get_system_prompt_by_cn
 from tools import (
     Tool,
+    # 文件操作工具
+    PrintTreeTool,
+    ListFilesTool,
+    FileSearchTool,
+    OpenFileTool,
     ReadFileTool,
     WriteFileTool,
-    DeleteFileTool,
-    CreateFileTool,
-    RenameFileTool,
-    ListFilesTool,
-    TreeFilesTool,
-    EditFileTool,
-    EditFileByLineTool,
-    EditFileByPositionTool,
-    CreateFolderTool,
-    DeleteFolderTool,
-    MoveFileTool,
-    CopyFileTool,
-    ReadCodeBlockTool,
-    RunCommandTool,
-    SearchInFilesTool,
-    FindFilesTool,
-    GitStatusTool,
-    GitDiffTool,
-    GitCommitTool,
-    GitBranchTool,
-    GitLogTool,
-    SummarizeContextTool,
+    DiffTool,
+    ChecksumTool,
+    # 代码执行工具
+    CodeInterpreterTool,
+    PythonTool,
+    RunTool,
+    ExecuteTool,
+    ExecTool,
+    # Git 操作工具
+    GitTool,
+    # 系统命令工具
+    ShellTool,
+    TerminalTool,
+    EnvTool,
+    SleepTool,
 )
 from tool_executor import create_tool_executor
 
@@ -626,34 +624,28 @@ class ReActAgent:
         """创建工具列表"""
         logger.debug("开始创建工具列表")
         tools = [
-            ReadFileTool(config.work_dir),
-            ReadCodeBlockTool(config.work_dir),
-            WriteFileTool(config.work_dir),
-            DeleteFileTool(config.work_dir),
-            CreateFileTool(config.work_dir),
-            RenameFileTool(config.work_dir),
+            # 文件操作工具
+            PrintTreeTool(config.work_dir),
             ListFilesTool(config.work_dir),
-            TreeFilesTool(config.work_dir),
-            CreateFolderTool(config.work_dir),
-            EditFileTool(config.work_dir),
-            EditFileByLineTool(config.work_dir),
-            EditFileByPositionTool(config.work_dir),
-            RunCommandTool(config.work_dir, config.command_timeout),
-            SearchInFilesTool(config.work_dir, config.max_search_results),
-            FindFilesTool(config.work_dir, config.max_find_files),
-            DeleteFolderTool(config.work_dir),
-            MoveFileTool(config.work_dir),
-            CopyFileTool(config.work_dir),
-            GitStatusTool(config.work_dir),
-            GitDiffTool(config.work_dir),
-            GitCommitTool(config.work_dir),
-            GitBranchTool(config.work_dir),
-            GitLogTool(config.work_dir),
-            # 总结上下文工具，需要回调函数来创建新段
-            SummarizeContextTool(
-                config.work_dir,
-                on_summarize_callback=self._handle_context_summary
-            ),
+            FileSearchTool(config.work_dir),
+            OpenFileTool(config.work_dir),
+            ReadFileTool(config.work_dir),
+            WriteFileTool(config.work_dir),
+            DiffTool(config.work_dir),
+            ChecksumTool(config.work_dir),
+            # 代码执行工具
+            CodeInterpreterTool(config.work_dir),
+            PythonTool(config.work_dir),
+            RunTool(config.work_dir),
+            ExecuteTool(config.work_dir),
+            ExecTool(config.work_dir),
+            # Git 操作工具（统一使用 GitTool，通过 action 参数区分操作）
+            GitTool(config.work_dir),
+            # 系统命令工具
+            ShellTool(config.work_dir),
+            TerminalTool(config.work_dir),
+            EnvTool(config.work_dir),
+            SleepTool(config.work_dir),
         ]
         logger.debug(f"工具列表创建完成 - 工具数量: {len(tools)}")
         logger.debug(f"工具名称: {[tool.name for tool in tools]}")
