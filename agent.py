@@ -765,6 +765,69 @@ class ReActAgent:
 
         return False
 
+    def _remove_json_from_reasoning(self, reasoning_content: str) -> str:
+        """
+        从思考内容中移除末尾的 JSON 对象部分
+        
+        Args:
+            reasoning_content: 思考内容
+            
+        Returns:
+            移除 JSON 后的思考内容
+        """
+        if not reasoning_content:
+            return reasoning_content
+
+        # 去除末尾空白
+        content = reasoning_content.rstrip()
+        if not content:
+            return reasoning_content
+
+        # 查找最后一个 JSON 对象（从末尾开始）
+        # 找到最后一个 '}' 的位置
+        last_brace_pos = content.rfind("}")
+        if last_brace_pos == -1:
+            return reasoning_content
+
+        # 从最后一个 '}' 向前查找匹配的 '{'
+        brace_count = 1
+        json_start = -1
+        for i in range(last_brace_pos - 1, -1, -1):
+            if content[i] == "}":
+                brace_count += 1
+            elif content[i] == "{":
+                brace_count -= 1
+                if brace_count == 0:
+                    json_start = i
+                    break
+
+        # 如果找到了匹配的 '{'，尝试解析 JSON
+        if json_start != -1:
+            json_str = content[json_start : last_brace_pos + 1]
+            # 检查 JSON 后面是否只有空白或换行
+            after_json = content[last_brace_pos + 1 :].strip()
+            if not after_json or after_json in ["\n", "\r\n"]:
+                try:
+                    parsed_json = json.loads(json_str)
+                    # 如果成功解析为字典，移除这个 JSON 部分
+                    if isinstance(parsed_json, dict):
+                        # 移除 JSON 部分（包括前面的空白）
+                        cleaned = content[:json_start].rstrip()
+                        logger.debug(
+                            f"已移除思考内容末尾的 JSON 对象 - "
+                            f"JSON 长度: {len(json_str)}, "
+                            f"移除前长度: {len(content)}, "
+                            f"移除后长度: {len(cleaned)}"
+                        )
+                        return cleaned
+                except json.JSONDecodeError:
+                    # JSON 解析失败，不是有效的 JSON，不处理
+                    pass
+                except Exception as e:
+                    logger.debug(f"解析 JSON 时发生异常: {e}")
+
+        return reasoning_content
+
     def _clean_content(self, content: str) -> str:
         """
         清理 content，移除 "assistantfinal" 字段
@@ -1311,11 +1374,16 @@ class ReActAgent:
                 cleaned_content = self._clean_content(content)
                 self.message_manager.add_assistant_content(cleaned_content)
 
-            # 添加提示消息
-            fake_call_message = (
-                "抱歉，我刚刚在思考中假装调用了工具，现在我将会继续完成任务。"
-            )
-            self.message_manager.add_assistant_content(fake_call_message)
+            # 添加提示消息（使用清理后的思考内容，移除 JSON 部分）
+            cleaned_reasoning = self._remove_json_from_reasoning(reasoning_content)
+            if cleaned_reasoning.strip():
+                self.message_manager.add_assistant_content(cleaned_reasoning.strip())
+            else:
+                # 如果清理后为空，使用默认提示消息
+                fake_call_message = (
+                    "抱歉，我刚刚在思考中假装调用了工具，现在我将会继续完成任务。"
+                )
+                self.message_manager.add_assistant_content(fake_call_message)
             output(
                 "\n⚠️ 检测到思考中有工具调用意图，但未实际调用。已添加提示消息，继续执行...\n",
                 end_newline=True,
