@@ -767,7 +767,7 @@ class ReActAgent:
 
     def _remove_json_from_reasoning(self, reasoning_content: str) -> str:
         """
-        从思考内容中移除末尾的 JSON 对象部分
+        从思考内容中移除末尾的 JSON 对象部分（包括不完整的 JSON）
         
         Args:
             reasoning_content: 思考内容
@@ -783,48 +783,67 @@ class ReActAgent:
         if not content:
             return reasoning_content
 
-        # 查找最后一个 JSON 对象（从末尾开始）
+        # 首先尝试查找完整的 JSON 对象（从末尾开始）
         # 找到最后一个 '}' 的位置
         last_brace_pos = content.rfind("}")
-        if last_brace_pos == -1:
-            return reasoning_content
+        if last_brace_pos != -1:
+            # 从最后一个 '}' 向前查找匹配的 '{'
+            brace_count = 1
+            json_start = -1
+            for i in range(last_brace_pos - 1, -1, -1):
+                if content[i] == "}":
+                    brace_count += 1
+                elif content[i] == "{":
+                    brace_count -= 1
+                    if brace_count == 0:
+                        json_start = i
+                        break
 
-        # 从最后一个 '}' 向前查找匹配的 '{'
-        brace_count = 1
-        json_start = -1
-        for i in range(last_brace_pos - 1, -1, -1):
-            if content[i] == "}":
-                brace_count += 1
-            elif content[i] == "{":
-                brace_count -= 1
-                if brace_count == 0:
-                    json_start = i
-                    break
+            # 如果找到了匹配的 '{'，尝试解析 JSON
+            if json_start != -1:
+                json_str = content[json_start : last_brace_pos + 1]
+                # 检查 JSON 后面是否只有空白或换行
+                after_json = content[last_brace_pos + 1 :].strip()
+                if not after_json or after_json in ["\n", "\r\n"]:
+                    try:
+                        parsed_json = json.loads(json_str)
+                        # 如果成功解析为字典，移除这个 JSON 部分
+                        if isinstance(parsed_json, dict):
+                            # 移除 JSON 部分（包括前面的空白）
+                            cleaned = content[:json_start].rstrip()
+                            logger.debug(
+                                f"已移除思考内容末尾的完整 JSON 对象 - "
+                                f"JSON 长度: {len(json_str)}, "
+                                f"移除前长度: {len(content)}, "
+                                f"移除后长度: {len(cleaned)}"
+                            )
+                            return cleaned
+                    except json.JSONDecodeError:
+                        # JSON 解析失败，继续尝试查找不完整的 JSON
+                        pass
+                    except Exception as e:
+                        logger.debug(f"解析 JSON 时发生异常: {e}")
 
-        # 如果找到了匹配的 '{'，尝试解析 JSON
-        if json_start != -1:
-            json_str = content[json_start : last_brace_pos + 1]
-            # 检查 JSON 后面是否只有空白或换行
-            after_json = content[last_brace_pos + 1 :].strip()
-            if not after_json or after_json in ["\n", "\r\n"]:
-                try:
-                    parsed_json = json.loads(json_str)
-                    # 如果成功解析为字典，移除这个 JSON 部分
-                    if isinstance(parsed_json, dict):
-                        # 移除 JSON 部分（包括前面的空白）
-                        cleaned = content[:json_start].rstrip()
-                        logger.debug(
-                            f"已移除思考内容末尾的 JSON 对象 - "
-                            f"JSON 长度: {len(json_str)}, "
-                            f"移除前长度: {len(content)}, "
-                            f"移除后长度: {len(cleaned)}"
-                        )
-                        return cleaned
-                except json.JSONDecodeError:
-                    # JSON 解析失败，不是有效的 JSON，不处理
-                    pass
-                except Exception as e:
-                    logger.debug(f"解析 JSON 时发生异常: {e}")
+        # 如果没有找到完整的 JSON，尝试查找不完整的 JSON（从最后一个 '{' 开始到末尾）
+        last_open_brace_pos = content.rfind("{")
+        if last_open_brace_pos != -1:
+            # 检查 '{' 后面是否有类似 JSON 的内容（包含引号、冒号等 JSON 特征）
+            json_part = content[last_open_brace_pos:]
+            # 检查是否包含 JSON 特征：引号、冒号、键值对模式
+            if '"' in json_part or "'" in json_part:
+                # 检查是否有键值对模式（如 "key": 或 'key':）
+                # 匹配 JSON 键值对模式：引号包围的键，后跟冒号
+                json_pattern = r'["\']\s*[^"\']+\s*["\']\s*:'
+                if re.search(json_pattern, json_part):
+                    # 这看起来像是不完整的 JSON，移除它
+                    cleaned = content[:last_open_brace_pos].rstrip()
+                    logger.debug(
+                        f"已移除思考内容末尾的不完整 JSON 对象 - "
+                        f"JSON 部分长度: {len(json_part)}, "
+                        f"移除前长度: {len(content)}, "
+                        f"移除后长度: {len(cleaned)}"
+                    )
+                    return cleaned
 
         return reasoning_content
 
