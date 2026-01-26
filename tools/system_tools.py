@@ -14,8 +14,19 @@ from tools.base import Tool
 class ShellTool(Tool):
     """执行任意系统 Shell 命令（受限于安全策略）"""
     
+    def __init__(self, work_dir: Path, timeout: int = 300):
+        """
+        初始化命令执行工具
+        
+        Args:
+            work_dir: 工作目录
+            timeout: 默认超时时间（秒）
+        """
+        self.default_timeout = timeout
+        super().__init__(work_dir)
+    
     def _get_description(self) -> str:
-        return "执行任意系统 Shell 命令（受限于安全策略），常用于查看文件、安装依赖等。支持交互式会话（保持同一进程），适合多步操作。"
+        return "执行任意系统 Shell 命令（受限于安全策略），常用于查看文件、安装依赖等。支持交互式会话（保持同一进程），适合多步操作。对于长期运行的服务器命令（如 npm start），会自动在后台运行。"
     
     def _get_parameters(self) -> Dict[str, Any]:
         return {
@@ -31,49 +42,203 @@ class ShellTool(Tool):
                 },
                 "timeout": {
                     "type": "integer",
-                    "description": "超时时间（秒）"
+                    "description": f"超时时间（秒），默认 {self.default_timeout} 秒",
+                    "default": self.default_timeout
+                },
+                "background": {
+                    "type": "boolean",
+                    "description": "是否在后台运行（适用于长期运行的服务器命令，如 npm start）",
+                    "default": False
                 }
             },
             "required": ["cmd"]
         }
     
+    def _is_long_running_command(self, cmd: str) -> bool:
+        """
+        检测是否是长期运行的命令
+        
+        Args:
+            cmd: 命令字符串
+            
+        Returns:
+            是否是长期运行的命令
+        """
+        long_running_patterns = [
+            'npm start',
+            'npm run dev',
+            'npm run serve',
+            'yarn start',
+            'yarn dev',
+            'python -m http.server',
+            'python -m SimpleHTTPServer',
+            'node server.js',
+            'node app.js',
+            'python app.py',
+            'python manage.py runserver',
+            'rails server',
+            'rails s',
+            'php -S',
+            'java -jar',
+            'docker-compose up',
+            'docker run',
+        ]
+        
+        cmd_lower = cmd.lower()
+        return any(pattern in cmd_lower for pattern in long_running_patterns)
+    
     def run(self, parameters: Dict[str, Any]) -> str:
         cmd = parameters["cmd"]
         session_id = parameters.get("session_id")
-        timeout = parameters.get("timeout", 30)
+        timeout = parameters.get("timeout", self.default_timeout)
+        background = parameters.get("background", False)
         
-        # 注意：实际的会话管理需要在更高层实现
-        # 这里只是执行命令
-        try:
-            result = subprocess.run(
-                cmd,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                cwd=str(self.work_dir)
-            )
-            
-            return json.dumps({
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "returncode": result.returncode,
-                "session_id": session_id
-            }, ensure_ascii=False)
-        except subprocess.TimeoutExpired:
-            return json.dumps({
-                "stdout": "",
-                "stderr": f"执行超时（{timeout}秒）",
-                "returncode": -1,
-                "session_id": session_id
-            }, ensure_ascii=False)
-        except Exception as e:
-            return json.dumps({
-                "stdout": "",
-                "stderr": str(e),
-                "returncode": -1,
-                "session_id": session_id
-            }, ensure_ascii=False)
+        # 设置环境变量，避免交互式提示
+        env = os.environ.copy()
+        env['CI'] = 'true'
+        env['DEBIAN_FRONTEND'] = 'noninteractive'
+        
+        # 检测是否是长期运行的命令
+        is_long_running = background or self._is_long_running_command(cmd)
+        
+        if is_long_running:
+            # 长期运行的命令，在后台启动
+            try:
+                process = subprocess.Popen(
+                    cmd,
+                    shell=True,
+                    cwd=str(self.work_dir),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    env=env,
+                    stdin=subprocess.PIPE,
+                )
+                
+                # 等待几秒，收集初始输出，期间检查中断
+                wait_time = 3.0
+                check_interval = 0.5
+                elapsed = 0.0
+                while elapsed < wait_time:
+                    if self.should_stop():
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.info(f"检测到中断，正在终止命令进程: {cmd}")
+                        try:
+                            process.terminate()
+                            process.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                        return json.dumps({
+                            "stdout": "",
+                            "stderr": "命令执行被用户中断",
+                            "returncode": -1,
+                            "session_id": session_id
+                        }, ensure_ascii=False)
+                    time.sleep(check_interval)
+                    elapsed += check_interval
+                
+                # 检查进程是否还在运行
+                if process.poll() is None:
+                    # 进程仍在运行，说明是长期进程
+                    pid = process.pid
+                    return json.dumps({
+                        "stdout": f"进程已在后台启动（PID: {pid}）\n服务正在运行中...\n提示：要停止服务，可以使用命令 'kill {pid}' 或 'pkill -f \"{cmd}\"'",
+                        "stderr": "",
+                        "returncode": 0,
+                        "session_id": session_id
+                    }, ensure_ascii=False)
+                else:
+                    # 进程已退出，返回结果
+                    stdout, stderr = process.communicate()
+                    return json.dumps({
+                        "stdout": stdout,
+                        "stderr": stderr,
+                        "returncode": process.returncode,
+                        "session_id": session_id
+                    }, ensure_ascii=False)
+                        
+            except Exception as e:
+                return json.dumps({
+                    "stdout": "",
+                    "stderr": f"执行命令失败: {e}",
+                    "returncode": -1,
+                    "session_id": session_id
+                }, ensure_ascii=False)
+        else:
+            # 普通命令，使用 Popen 以便能够中断
+            try:
+                process = subprocess.Popen(
+                    cmd,
+                    shell=True,
+                    cwd=str(self.work_dir),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    env=env,
+                    stdin=subprocess.PIPE,
+                )
+                
+                # 轮询检查进程状态和中断标志
+                check_interval = 0.5
+                start_time = time.time()
+                
+                while True:
+                    # 检查是否超时
+                    elapsed = time.time() - start_time
+                    if elapsed > timeout:
+                        process.kill()
+                        return json.dumps({
+                            "stdout": "",
+                            "stderr": f"命令执行超时（超过 {timeout} 秒）",
+                            "returncode": -1,
+                            "session_id": session_id
+                        }, ensure_ascii=False)
+                    
+                    # 检查是否应该停止
+                    if self.should_stop():
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.info(f"检测到中断，正在终止命令进程: {cmd}")
+                        try:
+                            process.terminate()
+                            stdout, stderr = process.communicate(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            stdout, stderr = process.communicate()
+                        return json.dumps({
+                            "stdout": stdout,
+                            "stderr": stderr + "\n命令执行被用户中断",
+                            "returncode": -1,
+                            "session_id": session_id
+                        }, ensure_ascii=False)
+                    
+                    # 检查进程是否完成
+                    returncode = process.poll()
+                    if returncode is not None:
+                        # 进程已完成
+                        stdout, stderr = process.communicate()
+                        return json.dumps({
+                            "stdout": stdout,
+                            "stderr": stderr,
+                            "returncode": returncode,
+                            "session_id": session_id
+                        }, ensure_ascii=False)
+                    
+                    # 等待一段时间后再次检查
+                    time.sleep(check_interval)
+                    
+            except Exception as e:
+                return json.dumps({
+                    "stdout": "",
+                    "stderr": f"执行命令失败: {e}",
+                    "returncode": -1,
+                    "session_id": session_id
+                }, ensure_ascii=False)
 
 
 class TerminalTool(Tool):
