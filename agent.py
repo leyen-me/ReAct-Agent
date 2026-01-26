@@ -909,6 +909,10 @@ class ReActAgent:
 
         while retry_count < max_retries:
             try:
+                if config.model == "openai/gpt-oss-20b" or config.model == "openai/gpt-oss-120b":
+                    extra_body = {"reasoning_effort": "medium"}
+                else:
+                    extra_body = {}
                 stream_response: Stream[ChatCompletionChunk] = (
                     self.client.chat.completions.create(
                         model=config.model,
@@ -922,7 +926,7 @@ class ReActAgent:
                         max_tokens=8192,
                         tool_choice="auto",
                         stream_options={"include_usage": True, "continuous_usage_stats": True},
-                        extra_body={"reasoning_effort": "medium"}
+                        extra_body=extra_body
                     )
                 )
                 logger.info(f"API 调用成功 (重试次数: {retry_count})")
@@ -1141,6 +1145,7 @@ class ReActAgent:
 
         try:
             for chunk in stream_response:
+
                 if self.should_stop:
                     logger.info("流式响应处理被用户中断，正在关闭流...")
                     stream_response.close()
@@ -1152,6 +1157,18 @@ class ReActAgent:
                 if chunk.choices and len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
 
+                    if hasattr(delta, "reasoning") and delta.reasoning:
+                        reasoning_content, start_reasoning_content = (
+                            self._handle_reasoning_content(
+                                delta.reasoning,
+                                reasoning_content,
+                                start_reasoning_content,
+                                content,
+                                output,
+                                status_callback,
+                            )
+                        )
+                    
                     if hasattr(delta, "reasoning_content") and delta.reasoning_content:
                         reasoning_content, start_reasoning_content = (
                             self._handle_reasoning_content(
