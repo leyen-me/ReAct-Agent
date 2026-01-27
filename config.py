@@ -70,6 +70,7 @@ class Config:
             "max_context_tokens": "128000",
             "user_language_preference": "中文",
             "log_separator_length": "20",
+            "api_timeout": "30",  # API 调用超时时间（秒）
         }
     
     def _load_config_file(self) -> Dict[str, Any]:
@@ -219,6 +220,12 @@ class Config:
             config_dict, "log_separator_length", "LOG_SEPARATOR_LENGTH", "20"
         )
         self.log_separator_length: int = int(log_separator_length_value)
+        
+        # API 超时配置
+        api_timeout_value = self._get_config_value(
+            config_dict, "api_timeout", "API_TIMEOUT", "30"
+        )
+        self.api_timeout: float = float(api_timeout_value)
     
     def save_config_file(self, config_dict: Dict[str, Any]) -> bool:
         """保存配置到文件

@@ -1090,6 +1090,11 @@ class ConfigEditScreen(ModalScreen[bool]):
                     with Horizontal(classes="config-row config-row-log_separator_length"):
                         yield Static("日志分隔符长度", classes="config-label")
                         yield Input(value="20", classes="config-input", id="config-log_separator_length")
+                    
+                    # API 配置
+                    with Horizontal(classes="config-row config-row-api_timeout"):
+                        yield Static("API超时(秒)", classes="config-label")
+                        yield Input(value="30", classes="config-input", id="config-api_timeout")
     
     def on_mount(self) -> None:
         """挂载时加载配置"""

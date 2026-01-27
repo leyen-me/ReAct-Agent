@@ -6,6 +6,7 @@ import logging
 import re
 from typing import List, Dict, Any, Optional, Callable, Tuple
 
+import httpx
 from openai import OpenAI, Stream
 from openai.types.chat import ChatCompletionChunk
 
@@ -942,7 +943,7 @@ class ReActAgent:
                         tool_choice="auto",
                         stream_options={"include_usage": True, "continuous_usage_stats": True},
                         extra_body=extra_body,
-                        timeout=60.0,  # 设置单次 API 调用的超时时间为 60 秒
+                        timeout=config.api_timeout,  # API 调用超时时间（秒）
                     )
                 )
                 logger.info(f"API 调用成功 (重试次数: {retry_count})")
@@ -950,7 +951,7 @@ class ReActAgent:
             except InterruptedError:
                 # 如果是用户中断，直接抛出，不重试
                 logger.info("API 调用被用户中断")
-                raise
+                raise InterruptedError("API 调用被用户中断")
             except Exception as e:
                 retry_count += 1
                 # 再次检查是否应该停止（可能在异常处理期间用户按了停止）
@@ -963,7 +964,7 @@ class ReActAgent:
                 )
                 if retry_count >= max_retries:
                     logger.error("API 调用失败: 已达到最大重试次数")
-                    raise
+                    raise InterruptedError("API 调用失败: 已达到最大重试次数")
 
         # 理论上不会到达这里
         raise RuntimeError("API 调用失败: 已达到最大重试次数")
@@ -1251,6 +1252,7 @@ class ReActAgent:
                 except Exception:
                     pass
             
+            # 所有异常都向上抛出，由 chat 方法统一处理重试逻辑
             if not self.should_stop:
                 raise
         finally:
@@ -1570,9 +1572,24 @@ class ReActAgent:
                 return
 
             # 处理流式响应
-            reasoning_content, content, tool_call_acc, usage = (
-                self._process_stream_response(stream_response, output, status_callback)
-            )
+            try:
+                reasoning_content, content, tool_call_acc, usage = (
+                    self._process_stream_response(stream_response, output, status_callback)
+                )
+            except httpx.TimeoutException as e:
+                # 网络超时错误（包括 ReadTimeout, ConnectTimeout, WriteTimeout, PoolTimeout）
+                # 记录日志但不显示给用户，直接重试
+                logger.warning(f"流式响应读取超时，将自动重试: {type(e).__name__}: {e}")
+                continue
+            except Exception as e:
+                # 其他可重试的错误（如网络连接错误）
+                error_msg = str(e).lower()
+                if any(keyword in error_msg for keyword in ["timeout", "connection", "network", "read timeout"]):
+                    logger.warning(f"流式响应处理出错，将自动重试: {e}")
+                    continue
+                # 其他严重错误，记录并重试（不显示给用户）
+                logger.error(f"处理流式响应时发生异常，将自动重试: {e}", exc_info=True)
+                continue
 
             # 处理用户中断
             if self.should_stop:
