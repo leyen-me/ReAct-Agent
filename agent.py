@@ -614,6 +614,7 @@ class ReActAgent:
         self.client = OpenAI(
             api_key=config.api_key,
             base_url=config.base_url,
+            timeout=300.0,  # 设置超时时间为 300 秒（5 分钟）
         )
         self.chat_count = 0
         self.should_stop = False  # 中断标志（需要在创建工具执行器之前初始化）
@@ -908,6 +909,11 @@ class ReActAgent:
         logger.debug(f"API 请求参数: model={config.model}, temperature=0.7, top_p=0.8")
 
         while retry_count < max_retries:
+            # 在每次重试前检查是否应该停止
+            if self.should_stop:
+                logger.info("API 调用被用户中断，停止重试")
+                raise InterruptedError("API 调用被用户中断")
+            
             try:
                 if config.model == "openai/gpt-oss-20b" or config.model == "openai/gpt-oss-120b":
                     extra_body = {"reasoning_effort": "medium"}
@@ -926,13 +932,22 @@ class ReActAgent:
                         max_tokens=8192,
                         tool_choice="auto",
                         stream_options={"include_usage": True, "continuous_usage_stats": True},
-                        extra_body=extra_body
+                        extra_body=extra_body,
+                        timeout=60.0,  # 设置单次 API 调用的超时时间为 60 秒
                     )
                 )
                 logger.info(f"API 调用成功 (重试次数: {retry_count})")
                 return stream_response
+            except InterruptedError:
+                # 如果是用户中断，直接抛出，不重试
+                logger.info("API 调用被用户中断")
+                raise
             except Exception as e:
                 retry_count += 1
+                # 再次检查是否应该停止（可能在异常处理期间用户按了停止）
+                if self.should_stop:
+                    logger.info("API 调用被用户中断，停止重试")
+                    raise InterruptedError("API 调用被用户中断")
                 logger.error(
                     f"API 调用失败 (重试 {retry_count}/{max_retries}): {e}",
                     exc_info=True,
@@ -1530,6 +1545,11 @@ class ReActAgent:
             # 调用 API
             try:
                 stream_response = self._call_api_with_retry()
+            except InterruptedError:
+                # 用户中断，直接退出循环
+                logger.info("API 调用被用户中断")
+                output("\n\n[API 调用已被用户中断]", end_newline=True)
+                break
             except Exception as e:
                 logger.error(f"API 调用失败，无法继续: {e}", exc_info=True)
                 error_msg = (
