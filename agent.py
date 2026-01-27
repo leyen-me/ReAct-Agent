@@ -708,6 +708,15 @@ class ReActAgent:
         """获取工具名称和描述"""
         return "\n".join([f"- {tool.name}: {tool.description}" for tool in self.tools])
     
+    def _is_gpt_oss_model(self) -> bool:
+        """
+        判断当前模型是否为 gpt-oss 模型
+        
+        Returns:
+            如果是 gpt-oss 模型，返回 True；否则返回 False
+        """
+        return config.model == "openai/gpt-oss-20b" or config.model == "openai/gpt-oss-120b"
+
     def _detect_fake_tool_call_in_reasoning(self, reasoning_content: str) -> bool:
         """
         检测思考内容中是否有虚假的工具调用
@@ -1414,8 +1423,8 @@ class ReActAgent:
         Returns:
             是否应该继续循环（True=继续，False=结束）
         """
-        # 检测虚假工具调用
-        if self._detect_fake_tool_call_in_reasoning(reasoning_content):
+        # 检测虚假工具调用（仅在 gpt-oss 模型上启用）
+        if self._is_gpt_oss_model() and self._detect_fake_tool_call_in_reasoning(reasoning_content):
             logger.warning(
                 f"检测到思考内容中有虚假的工具调用 - "
                 f"思考长度: {len(reasoning_content)}, "
