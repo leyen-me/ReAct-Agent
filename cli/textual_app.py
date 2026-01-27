@@ -1599,6 +1599,16 @@ class ReActAgentApp(App):
         # 延迟刷新状态，确保 token 信息显示（等待 message_manager 初始化）
         self.set_timer(0.2, lambda: self.refresh_status())
     
+    def on_exit(self) -> None:
+        """应用退出时的清理工作"""
+        # 确保在退出前保存当前对话历史
+        # 这是最后的保险措施，处理各种退出场景（系统信号、异常退出等）
+        try:
+            self._save_chat_history()
+        except Exception:
+            # 退出时保存失败不影响退出流程
+            pass
+    
     @on(Click)
     def on_click(self, event: Click) -> None:
         """处理点击事件，保持输入框焦点"""
@@ -2595,6 +2605,8 @@ class ReActAgentApp(App):
             self.agent.stop_chat()
             # 添加系统消息提示
             self.add_system_message("[用户在此处中断了对话，未完成的任务已暂停]")
+            # 注意：停止对话后，handle_chat 的 finally 块会调用 _finish_chat，
+            # 在那里会统一保存历史记录，所以这里不需要重复保存
     
     def action_new_chat(self) -> None:
         """新建对话"""
@@ -2631,6 +2643,9 @@ class ReActAgentApp(App):
         self.query_one("#user-input", ChatInput).focus()
     
     def action_clear(self) -> None:
+        # 清屏前先保存当前对话历史（如果有内容）
+        self._save_chat_history()
+        
         chat_container = self.query_one("#chat-log", Vertical)
         chat_container.remove_children()
         # 重置对话标题，以便下次发送消息时生成新标题
@@ -2646,10 +2661,12 @@ class ReActAgentApp(App):
             skip_confirmation: 如果为 True，跳过确认直接退出（用于命令调用）
         """
         if skip_confirmation:
-            # 命令调用，直接退出
+            # 命令调用，先保存历史记录再退出
+            self._save_chat_history()
             self.exit()
         elif self._quit_confirmed:
-            # 第二次按 Ctrl+C，真正退出
+            # 第二次按 Ctrl+C，真正退出前保存历史记录
+            self._save_chat_history()
             self.exit()
         else:
             # 第一次按 Ctrl+C
