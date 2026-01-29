@@ -267,20 +267,23 @@ def _workflow_phases() -> str:
         <forbidden>禁止使用 emoji、状态词或其他替代标记</forbidden>
       </format>
       
-      <rule id="single-source-of-truth">Tasks 文件是执行进度的唯一事实来源</rule>
+      <rule id="single-source-of-truth">
+        Tasks 文件是任务计划与执行进度的唯一事实来源。
+        所有任务状态的判断必须以 Tasks 文件为准,不得仅在对话中报告进度而不更新文件。
+      </rule>
       
-      <update_rule>
-        完成任务后 MUST：
-        - 使用 read_file 查看行号
-        - 使用 edit_file_by_line 将 [ ] 更新为 [x]
-        - 禁止删除或重排已存在的任务条目
+      <update_rule title="完成任务后 MUST">
+        <step>使用 read_file 查看行号</step>
+        <step>使用 edit_file_by_line 将 [ ] 更新为 [x]</step>
+        <forbidden>禁止删除或重排已存在的任务条目</forbidden>
       </update_rule>
       
-      <parallel_requests>
-        若用户提出新需求：
-        1. 判断是否为新的需求
-        2. 若是新需求，创建新的 Tasks 文件
-        3. 不得污染或修改旧需求的 Tasks 文件
+      <parallel_requests title="新需求处理">
+        <when condition="用户提出新需求">
+          <step>判断是否为新的需求</step>
+          <step>若是新需求，创建新的 Tasks 文件</step>
+          <forbidden>不得污染或修改旧需求的 Tasks 文件</forbidden>
+        </when>
       </parallel_requests>
     </task_file_protocol>
   </phase>
