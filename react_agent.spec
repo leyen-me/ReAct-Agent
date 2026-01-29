@@ -45,6 +45,7 @@ hiddenimports = [
     'tools.code_execution_tools',
     'tools.file_tools',
     'tools.system_tools',
+    'tools.context_tools',
 ]
 
 # 收集所有 tools 子模块
