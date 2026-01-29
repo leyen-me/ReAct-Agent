@@ -927,6 +927,8 @@ class ReActAgent:
             try:
                 if config.model == "openai/gpt-oss-20b" or config.model == "openai/gpt-oss-120b":
                     extra_body = {"reasoning_effort": "medium"}
+                elif config.model == "deepseek-ai/deepseek-v3.2":
+                    extra_body = {"chat_template_kwargs": {"thinking":True}}
                 else:
                     extra_body = {}
                 stream_response: Stream[ChatCompletionChunk] = (
@@ -934,7 +936,7 @@ class ReActAgent:
                         model=config.model,
                         messages=messages,
                         stream=True,
-                        temperature=0.3,
+                        temperature=1,
                         top_p=1,
                         frequency_penalty=0,
                         presence_penalty=0,
@@ -1182,22 +1184,18 @@ class ReActAgent:
                 if chunk.choices and len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
 
-                    if hasattr(delta, "reasoning") and delta.reasoning:
-                        reasoning_content, start_reasoning_content = (
-                            self._handle_reasoning_content(
-                                delta.reasoning,
-                                reasoning_content,
-                                start_reasoning_content,
-                                content,
-                                output,
-                                status_callback,
-                            )
-                        )
-                    
+                    # 优先处理 reasoning_content（deepseek 模型），如果不存在则处理 reasoning（gpt-oss 模型）
+                    # 避免重复处理导致 token 重复
+                    reasoning_delta = None
                     if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                        reasoning_delta = delta.reasoning_content
+                    elif hasattr(delta, "reasoning") and delta.reasoning:
+                        reasoning_delta = delta.reasoning
+                    
+                    if reasoning_delta:
                         reasoning_content, start_reasoning_content = (
                             self._handle_reasoning_content(
-                                delta.reasoning_content,
+                                reasoning_delta,
                                 reasoning_content,
                                 start_reasoning_content,
                                 content,
