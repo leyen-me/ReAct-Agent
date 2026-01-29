@@ -214,7 +214,15 @@ class FileSearchTool(Tool):
                 },
                 "max_results": {
                     "type": ["integer", "null"],
-                    "description": "返回的最大匹配数，默认 100，设为 null 表示不限制"
+                    "description": "返回的最大匹配数，默认 50，设为 null 表示不限制"
+                },
+                "max_content_length": {
+                    "type": "integer",
+                    "description": "每行内容的最大字符长度，默认 150，超出会被截断"
+                },
+                "show_content": {
+                    "type": "boolean",
+                    "description": "是否显示匹配行的内容，默认 true。设为 false 时只返回文件路径和行号，可大幅减少返回内容"
                 }
             },
             "required": ["query"]
@@ -224,7 +232,9 @@ class FileSearchTool(Tool):
         query = parameters["query"]
         path = parameters.get("path", ".")
         use_regex = parameters.get("regex", False)
-        max_results = parameters.get("max_results", 100)
+        max_results = parameters.get("max_results", 50)
+        max_content_length = parameters.get("max_content_length", 150)
+        show_content = parameters.get("show_content", True)
         
         try:
             abs_path = normalize_path(path, self.work_dir)
@@ -270,18 +280,31 @@ class FileSearchTool(Tool):
                             except ValueError:
                                 # 如果路径不在工作目录内，跳过
                                 continue
-                            matches.append({
+                            
+                            # 构建匹配结果
+                            match_item = {
                                 "file": rel_path,
-                                "line": line_num,
-                                "content": line.rstrip()
-                            })
+                                "line": line_num
+                            }
+                            
+                            # 根据参数决定是否包含内容
+                            if show_content:
+                                content = line.rstrip()
+                                # 截断过长的内容
+                                if len(content) > max_content_length:
+                                    content = content[:max_content_length] + "..."
+                                match_item["content"] = content
+                            
+                            matches.append(match_item)
                             
                             if max_results is not None and len(matches) >= max_results:
-                                return json.dumps(matches, ensure_ascii=False, indent=2)
+                                # 使用紧凑格式输出，不缩进
+                                return json.dumps(matches, ensure_ascii=False)
             except Exception:
                 continue
         
-        return json.dumps(matches, ensure_ascii=False, indent=2)
+        # 使用紧凑格式输出，不缩进
+        return json.dumps(matches, ensure_ascii=False)
 
 
 class OpenFileTool(Tool):
