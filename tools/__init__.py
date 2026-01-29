@@ -42,6 +42,11 @@ from tools.system_tools import (
     SleepTool,
 )
 
+# 上下文管理工具
+from tools.context_tools import (
+    SummarizeContextTool,
+)
+
 __all__ = [
     # 基类
     "Tool",
@@ -75,4 +80,6 @@ __all__ = [
     "TerminalTool",
     "EnvTool",
     "SleepTool"
+    # 上下文管理工具
+    "SummarizeContextTool",
 ]

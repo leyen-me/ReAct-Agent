@@ -44,6 +44,8 @@ from tools import (
     TerminalTool,
     EnvTool,
     SleepTool,
+    # 上下文管理工具
+    SummarizeContextTool,
 )
 from tool_executor import create_tool_executor
 
@@ -664,6 +666,8 @@ class ReActAgent:
             TerminalTool(config.work_dir),
             EnvTool(config.work_dir),
             SleepTool(config.work_dir),
+            # 上下文管理工具
+            SummarizeContextTool(config.work_dir, self._handle_context_summary),
         ]
         logger.debug(f"工具列表创建完成 - 工具数量: {len(tools)}")
         logger.debug(f"工具名称: {[tool.name for tool in tools]}")
