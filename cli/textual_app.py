@@ -1084,7 +1084,7 @@ class ConfigEditScreen(ModalScreen[bool]):
                     # 用户语言偏好
                     with Horizontal(classes="config-row config-row-user_language_preference"):
                         yield Static("用户语言", classes="config-label")
-                        yield Input(value="中文", classes="config-input", id="config-user_language_preference")
+                        yield Input(value="简体中文", classes="config-input", id="config-user_language_preference")
                     
                     # 日志配置
                     with Horizontal(classes="config-row config-row-log_separator_length"):
@@ -1152,8 +1152,8 @@ class ConfigEditScreen(ModalScreen[bool]):
         config = self._collect_config()
         
         # 验证 user_language_preference
-        if config.get("user_language_preference") not in ["中文", "English"]:
-            self.notify("用户语言必须为 '中文' 或 'English'", severity="error")
+        if config.get("user_language_preference") not in ["简体中文", "English"]:
+            self.notify("用户语言必须为 '简体中文' 或 'English'", severity="error")
             return
         
         # 如果 operating_system 为空，自动检测

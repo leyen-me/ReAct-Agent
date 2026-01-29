@@ -539,7 +539,7 @@ agent/
 | `max_search_results` | `MAX_SEARCH_RESULTS` | `50` | 最大搜索结果数 |
 | `max_find_files` | `MAX_FIND_FILES` | `100` | 最大查找文件数 |
 | `max_context_tokens` | `MAX_CONTEXT_TOKENS` | `128000` | 最大上下文Token数 |
-| `user_language_preference` | `USER_LANGUAGE_PREFERENCE` | `中文` | 用户语言偏好 |
+| `user_language_preference` | `USER_LANGUAGE_PREFERENCE` | `简体中文` | 用户语言偏好 |
 | `log_separator_length` | `LOG_SEPARATOR_LENGTH` | `20` | 日志分隔符长度 |
 | `api_timeout` | `API_TIMEOUT` | `30` | API调用超时时间（秒） |
 

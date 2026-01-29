@@ -68,7 +68,7 @@ class Config:
             "max_search_results": "50",
             "max_find_files": "100",
             "max_context_tokens": "128000",
-            "user_language_preference": "中文",
+            "user_language_preference": "简体中文",
             "log_separator_length": "20",
             "api_timeout": "30",  # API 调用超时时间（秒）
         }
@@ -209,11 +209,11 @@ class Config:
         
         # 用户语言偏好
         user_language_value = self._get_config_value(
-            config_dict, "user_language_preference", "USER_LANGUAGE_PREFERENCE", "中文"
+            config_dict, "user_language_preference", "USER_LANGUAGE_PREFERENCE", "简体中文"
         )
         self.user_language_preference: str = user_language_value
-        if self.user_language_preference not in ["中文", "English"]:
-            raise ValueError("USER_LANGUAGE_PREFERENCE 配置必须为 中文 或 English")
+        if self.user_language_preference not in ["简体中文", "English"]:
+            raise ValueError("USER_LANGUAGE_PREFERENCE 配置必须为 简体中文 或 English")
         
         # 日志分隔符长度
         log_separator_length_value = self._get_config_value(
