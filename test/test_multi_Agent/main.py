@@ -64,7 +64,11 @@ class ReadFileTool(BaseTool):
             "type": "object",
             "properties": {
                 "path": {"type": "string", "description": "Relative file path"},
-                "encoding": {"type": "string", "description": "File encoding", "default": "utf-8"},
+                "encoding": {
+                    "type": "string",
+                    "description": "File encoding",
+                    "default": "utf-8",
+                },
                 "start_line": {
                     "type": "integer",
                     "description": "Start line number (1-based, inclusive). Default: 1",
@@ -114,7 +118,7 @@ class ReadFileTool(BaseTool):
                     total_lines += 1
                     if total_lines >= start_line:
                         # 去掉行尾换行符（保留原始内容，但便于控制输出）
-                        lines.append(line.rstrip('\n'))
+                        lines.append(line.rstrip("\n"))
                     if end_line and total_lines >= end_line:
                         break
                     if len(lines) >= max_lines:
@@ -130,8 +134,7 @@ class ReadFileTool(BaseTool):
             if with_line_numbers:
                 start_num = start_line
                 output_lines = [
-                    f"{(start_num + i):4d} | {line}"
-                    for i, line in enumerate(lines)
+                    f"{(start_num + i):4d} | {line}" for i, line in enumerate(lines)
                 ]
             else:
                 output_lines = lines
@@ -140,7 +143,9 @@ class ReadFileTool(BaseTool):
 
             # 添加元信息（帮助 Agent 理解上下文）
             info = f"[File: {path}, Lines {start_line}-{start_line + len(lines) - 1} of {total_lines}]"
-            if len(lines) == max_lines and (not end_line or start_line + max_lines - 1 < end_line):
+            if len(lines) == max_lines and (
+                not end_line or start_line + max_lines - 1 < end_line
+            ):
                 info += " (truncated, use higher end_line or max_lines to see more)"
 
             return f"{info}\n{result}"
@@ -148,6 +153,7 @@ class ReadFileTool(BaseTool):
         except Exception as e:
             logger.error(f"ReadFileTool error: {e}")
             return f"Error reading file: {e}"
+
 
 class EditFileByLineTool(BaseTool):
     def __init__(self):
@@ -225,10 +231,129 @@ class EditFileByLineTool(BaseTool):
             return f"Error editing file: {e}"
 
 
+class MemoryTool(BaseTool):
+    def __init__(self):
+        super().__init__()
+        self.name = "memory"
+        self.description = (
+            "Access your long-term memory to recall user preferences, project facts, or stored keys. "
+            "ALWAYS call this tool before answering questions about past interactions or personal details."
+        )
+        self.parameters = {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["store", "recall", "list_keys", "list_all"],
+                    "description": (
+                        "'store': save a fact; "
+                        "'recall': get by key or natural language query; "
+                        "'list_keys': show all memory keys; "
+                        "'list_all': show all memories (key + value preview)"
+                    ),
+                },
+                "key": {
+                    "type": "string",
+                    "description": "Memory identifier (required for 'store'; optional for 'recall')",
+                },
+                "value": {
+                    "type": "string",
+                    "description": "The fact to store (required for 'store')",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Natural language query to find relevant memories (used in 'recall')",
+                },
+            },
+            "required": ["action"],
+        }
+        # 持久化存储路径
+        self._memory_path = BASE_DIR / ".agent_memory.json"
+        self._storage: Dict[str, str] = {}
+        self._load()
+
+    def _load(self):
+        if self._memory_path.exists():
+            try:
+                with open(self._memory_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    # 确保是字符串字典
+                    self._storage = {str(k): str(v) for k, v in data.items()}
+            except Exception as e:
+                logger.warning(f"Failed to load memory from {self._memory_path}: {e}")
+
+    def _save(self):
+        try:
+            # 确保目录存在
+            self._memory_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._memory_path, "w", encoding="utf-8") as f:
+                json.dump(self._storage, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save memory to {self._memory_path}: {e}")
+
+    def run(self, parameters: Dict[str, Any]) -> str:
+        action = parameters.get("action")
+
+        if action == "store":
+            key = parameters.get("key")
+            value = parameters.get("value")
+            if not key or value is None:
+                return "Error: 'key' and 'value' are required for action='store'."
+            self._storage[str(key)] = str(value)
+            self._save()
+            return f"✅ Stored memory: '{key}' = '{value}'"
+
+        elif action == "recall":
+            key = parameters.get("key")
+            query = parameters.get("query")
+
+            if key:
+                # 精确 key 查找
+                if key in self._storage:
+                    return f"📌 Recall by key '{key}': {self._storage[key]}"
+                else:
+                    return f"❌ No memory found for key: '{key}'"
+
+            elif query:
+                # 简单模糊匹配：检查 key 或 value 是否包含 query（不区分大小写）
+                query_lower = str(query).lower()
+                matches = []
+                for k, v in self._storage.items():
+                    if query_lower in k.lower() or query_lower in v.lower():
+                        matches.append(f"{k}: {v}")
+                if matches:
+                    return "🔍 Relevant memories:\n" + "\n".join(matches)
+                else:
+                    return "❌ No relevant memories found for query: '{}'".format(query)
+
+            else:
+                return "Error: 'key' or 'query' is required for action='recall'."
+
+        elif action == "list_keys":
+            if not self._storage:
+                return "📭 No memories stored yet."
+            keys = ", ".join(sorted(self._storage.keys()))
+            return f"🔑 Available memory keys ({len(self._storage)}): {keys}"
+
+        elif action == "list_all":
+            if not self._storage:
+                return "📭 No memories stored yet."
+            items = []
+            for k, v in sorted(self._storage.items()):
+                # 预览长内容
+                preview = (v[:60] + "...") if len(v) > 60 else v
+                items.append(f"• {k}: {preview}")
+            return "📚 All memories:\n" + "\n".join(items)
+
+        else:
+            return f"❌ Invalid action: '{action}'. Supported: store, recall, list_keys, list_all."
+
+
 # === 工具注册 ===
 ALL_TOOLS: List[BaseTool] = [
     ReadFileTool(),
     EditFileByLineTool(),
+    MemoryTool(),
 ]
 
 AI_ALL_TOOLS = [{"type": "function", "function": tool.to_dict()} for tool in ALL_TOOLS]
@@ -246,7 +371,12 @@ class ReActAgent:
         self.messages: List[Dict[str, Any]] = [
             {
                 "role": "system",
-                "content": "You are a helpful coding assistant with file access.",
+                "content": (
+                    "You are a helpful coding assistant with file access and long-term memory.\n"
+                    "Before answering questions about user preferences, project details, or past facts, "
+                    "ALWAYS check your memory first by calling the 'memory' tool with action='list_keys' or action='recall'.\n"
+                    "If you don't know something, check memory before saying 'I don't know'."
+                ),
             }
         ]
 
