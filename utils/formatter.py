@@ -11,7 +11,7 @@ def format_search_results(results: List[Dict[str, Any]], max_results: int = 50) 
     Args:
         results: 搜索结果列表
         max_results: 最大返回结果数
-        
+    
     Returns:
         格式化后的字符串
     """
