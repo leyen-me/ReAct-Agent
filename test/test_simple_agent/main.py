@@ -26,10 +26,10 @@ if not OPENAI_API_KEY:
 
 OPENAI_BASE_URL = os.getenv(
     "OPENAI_BASE_URL",
-    "https://integrate.api.nvidia.com/v1",
+    "https://openrouter.ai/api/v1",
 ).strip()
 
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "openai/gpt-oss-120b")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "qwen/qwen3.5-27b")
 
 BASE_DIR = Path.cwd().resolve()
 

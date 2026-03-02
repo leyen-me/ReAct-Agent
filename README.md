@@ -103,7 +103,7 @@ ReAct Agent 是一个基于 ReAct（Reasoning and Acting）模式的智能开发
 
 deepseek-ai/deepseek-v3.1-terminus
 minimaxai/minimax-m2
-openai/gpt-oss-120b
+qwen/qwen3.5-27b
 
 ## 📦 分发方式
 
@@ -246,8 +246,8 @@ vim ~/.zshrc  # 或 vim ~/.bashrc
 # 在文件末尾添加：
 export PATH="$HOME/bin:$PATH"  # 如果还没添加 PATH
 export OPENAI_API_KEY=your_api_key_here
-export OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1  # 可选
-export MODEL=openai/gpt-oss-120b  # 可选
+export OPENAI_BASE_URL=https://openrouter.ai/api/v1  # 可选
+export MODEL=qwen/qwen3.5-27b  # 可选
 
 # 保存后重新加载配置
 source ~/.zshrc  # 或 source ~/.bashrc
@@ -357,8 +357,8 @@ vim ~/.bashrc
 
 # 在文件末尾添加以下内容：
 export OPENAI_API_KEY=your_api_key_here
-export OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1
-export MODEL=openai/gpt-oss-120b
+export OPENAI_BASE_URL=https://openrouter.ai/api/v1
+export MODEL=qwen/qwen3.5-27b
 
 # 保存后重新加载配置
 source ~/.zshrc  # 或 source ~/.bashrc
@@ -375,11 +375,11 @@ source ~/.zshrc  # 或 source ~/.bashrc
 
 可选的环境变量：
 ```bash
-# 模型名称（默认：openai/gpt-oss-120b）
-export MODEL=openai/gpt-oss-120b
+# 模型名称（默认：qwen/qwen3.5-27b）
+export MODEL=qwen/qwen3.5-27b
 
-# API 基础 URL（默认：https://integrate.api.nvidia.com/v1）
-export OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1
+# API 基础 URL（默认：https://openrouter.ai/api/v1）
+export OPENAI_BASE_URL=https://openrouter.ai/api/v1
 
 # 操作系统（默认：macOS）
 export OS=macOS
@@ -388,7 +388,7 @@ export OS=macOS
 export COMMAND_TIMEOUT=300
 
 # 最大上下文 token 数（默认：根据模型自动设置）
-export MAX_CONTEXT_TOKENS=128000
+export MAX_CONTEXT_TOKENS=262144
 
 # 最大搜索结果数（默认：50）
 export MAX_SEARCH_RESULTS=50
@@ -530,15 +530,15 @@ agent/
 
 | 配置项 | 环境变量 | 默认值 | 说明 |
 |--------|----------|--------|------|
-| `model` | `MODEL` | `openai/gpt-oss-120b` | 执行模型名称 |
+| `model` | `MODEL` | `qwen/qwen3.5-27b` | 执行模型名称 |
 | `api_key` | `OPENAI_API_KEY` | - | API密钥（必需） |
-| `base_url` | `OPENAI_BASE_URL` | `https://integrate.api.nvidia.com/v1` | API基础URL |
+| `base_url` | `OPENAI_BASE_URL` | `https://openrouter.ai/api/v1` | API基础URL |
 | `operating_system` | `OS` | 自动检测 | 操作系统 |
 | `work_dir` | `WORK_DIR` | 当前目录 | 工作目录 |
 | `command_timeout` | `COMMAND_TIMEOUT` | `300` | 命令超时时间（秒） |
 | `max_search_results` | `MAX_SEARCH_RESULTS` | `50` | 最大搜索结果数 |
 | `max_find_files` | `MAX_FIND_FILES` | `100` | 最大查找文件数 |
-| `max_context_tokens` | `MAX_CONTEXT_TOKENS` | `128000` | 最大上下文Token数 |
+| `max_context_tokens` | `MAX_CONTEXT_TOKENS` | `262144` | 最大上下文Token数 |
 | `user_language_preference` | `USER_LANGUAGE_PREFERENCE` | `简体中文` | 用户语言偏好 |
 | `log_separator_length` | `LOG_SEPARATOR_LENGTH` | `20` | 日志分隔符长度 |
 | `api_timeout` | `API_TIMEOUT` | `30` | API调用超时时间（秒） |
@@ -627,7 +627,7 @@ agent/
 │                                                                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 输入消息... (/ 打开命令, @ 选择文件)                                       │
-│ Build openai/gpt-oss-120b                                                  │
+│ Build qwen/qwen3.5-27b                                                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ ● 对话中  本轮耗时: 2.3s          CTRL+C 退出  CTRL+L  清屏                │
 └─────────────────────────────────────────────────────────────────────────────┘

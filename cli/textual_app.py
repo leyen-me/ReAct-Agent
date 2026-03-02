@@ -1043,7 +1043,7 @@ class ConfigEditScreen(ModalScreen[bool]):
 
                     with Horizontal(classes="config-row config-row-model"):
                         yield Static("执行模型", classes="config-label")
-                        yield Input(value="openai/gpt-oss-120b", classes="config-input", id="config-model")
+                        yield Input(value="qwen/qwen3.5-27b", classes="config-input", id="config-model")
                     
                     with Horizontal(classes="config-row config-row-api_key"):
                         yield Static("API Key", classes="config-label")
@@ -1051,7 +1051,7 @@ class ConfigEditScreen(ModalScreen[bool]):
                     
                     with Horizontal(classes="config-row config-row-base_url"):
                         yield Static("Base URL", classes="config-label")
-                        yield Input(value="https://integrate.api.nvidia.com/v1", classes="config-input", id="config-base_url")
+                        yield Input(value="https://openrouter.ai/api/v1", classes="config-input", id="config-base_url")
                     
                     # 系统配置
                     with Horizontal(classes="config-row config-row-operating_system"):
@@ -1079,7 +1079,7 @@ class ConfigEditScreen(ModalScreen[bool]):
                     # 上下文配置
                     with Horizontal(classes="config-row config-row-max_context_tokens"):
                         yield Static("最大上下文Token", classes="config-label")
-                        yield Input(value="128000", classes="config-input", id="config-max_context_tokens")
+                        yield Input(value="262144", classes="config-input", id="config-max_context_tokens")
                     
                     # 用户语言偏好
                     with Horizontal(classes="config-row config-row-user_language_preference"):

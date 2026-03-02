@@ -59,15 +59,15 @@ class Config:
             Dict[str, Any]: 包含所有默认配置的字典
         """
         return {
-            "model": "openai/gpt-oss-120b",  # 用于执行计划的小模型
+            "model": "qwen/qwen3.5-27b",  # 用于执行计划的小模型
             "api_key": None,
-            "base_url": "https://integrate.api.nvidia.com/v1",
+            "base_url": "https://openrouter.ai/api/v1",
             "operating_system": Config.detect_operating_system(),  # 自动检测操作系统
             "work_dir": None,  # None 表示使用当前工作目录
             "command_timeout": "300",
             "max_search_results": "50",
             "max_find_files": "100",
-            "max_context_tokens": "128000",
+            "max_context_tokens": "262144",
             "user_language_preference": "简体中文",
             "log_separator_length": "20",
             "api_timeout": "30",  # API 调用超时时间（秒）
@@ -155,13 +155,13 @@ class Config:
         # 模型配置
         # 执行模型：用于执行任务
         self.model: str = self._get_config_value(
-            config_dict, "model", "MODEL", "openai/gpt-oss-120b"
+            config_dict, "model", "MODEL", "qwen/qwen3.5-27b"
         )
         self.api_key: Optional[str] = self._get_config_value(
             config_dict, "api_key", "OPENAI_API_KEY", None
         )
         self.base_url: str = self._get_config_value(
-            config_dict, "base_url", "OPENAI_BASE_URL", "https://integrate.api.nvidia.com/v1"
+            config_dict, "base_url", "OPENAI_BASE_URL", "https://openrouter.ai/api/v1"
         )
         
         # 系统配置
@@ -198,7 +198,7 @@ class Config:
         
         # 上下文配置
         # 根据模型设置默认最大上下文 token 数
-        default_max_tokens = 128000
+        default_max_tokens = 262144
         max_context_tokens_value = self._get_config_value(
             config_dict, "max_context_tokens", "MAX_CONTEXT_TOKENS", str(default_max_tokens)
         )

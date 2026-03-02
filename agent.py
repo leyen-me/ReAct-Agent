@@ -720,7 +720,7 @@ class ReActAgent:
         Returns:
             如果是 gpt-oss 模型，返回 True；否则返回 False
         """
-        return config.model == "openai/gpt-oss-20b" or config.model == "openai/gpt-oss-120b"
+        return config.model == "openai/gpt-oss-20b" or config.model == "qwen/qwen3.5-27b"
 
     def _detect_fake_tool_call_in_reasoning(self, reasoning_content: str) -> bool:
         """
@@ -929,7 +929,7 @@ class ReActAgent:
                 raise InterruptedError("API 调用被用户中断")
             
             try:
-                if config.model == "openai/gpt-oss-20b" or config.model == "openai/gpt-oss-120b":
+                if config.model == "openai/gpt-oss-20b" or config.model == "qwen/qwen3.5-27b":
                     extra_body = {"reasoning_effort": "medium"}
                 elif config.model == "deepseek-ai/deepseek-v3.2":
                     extra_body = {"chat_template_kwargs": {"thinking":True}}
