@@ -1,5 +1,6 @@
 import os
 import json
+import subprocess
 import time
 import logging
 from pathlib import Path
@@ -33,25 +34,30 @@ if not OPENAI_API_KEY:
     raise ValueError("必须设置环境变量 OPENAI_API_KEY")
 
 OPENAI_BASE_URL = "https://integrate.api.nvidia.com/v1"
-OPENAI_MODEL = "minimaxai/minimax-m2.5"
+OPENAI_MODEL = "qwen/qwen3.5-397b-a17b"
 BASE_DIR = Path.cwd().resolve()
 
-# ===================== 工具系统 =====================
+
+# ================= PATH SECURITY =================
 
 
 def safe_resolve_path(user_path: str) -> Path:
-    """安全解析路径，防止目录穿越"""
+
     abs_path = (BASE_DIR / user_path).resolve()
 
     try:
         abs_path.relative_to(BASE_DIR)
     except ValueError:
-        raise PermissionError(f"路径 {user_path} 超出允许范围：{BASE_DIR}")
+        raise PermissionError("Path outside workspace")
 
     return abs_path
 
 
+# ================= TOOL BASE =================
+
+
 class BaseTool:
+
     name: str = ""
     description: str = ""
     parameters: Dict[str, Any] = {}
@@ -59,7 +65,20 @@ class BaseTool:
     def run(self, parameters: Dict[str, Any]) -> str:
         raise NotImplementedError
 
-    def to_dict(self) -> Dict[str, Any]:
+    def success(self, data):
+        return json.dumps(
+            {"success": True, "data": data, "error": None},
+            ensure_ascii=False,
+        )
+
+    def fail(self, msg):
+        return json.dumps(
+            {"success": False, "data": None, "error": msg},
+            ensure_ascii=False,
+        )
+
+    def to_dict(self):
+
         return {
             "name": self.name,
             "description": self.description,
@@ -67,86 +86,160 @@ class BaseTool:
         }
 
 
-# ===================== 文件读取工具 =====================
+# ================= FILE NAVIGATION =================
 
 
-class ReadFileTool(BaseTool):
-    """Read file with pagination (SWE-agent / Open Interpreter style).
-    Returns total_lines so agent can call read_file(start_line=N, end_line=M) for next chunk.
-    """
+class ListFilesTool(BaseTool):
 
-    name = "read_file"
-    description = "Read part of a file. Returns content, start_line, end_line, total_lines for pagination. Agent can call read_file(start_line=121, end_line=240) for next chunk."
+    name = "list_files"
+    description = "List files in directory"
 
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "File path"},
-            "start_line": {
-                "type": "integer",
-                "description": "Start line number, default 1",
-            },
-            "end_line": {
-                "type": "integer",
-                "description": "End line number, omit to read to end of file",
-            },
+            "path": {"type": "string"},
+            "depth": {"type": "integer"},
         },
+    }
+
+    def run(self, parameters):
+
+        path = parameters.get("path", ".")
+        depth = parameters.get("depth", 3)
+
+        try:
+
+            root = safe_resolve_path(path)
+
+            results = []
+
+            for p in root.rglob("*"):
+
+                rel = p.relative_to(BASE_DIR)
+
+                if len(rel.parts) > depth:
+                    continue
+
+                results.append(
+                    {
+                        "path": str(rel),
+                        "type": "directory" if p.is_dir() else "file",
+                    }
+                )
+
+            return self.success(results)
+
+        except Exception as e:
+            return self.fail(str(e))
+
+
+# ================= METADATA =================
+
+
+class GetFileMetadataTool(BaseTool):
+
+    name = "get_file_metadata"
+    description = "Get metadata of file"
+
+    parameters = {
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
         "required": ["path"],
     }
 
-    def run(self, parameters: Dict[str, Any]) -> str:
+    def run(self, parameters):
+
         try:
-            path = parameters["path"]
-            start_line = max(1, int(parameters.get("start_line", 1)))
-            end_line = parameters.get("end_line")
 
-            abs_path = safe_resolve_path(path)
+            path = safe_resolve_path(parameters["path"])
 
-            if not abs_path.exists():
-                return json.dumps({"error": f"File not found: {path}"})
+            stat = path.stat()
 
-            if not abs_path.is_file():
-                return json.dumps({"error": f"Not a file: {path}"})
+            line_count = 0
 
-            with abs_path.open("r", encoding="utf-8", errors="replace") as f:
-                all_lines = f.readlines()
+            if path.is_file():
 
-            total_lines = len(all_lines)
-            if total_lines == 0:
-                return json.dumps(
-                    {"content": "", "start_line": 1, "end_line": 0, "total_lines": 0},
-                )
+                with open(path, encoding="utf-8", errors="ignore") as f:
+                    line_count = sum(1 for _ in f)
 
-            end_line = (
-                min(end_line, total_lines) if end_line is not None else total_lines
+            return self.success(
+                {
+                    "path": str(path),
+                    "size_bytes": stat.st_size,
+                    "line_count": line_count,
+                }
             )
-            end_line = max(end_line, start_line)
-
-            # 1-based line numbers, 0-based slice
-            slice_start = start_line - 1
-            slice_end = end_line
-            lines = all_lines[slice_start:slice_end]
-            content = "".join(lines).rstrip("\n")
-
-            result = {
-                "content": content,
-                "start_line": start_line,
-                "end_line": end_line,
-                "total_lines": total_lines,
-            }
-            return json.dumps(result, ensure_ascii=False)
 
         except Exception as e:
-            logger.exception("ReadFileTool error")
-            return json.dumps({"error": f"Failed to read file: {e}"})
+            return self.fail(str(e))
 
 
-# ===================== 文件编辑工具 =====================
+# ================= SEARCH =================
 
 
-class EditFileByLineTool(BaseTool):
-    name = "edit_file_by_line"
-    description = "通过行范围替换文件内容。"
+class SearchCodeTool(BaseTool):
+
+    name = "search_code"
+    description = "Search keyword in codebase"
+
+    parameters = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "max_results": {"type": "integer"},
+        },
+        "required": ["query"],
+    }
+
+    def run(self, parameters):
+
+        query = parameters["query"]
+        max_results = parameters.get("max_results", 20)
+
+        results = []
+
+        try:
+
+            for file in BASE_DIR.rglob("*"):
+
+                if not file.is_file():
+                    continue
+
+                try:
+
+                    with open(file, encoding="utf-8", errors="ignore") as f:
+
+                        for i, line in enumerate(f):
+
+                            if query in line:
+
+                                results.append(
+                                    {
+                                        "file": str(file.relative_to(BASE_DIR)),
+                                        "line": i + 1,
+                                        "snippet": line.strip(),
+                                    }
+                                )
+
+                                if len(results) >= max_results:
+                                    return self.success(results)
+
+                except Exception:
+                    continue
+
+            return self.success(results)
+
+        except Exception as e:
+            return self.fail(str(e))
+
+
+# ================= FILE READ =================
+
+
+class ReadFileLinesTool(BaseTool):
+
+    name = "read_file_lines"
+    description = "Read lines from file"
 
     parameters = {
         "type": "object",
@@ -154,49 +247,181 @@ class EditFileByLineTool(BaseTool):
             "path": {"type": "string"},
             "start_line": {"type": "integer"},
             "end_line": {"type": "integer"},
-            "new_string": {"type": "string"},
         },
-        "required": ["path", "start_line", "end_line", "new_string"],
+        "required": ["path"],
     }
 
-    def run(self, parameters: Dict[str, Any]) -> str:
+    def run(self, parameters):
+
         try:
-            path = parameters["path"]
-            start_line = int(parameters["start_line"])
-            end_line = int(parameters["end_line"])
-            new_string = parameters["new_string"]
 
-            abs_path = safe_resolve_path(path)
+            path = safe_resolve_path(parameters["path"])
+            start = parameters.get("start_line", 1)
+            end = parameters.get("end_line")
 
-            if not abs_path.exists() or not abs_path.is_file():
-                return f"文件无效：{path}"
+            with open(path, encoding="utf-8", errors="ignore") as f:
+                lines = f.readlines()
 
-            original_lines = abs_path.read_text(encoding="utf-8").splitlines(
-                keepends=True
+            total = len(lines)
+
+            end = end or total
+
+            content = "".join(lines[start - 1 : end])
+
+            return self.success(
+                {
+                    "content": content,
+                    "start_line": start,
+                    "end_line": end,
+                    "total_lines": total,
+                }
             )
-            total = len(original_lines)
-
-            if not (1 <= start_line <= total and 1 <= end_line <= total):
-                return f"行号超出范围。文件共有 {total} 行。"
-
-            if start_line > end_line:
-                return "起始行不能大于结束行。"
-
-            new_lines = new_string.splitlines(keepends=True)
-            if not new_string.endswith("\n") and new_lines:
-                new_lines[-1] = new_lines[-1].rstrip("\n")
-
-            updated = (
-                original_lines[: start_line - 1] + new_lines + original_lines[end_line:]
-            )
-
-            abs_path.write_text("".join(updated), encoding="utf-8")
-
-            return f"已替换 {path} 第 {start_line}-{end_line} 行。"
 
         except Exception as e:
-            logger.exception("EditFileByLineTool 出错")
-            return f"编辑失败：{e}"
+            return self.fail(str(e))
+
+
+# ================= FILE WRITE =================
+
+
+class WriteFileTool(BaseTool):
+
+    name = "write_file"
+    description = "Overwrite file"
+
+    parameters = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "content": {"type": "string"},
+        },
+        "required": ["path", "content"],
+    }
+
+    def run(self, parameters):
+
+        try:
+
+            path = safe_resolve_path(parameters["path"])
+
+            path.write_text(parameters["content"], encoding="utf-8")
+
+            return self.success("written")
+
+        except Exception as e:
+            return self.fail(str(e))
+
+
+# ================= PATCH =================
+
+
+class ApplyPatchTool(BaseTool):
+
+    name = "apply_patch"
+    description = "Apply unified diff patch"
+
+    parameters = {
+        "type": "object",
+        "properties": {"patch": {"type": "string"}},
+        "required": ["patch"],
+    }
+
+    def run(self, parameters):
+
+        try:
+
+            patch = parameters["patch"]
+
+            p = subprocess.run(
+                ["patch", "-p0"],
+                input=patch,
+                text=True,
+                capture_output=True,
+            )
+
+            return self.success(
+                {
+                    "stdout": p.stdout,
+                    "stderr": p.stderr,
+                    "exit_code": p.returncode,
+                }
+            )
+
+        except Exception as e:
+            return self.fail(str(e))
+
+
+# ================= COMMAND =================
+
+
+class RunCommandTool(BaseTool):
+
+    name = "run_command"
+    description = "Execute shell command"
+
+    parameters = {
+        "type": "object",
+        "properties": {
+            "command": {"type": "string"},
+            "timeout": {"type": "integer"},
+        },
+        "required": ["command"],
+    }
+
+    def run(self, parameters):
+
+        command = parameters["command"]
+        timeout = parameters.get("timeout", 30)
+
+        deny = ["rm -rf", "shutdown", "reboot", "sudo"]
+
+        if any(x in command for x in deny):
+            return self.fail("command not allowed")
+
+        try:
+
+            p = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+
+            return self.success(
+                {
+                    "stdout": p.stdout,
+                    "stderr": p.stderr,
+                    "exit_code": p.returncode,
+                }
+            )
+
+        except Exception as e:
+            return self.fail(str(e))
+
+
+# ================= GIT =================
+class GitDiffTool(BaseTool):
+
+    name = "git_diff"
+    description = "Show git diff"
+
+    parameters = {"type": "object", "properties": {}}
+
+    def run(self, parameters):
+
+        try:
+
+            p = subprocess.run(
+                ["git", "diff"],
+                capture_output=True,
+                text=True,
+            )
+
+            return self.success(p.stdout)
+
+        except Exception as e:
+            return self.fail(str(e))
 
 
 class ReActAgent:
@@ -242,9 +467,8 @@ class ReActAgent:
             "stream": True,
             "temperature": 1,
             "top_p": 0.95,
-            "frequency_penalty": 0,
-            "presence_penalty": 0,
-            "extra_body": {"reasoning": {"enabled": False}},
+            # "extra_body": {"reasoning": {"enabled": False}},
+            # "chat_template_kwargs": {"enable_thinking":False},
         }
         if tools:
             api_kwargs["tools"] = tools
@@ -339,7 +563,14 @@ class ReActAgent:
 
 if __name__ == "__main__":
     agent = ReActAgent()
-    agent.register_tool(ReadFileTool())
+    agent.register_tool(ListFilesTool())
+    agent.register_tool(GetFileMetadataTool())
+    agent.register_tool(SearchCodeTool())
+    agent.register_tool(ReadFileLinesTool())
+    agent.register_tool(WriteFileTool())
+    agent.register_tool(ApplyPatchTool())
+    agent.register_tool(RunCommandTool())
+    agent.register_tool(GitDiffTool())
 
     while True:
         user_input = input("用户：").strip()
