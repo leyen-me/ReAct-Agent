@@ -473,54 +473,56 @@ class WriteFileTool(BaseTool):
             return self.fail(str(e))
 
 
-# ================= PATCH =================
+# ================= FILE EDIT =================
 
 
-class ApplyPatchTool(BaseTool):
+class ReplaceInFileTool(BaseTool):
 
-    name = "apply_patch"
-    description = "Apply unified diff patch"
+    name = "replace_in_file"
+    description = "Replace a unique text block"
 
     parameters = {
         "type": "object",
-        "properties": {"patch": {"type": "string"}},
-        "required": ["patch"],
+        "properties": {
+            "path": {"type": "string"},
+            "old_string": {"type": "string"},
+            "new_string": {"type": "string"},
+        },
+        "required": ["path", "old_string", "new_string"],
     }
 
     def run(self, parameters):
 
         try:
 
-            patch = parameters["patch"]
-            strip_count = (
-                1
-                if patch.startswith("--- a/") or "\n--- a/" in patch
-                else 0
-            )
+            path = safe_resolve_path(parameters["path"])
+            old_string = parameters["old_string"]
+            new_string = parameters["new_string"]
 
-            p = subprocess.run(
-                ["patch", "--batch", f"-p{strip_count}"],
-                input=patch,
-                text=True,
-                capture_output=True,
-                cwd=WORKSPACE_DIR,
-                timeout=10,
-            )
+            if not old_string:
+                return self.fail("old_string must not be empty")
 
-            if p.returncode != 0:
-                details = (p.stderr or p.stdout).strip() or "patch failed"
-                return self.fail(f"patch failed (exit {p.returncode}): {details}")
+            content = path.read_text(encoding="utf-8")
+            match_count = content.count(old_string)
+
+            if match_count == 0:
+                return self.fail("old_string not found")
+
+            if match_count > 1:
+                return self.fail(
+                    f"old_string is not unique (found {match_count} matches)"
+                )
+
+            updated = content.replace(old_string, new_string, 1)
+            path.write_text(updated, encoding="utf-8")
 
             return self.success(
                 {
-                    "stdout": p.stdout,
-                    "stderr": p.stderr,
-                    "exit_code": p.returncode,
+                    "path": to_workspace_relative(path),
+                    "replacements": 1,
                 }
             )
 
-        except subprocess.TimeoutExpired:
-            return self.fail("patch command timed out")
         except Exception as e:
             return self.fail(str(e))
 
@@ -1030,7 +1032,7 @@ class PlanAgent(BaseAgent):
 
 17. 你只能直接调用自己已注册的工具，但这不代表整个系统没有其他工具。代码修改、命令执行等能力可能由 ExecuteAgent 持有。
 
-18. 当用户提到 apply_patch、write_file、run_command、git_diff 等执行类工具，或明确要求修改文件、运行命令、验证结果时，不要仅因为你自己不能直接调用这些工具就说“没有这个工具”。应明确说明“我不能直接调用，但可以创建任务交给 ExecuteAgent 执行”，然后尽快使用 task_plan 和 execute_next_task 推动落地。
+18. 当用户提到 replace_in_file、write_file、run_command、git_diff 等执行类工具，或明确要求修改文件、运行命令、验证结果时，不要仅因为你自己不能直接调用这些工具就说“没有这个工具”。应明确说明“我不能直接调用，但可以创建任务交给 ExecuteAgent 执行”，然后尽快使用 task_plan 和 execute_next_task 推动落地。
         """
         super().__init__(
             model,
@@ -1084,7 +1086,7 @@ class ExecuteAgent(BaseAgent):
 
 代码修改：
 - write_file
-- apply_patch
+- replace_in_file
 
 系统操作：
 - run_command
@@ -1102,7 +1104,8 @@ class ExecuteAgent(BaseAgent):
 4. 尽量使用工具，而不是猜测代码。
 
 5. 如果需要修改代码：
-优先使用 apply_patch。
+优先使用 replace_in_file 做局部精确修改；仅在需要新建文件或整体重写时使用 write_file。
+调用 replace_in_file 时，old_string 应包含足够的上下文，且必须保证在文件中唯一匹配；如果不唯一，应先继续读取更多上下文，再重试。
 
 6. 当任务完成时，需要调用 update_task：
 
@@ -1128,7 +1131,7 @@ status = "failed"
         self.register_tool(SearchCodeTool())
         self.register_tool(ReadFileLinesTool())
         self.register_tool(WriteFileTool())
-        self.register_tool(ApplyPatchTool())
+        self.register_tool(ReplaceInFileTool())
         self.register_tool(RunCommandTool())
         self.register_tool(GitDiffTool())
         self.register_tool(TaskUpdateTool(task_store))
