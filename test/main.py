@@ -16,6 +16,7 @@ from openai import OpenAI
 _LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 _LOG_DIR = Path(__file__).resolve().parent
 _LOG_FILE = _LOG_DIR / "agent.log"
+_TASK_FILE = _LOG_DIR / "task.json"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -119,13 +120,63 @@ class TaskRecord:
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TaskRecord":
+        return cls(
+            id=data["id"],
+            description=data["description"],
+            status=data.get("status", "pending"),
+            result=data.get("result"),
+            created_at=data.get("created_at", time.time()),
+            updated_at=data.get("updated_at", time.time()),
+        )
+
 
 class TaskStore:
-    def __init__(self):
+    def __init__(self, storage_path: Path = _TASK_FILE):
+        self.storage_path = storage_path
         self._tasks: Dict[str, TaskRecord] = {}
+        self._load()
+
+    def _load(self) -> None:
+        if not self.storage_path.exists():
+            return
+
+        try:
+            raw = json.loads(self.storage_path.read_text(encoding="utf-8"))
+        except Exception:
+            logger.exception("加载 task.json 失败")
+            return
+
+        if not isinstance(raw, list):
+            logger.warning("task.json 格式无效，已忽略")
+            return
+
+        self._tasks.clear()
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            try:
+                task = TaskRecord.from_dict(item)
+            except KeyError:
+                continue
+            self._tasks[task.id] = task
+
+    def _save(self) -> None:
+        payload = [
+            task.to_dict()
+            for task in sorted(self._tasks.values(), key=lambda task: task.created_at)
+        ]
+        temp_path = self.storage_path.with_suffix(".json.tmp")
+        temp_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        temp_path.replace(self.storage_path)
 
     def reset(self) -> None:
         self._tasks.clear()
+        self._save()
 
     def create_tasks(self, raw_tasks: List[Any]) -> List[Dict[str, Any]]:
         created: List[Dict[str, Any]] = []
@@ -146,6 +197,7 @@ class TaskStore:
             self._tasks[task.id] = task
             created.append(task.to_dict())
 
+        self._save()
         return created
 
     def list_tasks(self) -> List[Dict[str, Any]]:
@@ -181,6 +233,7 @@ class TaskStore:
         if result is not None:
             task.result = result
         task.updated_at = time.time()
+        self._save()
         return task.to_dict()
 
 
@@ -1044,6 +1097,7 @@ if __name__ == "__main__":
     plan_agent.register_tool(ExecuteNextTaskTool(task_store, exec_agent))
 
     print(f"当前工作区：{WORKSPACE_DIR}")
+    print(f"任务文件：{_TASK_FILE}")
 
     while True:
         user_input = input("用户：")
