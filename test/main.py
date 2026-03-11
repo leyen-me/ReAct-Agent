@@ -226,6 +226,9 @@ class TaskStore:
             if task.status in {"done", "failed"}
         ]
 
+    def has_active_tasks(self) -> bool:
+        return any(task.status in {"pending", "running"} for task in self._tasks.values())
+
     def update_task(
         self, task_id: str, status: str, result: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -591,10 +594,14 @@ class BaseAgent:
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
         agent_name: str = "助手",
+        temperature: float = 1,
+        top_p: float = 0.95,
     ):
         self.model = model or OPENAI_MODEL
         self.agent_name = agent_name
         self.agent_color = INFO_COLOR
+        self.temperature = temperature
+        self.top_p = top_p
         self.client = OpenAI(
             api_key=OPENAI_API_KEY,
             base_url=OPENAI_BASE_URL,
@@ -650,8 +657,8 @@ class BaseAgent:
             "model": self.model,
             "messages": self.messages,
             "stream": True,
-            "temperature": 1,
-            "top_p": 0.95,
+            "temperature": self.temperature,
+            "top_p": self.top_p,
             # "extra_body": {"reasoning": {"enabled": False}},
             # "chat_template_kwargs": {"enable_thinking":False},
         }
@@ -954,7 +961,7 @@ class PlanAgent(BaseAgent):
    - 阅读必要文件
    - 然后拆分任务
 
-2. 使用 task_plan 工具创建任务列表。
+2. 对于需要真正落地的请求，使用 task_plan 创建任务列表后，应尽快调用 execute_next_task 开始执行，而不是停留在反复追问。
 
 3. 每个任务必须：
    - 明确
@@ -981,7 +988,7 @@ class PlanAgent(BaseAgent):
 
 工作区根目录是 WORKSPACE_DIR，所有路径都应理解为相对于该目录，而不是脚本所在目录。
 
-6. 你的目标是生成清晰的任务列表，而不是直接解决问题。
+6. 你的目标是生成清晰的任务列表，并推动可执行请求落地完成。
 
 7. 你可以在创建任务后调用 execute_next_task，把待办任务逐个交给 ExecuteAgent 执行；对于需要真正落地的需求，创建任务后就应立即开始调用它。
 
@@ -992,8 +999,30 @@ class PlanAgent(BaseAgent):
 10. 如果用户只是寒暄、提问或闲聊，不要创建任务。
 
 11. 当 execute_next_task 返回还有待办任务时，继续调用 execute_next_task；当没有待办任务时，再向用户汇总最终结果。
+
+12. 如果用户明确表示“随便”“任意”“都行”“你决定”，说明用户已经授权你自行决定细节。对于低风险、低歧义、可安全落地的请求，不要反复追问，应直接选择一个保守默认方案并执行。
+
+13. 低风险默认方案示例：
+- 创建简单示例文件时，默认放在工作区根目录
+- 创建 Python 示例时，可默认命名为 example.py
+- 文件内容应最小可用、可直接运行、便于用户理解
+
+14. 只有在以下情况才继续追问：
+- 会覆盖已有重要文件
+- 存在破坏性操作风险
+- 用户目标仍然无法安全执行
+
+15. 即使工作区为空，也可以直接创建新文件；“工作区为空”不是拒绝执行的理由。
+
+16. 调用 list_files 查看工作区根目录时，使用 "."，不要把 "WORKSPACE_DIR" 当作字面路径传给工具。
         """
-        super().__init__(model, system_prompt, agent_name="PlanAgent")
+        super().__init__(
+            model,
+            system_prompt,
+            agent_name="PlanAgent",
+            temperature=0.3,
+            top_p=0.85,
+        )
         self.agent_color = PLAN_COLOR
         self.task_store = task_store
         self.register_tool(ListFilesTool())
@@ -1069,7 +1098,13 @@ status = "failed"
 
 7. 提供简短清晰的执行结果。
         """
-        super().__init__(model, system_prompt, agent_name="ExecuteAgent")
+        super().__init__(
+            model,
+            system_prompt,
+            agent_name="ExecuteAgent",
+            temperature=0.6,
+            top_p=0.9,
+        )
         self.agent_color = EXECUTE_COLOR
         self.task_store = task_store
         self.register_tool(ListFilesTool())
@@ -1121,15 +1156,23 @@ if __name__ == "__main__":
 
     print(f"当前工作区：{WORKSPACE_DIR}")
     print(f"任务文件：{_TASK_FILE}")
+    print("输入 /reset 可清空当前会话和任务状态")
 
     while True:
         user_input = input("用户：")
         if user_input in {"quit", "exit"}:
             break
-        task_store.reset()
-        exec_agent.reset_conversation()
+        if user_input.strip() == "/reset":
+            task_store.reset()
+            exec_agent.reset_conversation()
+            plan_agent.reset_conversation()
+            print("已清空当前会话和任务状态")
+            continue
         # 1 规划任务
         plan_agent.chat(
             user_input,
-            reset_history=True,
+            reset_history=False,
         )
+        if not task_store.has_active_tasks():
+            task_store.reset()
+            exec_agent.reset_conversation()
