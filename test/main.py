@@ -4,6 +4,7 @@ import uuid
 import subprocess
 import time
 import logging
+import fnmatch
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -73,6 +74,27 @@ def safe_resolve_path(user_path: str) -> Path:
 
 def to_workspace_relative(path: Path) -> str:
     return str(path.resolve().relative_to(WORKSPACE_DIR))
+
+
+IGNORED_PATH_PARTS = {
+    ".git",
+    "node_modules",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "dist",
+    "build",
+    ".pytest_cache",
+    ".mypy_cache",
+}
+
+
+def should_ignore_path(path: Path, root: Path) -> bool:
+    try:
+        rel = path.resolve().relative_to(root.resolve())
+    except ValueError:
+        rel = path.resolve().relative_to(WORKSPACE_DIR)
+    return any(part in IGNORED_PATH_PARTS for part in rel.parts)
 
 
 # ================= TOOL BASE =================
@@ -260,6 +282,9 @@ class ListFilesTool(BaseTool):
         "properties": {
             "path": {"type": "string"},
             "depth": {"type": "integer"},
+            "type": {"type": "string"},
+            "glob": {"type": "string"},
+            "limit": {"type": "integer"},
         },
     }
 
@@ -267,28 +292,61 @@ class ListFilesTool(BaseTool):
 
         path = parameters.get("path", ".")
         depth = parameters.get("depth", 3)
+        entry_type = parameters.get("type", "all")
+        glob_pattern = parameters.get("glob")
+        limit = parameters.get("limit", 200)
 
         try:
 
             root = safe_resolve_path(path)
+            if not root.exists():
+                return self.fail("path not found")
+
+            if entry_type not in {"all", "file", "directory"}:
+                return self.fail("type must be one of: all, file, directory")
+
+            if limit < 1:
+                return self.fail("limit must be >= 1")
+
+            if root.is_file():
+                item_type = "file"
+                rel = root.relative_to(WORKSPACE_DIR)
+                if entry_type not in {"all", "file"}:
+                    return self.success([])
+                if glob_pattern and not fnmatch.fnmatch(root.name, glob_pattern):
+                    return self.success([])
+                return self.success([{"path": str(rel), "type": item_type}])
 
             results = []
 
             for p in root.rglob("*"):
+                if should_ignore_path(p, root):
+                    continue
 
                 rel = p.relative_to(WORKSPACE_DIR)
+                rel_to_root = p.relative_to(root)
 
-                if len(rel.parts) > depth:
+                if len(rel_to_root.parts) > depth:
+                    continue
+
+                item_type = "directory" if p.is_dir() else "file"
+
+                if entry_type != "all" and item_type != entry_type:
+                    continue
+
+                if glob_pattern and not fnmatch.fnmatch(str(rel_to_root), glob_pattern):
                     continue
 
                 results.append(
                     {
                         "path": str(rel),
-                        "type": "directory" if p.is_dir() else "file",
+                        "type": item_type,
                     }
                 )
 
-            return self.success(results)
+            results.sort(key=lambda item: (item["type"] != "directory", item["path"]))
+
+            return self.success(results[:limit])
 
         except Exception as e:
             return self.fail(str(e))
@@ -307,6 +365,10 @@ class SearchCodeTool(BaseTool):
         "properties": {
             "query": {"type": "string"},
             "max_results": {"type": "integer"},
+            "path": {"type": "string"},
+            "glob": {"type": "string"},
+            "regex": {"type": "boolean"},
+            "case_sensitive": {"type": "boolean"},
         },
         "required": ["query"],
     }
@@ -315,40 +377,88 @@ class SearchCodeTool(BaseTool):
 
         query = parameters["query"]
         max_results = parameters.get("max_results", 20)
-
-        results = []
+        path = parameters.get("path", ".")
+        glob_pattern = parameters.get("glob")
+        regex = parameters.get("regex", False)
+        case_sensitive = parameters.get("case_sensitive", True)
 
         try:
+            if max_results < 1:
+                return self.fail("max_results must be >= 1")
 
-            for file in WORKSPACE_DIR.rglob("*"):
+            target = safe_resolve_path(path)
+            if not target.exists():
+                return self.fail("path not found")
 
-                if not file.is_file():
+            command = ["rg", "--json", "--line-number", "--color", "never"]
+
+            if not regex:
+                command.append("--fixed-strings")
+
+            if not case_sensitive:
+                command.append("--ignore-case")
+
+            if glob_pattern:
+                command.extend(["--glob", glob_pattern])
+
+            command.extend([query, str(target)])
+
+            p = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                cwd=WORKSPACE_DIR,
+                timeout=20,
+            )
+
+            if p.returncode not in {0, 1}:
+                details = (p.stderr or p.stdout).strip() or "rg failed"
+                return self.fail(f"search failed (exit {p.returncode}): {details}")
+
+            results = []
+            for line in p.stdout.splitlines():
+                if not line.strip():
                     continue
 
                 try:
-
-                    with open(file, encoding="utf-8", errors="ignore") as f:
-
-                        for i, line in enumerate(f):
-
-                            if query in line:
-
-                                results.append(
-                                    {
-                                        "file": to_workspace_relative(file),
-                                        "line": i + 1,
-                                        "snippet": line.strip(),
-                                    }
-                                )
-
-                                if len(results) >= max_results:
-                                    return self.success(results)
-
-                except Exception:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
                     continue
+
+                if event.get("type") != "match":
+                    continue
+
+                data = event["data"]
+                path_data = data.get("path") or {}
+                lines_data = data.get("lines") or {}
+
+                file_path = path_data.get("text")
+                if not file_path:
+                    continue
+
+                snippet = (lines_data.get("text") or "").rstrip("\n")
+                match_line = data.get("line_number")
+
+                try:
+                    file_path = str(Path(file_path).resolve().relative_to(WORKSPACE_DIR))
+                except ValueError:
+                    file_path = file_path
+
+                results.append(
+                    {
+                        "file": file_path,
+                        "line": match_line,
+                        "snippet": snippet,
+                    }
+                )
+
+                if len(results) >= max_results:
+                    break
 
             return self.success(results)
 
+        except subprocess.TimeoutExpired:
+            return self.fail("search command timed out")
         except Exception as e:
             return self.fail(str(e))
 
