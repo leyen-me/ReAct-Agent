@@ -36,22 +36,30 @@ if not OPENAI_API_KEY:
 
 OPENAI_BASE_URL = "https://api.lkeap.cloud.tencent.com/coding/v3"
 OPENAI_MODEL = "minimax-m2.5"
-BASE_DIR = Path.cwd().resolve()
-
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_WORKSPACE_DIR = SCRIPT_DIR / "workspace"
+WORKSPACE_DIR = Path(
+    os.getenv("WORKSPACE_DIR", str(DEFAULT_WORKSPACE_DIR))
+).expanduser().resolve()
+WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
 
 # ================= PATH SECURITY =================
 
 
 def safe_resolve_path(user_path: str) -> Path:
 
-    abs_path = (BASE_DIR / user_path).resolve()
+    abs_path = (WORKSPACE_DIR / user_path).resolve()
 
     try:
-        abs_path.relative_to(BASE_DIR)
+        abs_path.relative_to(WORKSPACE_DIR)
     except ValueError:
         raise PermissionError("Path outside workspace")
 
     return abs_path
+
+
+def to_workspace_relative(path: Path) -> str:
+    return str(path.resolve().relative_to(WORKSPACE_DIR))
 
 
 # ================= TOOL BASE =================
@@ -193,7 +201,7 @@ class ListFilesTool(BaseTool):
 
             for p in root.rglob("*"):
 
-                rel = p.relative_to(BASE_DIR)
+                rel = p.relative_to(WORKSPACE_DIR)
 
                 if len(rel.parts) > depth:
                     continue
@@ -242,7 +250,7 @@ class GetFileMetadataTool(BaseTool):
 
             return self.success(
                 {
-                    "path": str(path),
+                    "path": to_workspace_relative(path),
                     "size_bytes": stat.st_size,
                     "line_count": line_count,
                 }
@@ -278,7 +286,7 @@ class SearchCodeTool(BaseTool):
 
         try:
 
-            for file in BASE_DIR.rglob("*"):
+            for file in WORKSPACE_DIR.rglob("*"):
 
                 if not file.is_file():
                     continue
@@ -293,7 +301,7 @@ class SearchCodeTool(BaseTool):
 
                                 results.append(
                                     {
-                                        "file": str(file.relative_to(BASE_DIR)),
+                                        "file": to_workspace_relative(file),
                                         "line": i + 1,
                                         "snippet": line.strip(),
                                     }
@@ -415,6 +423,7 @@ class ApplyPatchTool(BaseTool):
                 input=patch,
                 text=True,
                 capture_output=True,
+                cwd=WORKSPACE_DIR,
             )
 
             return self.success(
@@ -464,6 +473,7 @@ class RunCommandTool(BaseTool):
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                cwd=WORKSPACE_DIR,
             )
 
             return self.success(
@@ -494,6 +504,7 @@ class GitDiffTool(BaseTool):
                 ["git", "diff"],
                 capture_output=True,
                 text=True,
+                cwd=WORKSPACE_DIR,
             )
 
             return self.success(p.stdout)
@@ -542,7 +553,12 @@ class BaseAgent:
         self.messages = list(self.base_messages)
 
     def chat(
-        self, message: str, *, silent: bool = False, reset_history: bool = False
+        self,
+        message: str,
+        *,
+        silent: bool = False,
+        reset_history: bool = False,
+        stop_after_tool_names: Optional[List[str]] = None,
     ) -> str:
         """
         silent: 为 True 时不向用户打印任何内容（用于 exec_agent 内部执行，反馈给 plan_agent）
@@ -550,6 +566,7 @@ class BaseAgent:
         if reset_history:
             self.reset_conversation()
 
+        stop_after_tool_names = set(stop_after_tool_names or [])
         self.messages.append({"role": "user", "content": message})
         tools = self.get_tools()
         api_kwargs: Dict[str, Any] = {
@@ -651,6 +668,13 @@ class BaseAgent:
                             "content": result,
                         }
                     )
+                if any(
+                    call["function"]["name"] in stop_after_tool_names
+                    for call in tool_calls_list
+                ):
+                    if not silent:
+                        print()
+                    return full_content
                 continue
 
             if full_content:
@@ -814,11 +838,17 @@ class PlanAgent(BaseAgent):
 - read_file_lines
 - get_file_metadata
 
+工作区根目录是 WORKSPACE_DIR，所有路径都应理解为相对于该目录，而不是脚本所在目录。
+
 6. 你的目标是生成清晰的任务列表，而不是直接解决问题。
 
 7. 执行 Agent 会静默执行任务，并将结果反馈给你。
 
-8. 任务完成后，你会收到执行结果。若还有待办任务，请简要回复「继续」；若全部完成，请向用户汇报完成情况。
+8. 当你确认要拆分任务时，只调用一次 task_plan。
+
+9. 调用 task_plan 后立刻停止，不要继续追加新的 task_plan，不要假装任务已经执行完成。
+
+10. 如果用户只是寒暄、提问或闲聊，不要创建任务。
         """
         super().__init__(model, system_prompt)
         self.task_store = task_store
@@ -869,6 +899,8 @@ class ExecuteAgent(BaseAgent):
 - run_command
 - git_diff
 
+所有文件路径和命令执行目录都限定在 WORKSPACE_DIR。
+
 3. 执行任务时应该：
 
 步骤1：理解任务  
@@ -907,20 +939,23 @@ status = "failed"
 # ===================== TOOL Usage Example =====================
 
 
-def run_tasks(plan_agent: PlanAgent, exec_agent: ExecuteAgent, task_store: TaskStore):
-    """
-    exec_agent 不直接与用户交互，执行结果反馈给 plan_agent。
-    plan_agent 检查任务完成情况，决定下一个任务，直到问题解决。
-    """
-    summary_msg = (
-        "所有任务已执行完毕。请根据任务列表中的执行结果，向用户汇报完成情况。"
-    )
+def print_task_summary(task_store: TaskStore) -> None:
+    all_tasks = task_store.list_tasks()
+    if not all_tasks:
+        return
 
+    print("\n助手：任务执行完成，结果如下：")
+    for task in all_tasks:
+        print(f"- [{task['status']}] {task['description']}")
+
+
+def run_tasks(exec_agent: ExecuteAgent, task_store: TaskStore):
+    """
+    调度器负责顺序执行任务，并直接输出进度。
+    """
     while True:
         task = task_store.get_next_pending()
         if task is None:
-            # 所有任务完成，由 plan_agent 向用户汇报
-            plan_agent.chat(summary_msg)
             break
 
         task_store.update_task(task.id, "running")
@@ -950,20 +985,9 @@ def run_tasks(plan_agent: PlanAgent, exec_agent: ExecuteAgent, task_store: TaskS
         if latest_task is None:
             raise RuntimeError(f"task disappeared: {task.id}")
 
-        # 将执行结果反馈给 plan_agent
-        remaining = task_store.pending_tasks()
-        if remaining:
-            # 还有待办，plan_agent 知晓后继续下一轮
-            feedback = (
-                f"任务「{latest_task.description}」已结束，状态：{latest_task.status}。\n"
-                f"执行结果：{latest_task.result or result}\n\n"
-                "还有待办任务，请简要回复「继续」以执行下一个。"
-            )
-            plan_agent.chat(feedback)
-        else:
-            # 最后一个任务完成，plan_agent 向用户汇报
-            plan_agent.chat(summary_msg)
-            break
+        print(f"[任务结束] {latest_task.description} -> {latest_task.status}")
+
+    print_task_summary(task_store)
 
 
 if __name__ == "__main__":
@@ -971,12 +995,19 @@ if __name__ == "__main__":
     plan_agent = PlanAgent(task_store)
     exec_agent = ExecuteAgent(task_store)
 
+    print(f"当前工作区：{WORKSPACE_DIR}")
+
     while True:
         user_input = input("用户：")
         if user_input in {"quit", "exit"}:
             break
         task_store.reset()
         # 1 规划任务
-        plan_agent.chat(user_input, reset_history=True)
+        plan_agent.chat(
+            user_input,
+            reset_history=True,
+            stop_after_tool_names=["task_plan"],
+        )
         # 2 执行任务（exec_agent 静默执行，反馈给 plan_agent，由 plan_agent 驱动流转）
-        run_tasks(plan_agent, exec_agent, task_store)
+        if task_store.list_tasks():
+            run_tasks(exec_agent, task_store)
