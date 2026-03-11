@@ -21,6 +21,7 @@ import subprocess
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
+from html import escape
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -243,6 +244,45 @@ EXECUTE_AGENT_SYSTEM_PROMPT = """
   </output_contract>
 </system>
 """
+
+
+def get_now_time_text() -> str:
+    """返回当前本地时间文本，用于注入运行时上下文。"""
+    return time.strftime("%Y-%m-%d %H:%M:%S %z", time.localtime())
+
+
+def build_runtime_context_xml(agent_name: str, model_name: str) -> str:
+    """构造注入到 system prompt 中的运行时环境信息。"""
+    return "\n".join(
+        [
+            "  <runtime_context>",
+            f"    <agent_name>{escape(agent_name)}</agent_name>",
+            f"    <model>{escape(model_name)}</model>",
+            f"    <now_time>{escape(get_now_time_text())}</now_time>",
+            f"    <script_dir>{escape(str(SCRIPT_DIR))}</script_dir>",
+            f"    <workspace_dir>{escape(str(WORKSPACE_DIR))}</workspace_dir>",
+            (
+                "    <default_workspace_dir>"
+                f"{escape(str(DEFAULT_WORKSPACE_DIR))}"
+                "</default_workspace_dir>"
+            ),
+            f"    <task_file>{escape(str(_TASK_FILE))}</task_file>",
+            f"    <log_file>{escape(str(_LOG_FILE))}</log_file>",
+            "  </runtime_context>",
+        ]
+    )
+
+
+def with_runtime_context(
+    base_prompt: str,
+    *,
+    agent_name: str,
+    model_name: str,
+) -> str:
+    """把运行时上下文插入到 system XML 中，保持单一 <system> 根节点。"""
+    runtime_context_xml = build_runtime_context_xml(agent_name, model_name)
+    return base_prompt.replace("</system>", f"{runtime_context_xml}\n</system>", 1)
+
 
 # ==== 路径安全 ====
 
@@ -1274,7 +1314,11 @@ class PlanAgent(BaseAgent):
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
     ):
-        system_prompt = system_prompt or PLAN_AGENT_SYSTEM_PROMPT
+        system_prompt = system_prompt or with_runtime_context(
+            PLAN_AGENT_SYSTEM_PROMPT,
+            agent_name="PlanAgent",
+            model_name=model or OPENAI_MODEL,
+        )
         super().__init__(
             model,
             system_prompt,
@@ -1301,7 +1345,11 @@ class ExecuteAgent(BaseAgent):
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
     ):
-        system_prompt = system_prompt or EXECUTE_AGENT_SYSTEM_PROMPT
+        system_prompt = system_prompt or with_runtime_context(
+            EXECUTE_AGENT_SYSTEM_PROMPT,
+            agent_name="ExecuteAgent",
+            model_name=model or OPENAI_MODEL,
+        )
         super().__init__(
             model,
             system_prompt,
