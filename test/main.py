@@ -38,7 +38,7 @@ if not OPENAI_API_KEY:
 OPENAI_BASE_URL = "https://api.lkeap.cloud.tencent.com/coding/v3"
 OPENAI_MODEL = "minimax-m2.5"
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_WORKSPACE_DIR = SCRIPT_DIR / "workspace"
+DEFAULT_WORKSPACE_DIR = Path.cwd().resolve()
 WORKSPACE_DIR = Path(
     os.getenv("WORKSPACE_DIR", str(DEFAULT_WORKSPACE_DIR))
 ).expanduser().resolve()
