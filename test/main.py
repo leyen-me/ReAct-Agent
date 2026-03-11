@@ -4,9 +4,9 @@ import uuid
 import subprocess
 import time
 import logging
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from openai import OpenAI
 
@@ -85,6 +85,83 @@ class BaseTool:
             "description": self.description,
             "parameters": self.parameters,
         }
+
+
+@dataclass
+class TaskRecord:
+    id: str
+    description: str
+    status: str = "pending"
+    result: Optional[str] = None
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+class TaskStore:
+    def __init__(self):
+        self._tasks: Dict[str, TaskRecord] = {}
+
+    def reset(self) -> None:
+        self._tasks.clear()
+
+    def create_tasks(self, raw_tasks: List[Any]) -> List[Dict[str, Any]]:
+        created: List[Dict[str, Any]] = []
+
+        for raw_task in raw_tasks:
+            if isinstance(raw_task, dict):
+                description = str(raw_task.get("description", "")).strip()
+            else:
+                description = str(raw_task).strip()
+
+            if not description:
+                continue
+
+            if any(task.description == description for task in self._tasks.values()):
+                continue
+
+            task = TaskRecord(id=str(uuid.uuid4())[:8], description=description)
+            self._tasks[task.id] = task
+            created.append(task.to_dict())
+
+        return created
+
+    def list_tasks(self) -> List[Dict[str, Any]]:
+        return [task.to_dict() for task in self._tasks.values()]
+
+    def get(self, task_id: str) -> Optional[TaskRecord]:
+        return self._tasks.get(task_id)
+
+    def get_next_pending(self) -> Optional[TaskRecord]:
+        for task in self._tasks.values():
+            if task.status == "pending":
+                return task
+        return None
+
+    def pending_tasks(self) -> List[Dict[str, Any]]:
+        return [
+            task.to_dict()
+            for task in self._tasks.values()
+            if task.status == "pending"
+        ]
+
+    def update_task(
+        self, task_id: str, status: str, result: Optional[str] = None
+    ) -> Dict[str, Any]:
+        if status not in TASK_STATUS:
+            raise ValueError("invalid status")
+
+        task = self.get(task_id)
+        if not task:
+            raise KeyError("task not found")
+
+        task.status = status
+        if result is not None:
+            task.result = result
+        task.updated_at = time.time()
+        return task.to_dict()
 
 
 # ================= FILE NAVIGATION =================
@@ -436,12 +513,14 @@ class BaseAgent:
             timeout=300.0,
         )
         self.tools = []
-        self.messages: List[Dict[str, Any]] = [
+        self.system_prompt = system_prompt or "You are a helpful assistant."
+        self.base_messages: List[Dict[str, Any]] = [
             {
                 "role": "system",
-                "content": system_prompt or "You are a helpful assistant.",
+                "content": self.system_prompt,
             }
         ]
+        self.messages: List[Dict[str, Any]] = list(self.base_messages)
 
     def register_tool(self, tool: BaseTool) -> None:
         self.tools.append(tool)
@@ -459,10 +538,18 @@ class BaseAgent:
             return f"未找到工具：{name}"
         return tool.run(args)
 
-    def chat(self, message: str, *, silent: bool = False) -> str:
+    def reset_conversation(self) -> None:
+        self.messages = list(self.base_messages)
+
+    def chat(
+        self, message: str, *, silent: bool = False, reset_history: bool = False
+    ) -> str:
         """
         silent: 为 True 时不向用户打印任何内容（用于 exec_agent 内部执行，反馈给 plan_agent）
         """
+        if reset_history:
+            self.reset_conversation()
+
         self.messages.append({"role": "user", "content": message})
         tools = self.get_tools()
         api_kwargs: Dict[str, Any] = {
@@ -545,6 +632,13 @@ class BaseAgent:
                     }
                     for data in tool_call_acc.values()
                 ]
+                self.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": full_content or "",
+                        "tool_calls": tool_calls_list,
+                    }
+                )
                 for call in tool_calls_list:
                     result = self.execute_tool(
                         call["function"]["name"],
@@ -572,12 +666,12 @@ class BaseAgent:
 
 # ===================== Plan Agent =====================
 
-tasks = {}
-
 TASK_STATUS = ["pending", "running", "done", "failed"]
 
 
 class TaskPlanTool(BaseTool):
+    def __init__(self, task_store: TaskStore):
+        self.task_store = task_store
 
     name = "task_plan"
     description = "Create tasks"
@@ -599,28 +693,13 @@ class TaskPlanTool(BaseTool):
 
     def run(self, parameters):
 
-        created = []
-
-        for desc in parameters["tasks"]:
-
-            task_id = str(uuid.uuid4())[:8]
-
-            task = {
-                "id": task_id,
-                "description": desc,
-                "status": "pending",
-                "result": None,
-                "created_at": time.time(),
-            }
-
-            tasks[task_id] = task
-
-            created.append(task)
-
+        created = self.task_store.create_tasks(parameters["tasks"])
         return self.success(created)
 
 
 class TaskListTool(BaseTool):
+    def __init__(self, task_store: TaskStore):
+        self.task_store = task_store
 
     name = "list_tasks"
     description = "List tasks"
@@ -629,10 +708,12 @@ class TaskListTool(BaseTool):
 
     def run(self, parameters):
 
-        return self.success(list(tasks.values()))
+        return self.success(self.task_store.list_tasks())
 
 
 class TaskUpdateTool(BaseTool):
+    def __init__(self, task_store: TaskStore):
+        self.task_store = task_store
 
     name = "update_task"
 
@@ -651,25 +732,22 @@ class TaskUpdateTool(BaseTool):
 
     def run(self, parameters):
 
-        task_id = parameters["task_id"]
-
-        if task_id not in tasks:
+        try:
+            updated = self.task_store.update_task(
+                task_id=parameters["task_id"],
+                status=parameters["status"],
+                result=parameters.get("result"),
+            )
+            return self.success(updated)
+        except KeyError:
             return self.fail("task not found")
-
-        status = parameters["status"]
-
-        if status not in TASK_STATUS:
+        except ValueError:
             return self.fail("invalid status")
-
-        tasks[task_id]["status"] = status
-
-        if "result" in parameters:
-            tasks[task_id]["result"] = parameters["result"]
-
-        return self.success(tasks[task_id])
 
 
 class TaskNextTool(BaseTool):
+    def __init__(self, task_store: TaskStore):
+        self.task_store = task_store
 
     name = "next_task"
     description = "Get next pending task"
@@ -678,12 +756,9 @@ class TaskNextTool(BaseTool):
 
     def run(self, parameters):
 
-        for task in tasks.values():
-            if task["status"] == "pending":
-                return self.success(task)
+        task = self.task_store.get_next_pending()
+        return self.success(task.to_dict() if task else None)
 
-        return self.success(None)
-    
 
 class PlanAgent(BaseAgent):
     """
@@ -696,11 +771,12 @@ class PlanAgent(BaseAgent):
     """
 
     def __init__(
-        self, model: Optional[str] = None, system_prompt: Optional[str] = None
+        self,
+        task_store: TaskStore,
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ):
-        super().__init__(model, system_prompt)
-        
-        system_prompt = """
+        system_prompt = system_prompt or """
 你是一个任务规划 Agent（PlanAgent）。
 
 你的职责是理解用户需求，并将复杂任务拆分成多个可执行的小任务。
@@ -744,17 +820,15 @@ class PlanAgent(BaseAgent):
 
 8. 任务完成后，你会收到执行结果。若还有待办任务，请简要回复「继续」；若全部完成，请向用户汇报完成情况。
         """
-        self.messages.append({
-            "role": "system",
-            "content": system_prompt,
-        })
+        super().__init__(model, system_prompt)
+        self.task_store = task_store
         self.register_tool(ListFilesTool())
         self.register_tool(GetFileMetadataTool())
         self.register_tool(SearchCodeTool())
         self.register_tool(ReadFileLinesTool())
-        self.register_tool(TaskPlanTool())
-        self.register_tool(TaskListTool())
-        self.register_tool(TaskNextTool())
+        self.register_tool(TaskPlanTool(task_store))
+        self.register_tool(TaskListTool(task_store))
+        self.register_tool(TaskNextTool(task_store))
 
 
 # ===================== Execute Agent =====================
@@ -762,10 +836,12 @@ class PlanAgent(BaseAgent):
 
 class ExecuteAgent(BaseAgent):
     def __init__(
-        self, model: Optional[str] = None, system_prompt: Optional[str] = None
+        self,
+        task_store: TaskStore,
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
     ):
-        super().__init__(model, system_prompt)
-        system_prompt = """
+        system_prompt = system_prompt or """
 你是一个任务执行 Agent（ExecuteAgent）。
 
 你的职责是执行单个任务，并反馈执行结果。
@@ -815,12 +891,8 @@ status = "failed"
 
 7. 提供简短清晰的执行结果。
         """
-        self.messages.append(
-            {
-                "role": "system",
-                "content": system_prompt,
-            }
-        )
+        super().__init__(model, system_prompt)
+        self.task_store = task_store
         self.register_tool(ListFilesTool())
         self.register_tool(GetFileMetadataTool())
         self.register_tool(SearchCodeTool())
@@ -829,13 +901,13 @@ status = "failed"
         self.register_tool(ApplyPatchTool())
         self.register_tool(RunCommandTool())
         self.register_tool(GitDiffTool())
-        self.register_tool(TaskUpdateTool())
+        self.register_tool(TaskUpdateTool(task_store))
 
 
 # ===================== TOOL Usage Example =====================
 
 
-def run_tasks(plan_agent, exec_agent):
+def run_tasks(plan_agent: PlanAgent, exec_agent: ExecuteAgent, task_store: TaskStore):
     """
     exec_agent 不直接与用户交互，执行结果反馈给 plan_agent。
     plan_agent 检查任务完成情况，决定下一个任务，直到问题解决。
@@ -845,29 +917,46 @@ def run_tasks(plan_agent, exec_agent):
     )
 
     while True:
-        pending = [t for t in tasks.values() if t["status"] == "pending"]
-        if not pending:
+        task = task_store.get_next_pending()
+        if task is None:
             # 所有任务完成，由 plan_agent 向用户汇报
             plan_agent.chat(summary_msg)
             break
 
-        task = pending[0]
-        task["status"] = "running"
-        print(f"\n[执行中] {task['description']}")
+        task_store.update_task(task.id, "running")
+        print(f"\n[执行中] {task.description}")
 
         # exec_agent 静默执行，不向用户打印，结果仅反馈给 plan_agent
-        result = exec_agent.chat(task["description"], silent=True)
+        task_prompt = (
+            f"任务ID：{task.id}\n"
+            f"任务描述：{task.description}\n\n"
+            "执行完成后请调用 update_task 更新最终状态。"
+        )
+        try:
+            result = exec_agent.chat(task_prompt, silent=True, reset_history=True)
+        except Exception as e:
+            logger.exception("执行任务失败: %s", task.description)
+            result = f"执行异常：{e}"
+            task_store.update_task(task.id, "failed", result=result)
 
-        task["status"] = "done"
-        task["result"] = result
+        latest_task = task_store.get(task.id)
+        if latest_task and latest_task.status == "running":
+            task_store.update_task(task.id, "done", result=result)
+            latest_task = task_store.get(task.id)
+        elif latest_task and not latest_task.result:
+            task_store.update_task(task.id, latest_task.status, result=result)
+            latest_task = task_store.get(task.id)
+
+        if latest_task is None:
+            raise RuntimeError(f"task disappeared: {task.id}")
 
         # 将执行结果反馈给 plan_agent
-        remaining = [t for t in tasks.values() if t["status"] == "pending"]
+        remaining = task_store.pending_tasks()
         if remaining:
             # 还有待办，plan_agent 知晓后继续下一轮
             feedback = (
-                f"任务「{task['description']}」已完成。\n"
-                f"执行结果：{result}\n\n"
+                f"任务「{latest_task.description}」已结束，状态：{latest_task.status}。\n"
+                f"执行结果：{latest_task.result or result}\n\n"
                 "还有待办任务，请简要回复「继续」以执行下一个。"
             )
             plan_agent.chat(feedback)
@@ -878,14 +967,16 @@ def run_tasks(plan_agent, exec_agent):
 
 
 if __name__ == "__main__":
-    plan_agent = PlanAgent()
-    exec_agent = ExecuteAgent()
+    task_store = TaskStore()
+    plan_agent = PlanAgent(task_store)
+    exec_agent = ExecuteAgent(task_store)
 
     while True:
         user_input = input("用户：")
         if user_input in {"quit", "exit"}:
             break
+        task_store.reset()
         # 1 规划任务
-        plan_agent.chat(user_input)
+        plan_agent.chat(user_input, reset_history=True)
         # 2 执行任务（exec_agent 静默执行，反馈给 plan_agent，由 plan_agent 驱动流转）
-        run_tasks(plan_agent, exec_agent)
+        run_tasks(plan_agent, exec_agent, task_store)
