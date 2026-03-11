@@ -294,47 +294,6 @@ class ListFilesTool(BaseTool):
             return self.fail(str(e))
 
 
-# ================= METADATA =================
-
-
-class GetFileMetadataTool(BaseTool):
-
-    name = "get_file_metadata"
-    description = "Get metadata of file"
-
-    parameters = {
-        "type": "object",
-        "properties": {"path": {"type": "string"}},
-        "required": ["path"],
-    }
-
-    def run(self, parameters):
-
-        try:
-
-            path = safe_resolve_path(parameters["path"])
-
-            stat = path.stat()
-
-            line_count = 0
-
-            if path.is_file():
-
-                with open(path, encoding="utf-8", errors="ignore") as f:
-                    line_count = sum(1 for _ in f)
-
-            return self.success(
-                {
-                    "path": to_workspace_relative(path),
-                    "size_bytes": stat.st_size,
-                    "line_count": line_count,
-                }
-            )
-
-        except Exception as e:
-            return self.fail(str(e))
-
-
 # ================= SEARCH =================
 
 
@@ -527,6 +486,64 @@ class ReplaceInFileTool(BaseTool):
             return self.fail(str(e))
 
 
+class EditByLinesTool(BaseTool):
+
+    name = "edit_by_lines"
+    description = "Replace a line range"
+
+    parameters = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "start_line": {"type": "integer"},
+            "end_line": {"type": "integer"},
+            "new_text": {"type": "string"},
+        },
+        "required": ["path", "start_line", "end_line", "new_text"],
+    }
+
+    def run(self, parameters):
+
+        try:
+
+            path = safe_resolve_path(parameters["path"])
+            start_line = parameters["start_line"]
+            end_line = parameters["end_line"]
+            new_text = parameters["new_text"]
+
+            if start_line < 1 or end_line < start_line:
+                return self.fail("invalid line range")
+
+            lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+            total_lines = len(lines)
+
+            if end_line > total_lines:
+                return self.fail(
+                    f"line range out of bounds (file has {total_lines} lines)"
+                )
+
+            replacement_lines = new_text.splitlines(keepends=True)
+            if new_text and not new_text.endswith(("\n", "\r")):
+                replacement_lines.append("\n")
+
+            updated_lines = (
+                lines[: start_line - 1] + replacement_lines + lines[end_line:]
+            )
+            path.write_text("".join(updated_lines), encoding="utf-8")
+
+            return self.success(
+                {
+                    "path": to_workspace_relative(path),
+                    "start_line": start_line,
+                    "end_line": end_line,
+                    "new_line_count": len(replacement_lines),
+                }
+            )
+
+        except Exception as e:
+            return self.fail(str(e))
+
+
 # ================= COMMAND =================
 
 
@@ -572,31 +589,6 @@ class RunCommandTool(BaseTool):
                     "exit_code": p.returncode,
                 }
             )
-
-        except Exception as e:
-            return self.fail(str(e))
-
-
-# ================= GIT =================
-class GitDiffTool(BaseTool):
-
-    name = "git_diff"
-    description = "Show git diff"
-
-    parameters = {"type": "object", "properties": {}}
-
-    def run(self, parameters):
-
-        try:
-
-            p = subprocess.run(
-                ["git", "diff"],
-                capture_output=True,
-                text=True,
-                cwd=WORKSPACE_DIR,
-            )
-
-            return self.success(p.stdout)
 
         except Exception as e:
             return self.fail(str(e))
@@ -823,20 +815,6 @@ class TaskPlanTool(BaseTool):
         return self.success(created)
 
 
-class TaskListTool(BaseTool):
-    def __init__(self, task_store: TaskStore):
-        self.task_store = task_store
-
-    name = "list_tasks"
-    description = "List tasks"
-
-    parameters = {"type": "object", "properties": {}}
-
-    def run(self, parameters):
-
-        return self.success(self.task_store.list_tasks())
-
-
 class TaskUpdateTool(BaseTool):
     def __init__(self, task_store: TaskStore):
         self.task_store = task_store
@@ -869,21 +847,6 @@ class TaskUpdateTool(BaseTool):
             return self.fail("task not found")
         except ValueError:
             return self.fail("invalid status")
-
-
-class TaskNextTool(BaseTool):
-    def __init__(self, task_store: TaskStore):
-        self.task_store = task_store
-
-    name = "next_task"
-    description = "Get next pending task"
-
-    parameters = {"type": "object", "properties": {}}
-
-    def run(self, parameters):
-
-        task = self.task_store.get_next_pending()
-        return self.success(task.to_dict() if task else None)
 
 
 def execute_single_task(exec_agent: "ExecuteAgent", task_store: TaskStore) -> Dict[str, Any]:
@@ -998,7 +961,6 @@ class PlanAgent(BaseAgent):
 - list_files
 - search_code
 - read_file_lines
-- get_file_metadata
 
 工作区根目录是 WORKSPACE_DIR，所有路径都应理解为相对于该目录，而不是脚本所在目录。
 
@@ -1032,7 +994,7 @@ class PlanAgent(BaseAgent):
 
 17. 你只能直接调用自己已注册的工具，但这不代表整个系统没有其他工具。代码修改、命令执行等能力可能由 ExecuteAgent 持有。
 
-18. 当用户提到 replace_in_file、write_file、run_command、git_diff 等执行类工具，或明确要求修改文件、运行命令、验证结果时，不要仅因为你自己不能直接调用这些工具就说“没有这个工具”。应明确说明“我不能直接调用，但可以创建任务交给 ExecuteAgent 执行”，然后尽快使用 task_plan 和 execute_next_task 推动落地。
+18. 当用户提到 replace_in_file、edit_by_lines、write_file、run_command 等执行类工具，或明确要求修改文件、运行命令、验证结果时，不要仅因为你自己不能直接调用这些工具就说“没有这个工具”。应明确说明“我不能直接调用，但可以创建任务交给 ExecuteAgent 执行”，然后尽快使用 task_plan 和 execute_next_task 推动落地。
         """
         super().__init__(
             model,
@@ -1044,12 +1006,9 @@ class PlanAgent(BaseAgent):
         self.agent_color = PLAN_COLOR
         self.task_store = task_store
         self.register_tool(ListFilesTool())
-        self.register_tool(GetFileMetadataTool())
         self.register_tool(SearchCodeTool())
         self.register_tool(ReadFileLinesTool())
         self.register_tool(TaskPlanTool(task_store))
-        self.register_tool(TaskListTool(task_store))
-        self.register_tool(TaskNextTool(task_store))
 
 
 # ===================== Execute Agent =====================
@@ -1082,15 +1041,14 @@ class ExecuteAgent(BaseAgent):
 - list_files
 - search_code
 - read_file_lines
-- get_file_metadata
 
 代码修改：
 - write_file
 - replace_in_file
+- edit_by_lines
 
 系统操作：
 - run_command
-- git_diff
 
 所有文件路径和命令执行目录都限定在 WORKSPACE_DIR。
 
@@ -1104,8 +1062,9 @@ class ExecuteAgent(BaseAgent):
 4. 尽量使用工具，而不是猜测代码。
 
 5. 如果需要修改代码：
-优先使用 replace_in_file 做局部精确修改；仅在需要新建文件或整体重写时使用 write_file。
+优先使用 replace_in_file 做唯一文本块替换；当你已经明确知道精确行区间时，使用 edit_by_lines；仅在需要新建文件或整体重写时使用 write_file。
 调用 replace_in_file 时，old_string 应包含足够的上下文，且必须保证在文件中唯一匹配；如果不唯一，应先继续读取更多上下文，再重试。
+调用 edit_by_lines 前，应先用 read_file_lines 确认目标行范围和当前内容，避免基于猜测修改。
 
 6. 当任务完成时，需要调用 update_task：
 
@@ -1127,13 +1086,12 @@ status = "failed"
         self.agent_color = EXECUTE_COLOR
         self.task_store = task_store
         self.register_tool(ListFilesTool())
-        self.register_tool(GetFileMetadataTool())
         self.register_tool(SearchCodeTool())
         self.register_tool(ReadFileLinesTool())
         self.register_tool(WriteFileTool())
         self.register_tool(ReplaceInFileTool())
+        self.register_tool(EditByLinesTool())
         self.register_tool(RunCommandTool())
-        self.register_tool(GitDiffTool())
         self.register_tool(TaskUpdateTool(task_store))
 
 
