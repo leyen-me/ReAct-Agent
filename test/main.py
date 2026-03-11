@@ -219,6 +219,13 @@ class TaskStore:
             if task.status == "pending"
         ]
 
+    def completed_tasks(self) -> List[Dict[str, Any]]:
+        return [
+            task.to_dict()
+            for task in sorted(self._tasks.values(), key=lambda task: task.created_at)
+            if task.status in {"done", "failed"}
+        ]
+
     def update_task(
         self, task_id: str, status: str, result: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -866,9 +873,23 @@ def execute_single_task(exec_agent: "ExecuteAgent", task_store: TaskStore) -> Di
     task_store.update_task(task.id, "running")
     print(color_text(f"\n[执行中] {task.description}", EXECUTE_COLOR))
 
+    previous_task_lines = []
+    for previous in task_store.completed_tasks():
+        result = (previous.get("result") or "").strip()
+        if len(result) > 200:
+            result = result[:200] + "..."
+        previous_task_lines.append(
+            f"- [{previous['status']}] {previous['description']}"
+            + (f" | 结果：{result}" if result else "")
+        )
+
+    previous_task_summary = "\n".join(previous_task_lines) or "无"
+
     task_prompt = (
         f"任务ID：{task.id}\n"
         f"任务描述：{task.description}\n\n"
+        f"已完成任务摘要：\n{previous_task_summary}\n\n"
+        "你正在延续同一个项目，请基于当前工作区现状和上述已完成任务继续执行，不要从零假设整个项目。\n"
         "执行完成后请调用 update_task 更新最终状态。调用后不要继续长篇总结。"
     )
 
@@ -876,7 +897,7 @@ def execute_single_task(exec_agent: "ExecuteAgent", task_store: TaskStore) -> Di
         result = exec_agent.chat(
             task_prompt,
             silent=False,
-            reset_history=True,
+            reset_history=False,
             stop_after_tool_names=["update_task"],
         )
     except Exception as e:
@@ -999,6 +1020,8 @@ class ExecuteAgent(BaseAgent):
 
 你的职责是执行单个任务，并反馈执行结果。
 
+同一轮用户请求中的多个任务属于同一个连续项目，你需要继承之前任务已经完成的工作，而不是把每个任务都当成全新项目。
+
 规则：
 
 1. 你会收到一个任务描述，例如：
@@ -1104,6 +1127,7 @@ if __name__ == "__main__":
         if user_input in {"quit", "exit"}:
             break
         task_store.reset()
+        exec_agent.reset_conversation()
         # 1 规划任务
         plan_agent.chat(
             user_input,
