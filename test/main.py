@@ -492,14 +492,24 @@ class ApplyPatchTool(BaseTool):
         try:
 
             patch = parameters["patch"]
+            strip_count = (
+                1
+                if patch.startswith("--- a/") or "\n--- a/" in patch
+                else 0
+            )
 
             p = subprocess.run(
-                ["patch", "-p0"],
+                ["patch", "--batch", f"-p{strip_count}"],
                 input=patch,
                 text=True,
                 capture_output=True,
                 cwd=WORKSPACE_DIR,
+                timeout=10,
             )
+
+            if p.returncode != 0:
+                details = (p.stderr or p.stdout).strip() or "patch failed"
+                return self.fail(f"patch failed (exit {p.returncode}): {details}")
 
             return self.success(
                 {
@@ -509,6 +519,8 @@ class ApplyPatchTool(BaseTool):
                 }
             )
 
+        except subprocess.TimeoutExpired:
+            return self.fail("patch command timed out")
         except Exception as e:
             return self.fail(str(e))
 
@@ -1015,6 +1027,10 @@ class PlanAgent(BaseAgent):
 15. 即使工作区为空，也可以直接创建新文件；“工作区为空”不是拒绝执行的理由。
 
 16. 调用 list_files 查看工作区根目录时，使用 "."，不要把 "WORKSPACE_DIR" 当作字面路径传给工具。
+
+17. 你只能直接调用自己已注册的工具，但这不代表整个系统没有其他工具。代码修改、命令执行等能力可能由 ExecuteAgent 持有。
+
+18. 当用户提到 apply_patch、write_file、run_command、git_diff 等执行类工具，或明确要求修改文件、运行命令、验证结果时，不要仅因为你自己不能直接调用这些工具就说“没有这个工具”。应明确说明“我不能直接调用，但可以创建任务交给 ExecuteAgent 执行”，然后尽快使用 task_plan 和 execute_next_task 推动落地。
         """
         super().__init__(
             model,
