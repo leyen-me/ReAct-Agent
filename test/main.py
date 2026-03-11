@@ -805,6 +805,52 @@ class TaskNextTool(BaseTool):
         return self.success(task.to_dict() if task else None)
 
 
+def execute_single_task(exec_agent: "ExecuteAgent", task_store: TaskStore) -> Dict[str, Any]:
+    task = task_store.get_next_pending()
+    if task is None:
+        return {"executed": False, "task": None}
+
+    task_store.update_task(task.id, "running")
+    print(color_text(f"\n[执行中] {task.description}", EXECUTE_COLOR))
+
+    task_prompt = (
+        f"任务ID：{task.id}\n"
+        f"任务描述：{task.description}\n\n"
+        "执行完成后请调用 update_task 更新最终状态。调用后不要继续长篇总结。"
+    )
+
+    try:
+        result = exec_agent.chat(
+            task_prompt,
+            silent=False,
+            reset_history=True,
+            stop_after_tool_names=["update_task"],
+        )
+    except Exception as e:
+        logger.exception("执行任务失败: %s", task.description)
+        result = f"执行异常：{e}"
+        task_store.update_task(task.id, "failed", result=result)
+
+    latest_task = task_store.get(task.id)
+    if latest_task and latest_task.status == "running":
+        task_store.update_task(task.id, "done", result=result)
+        latest_task = task_store.get(task.id)
+    elif latest_task and not latest_task.result:
+        task_store.update_task(task.id, latest_task.status, result=result)
+        latest_task = task_store.get(task.id)
+
+    if latest_task is None:
+        raise RuntimeError(f"task disappeared: {task.id}")
+
+    print(
+        color_text(
+            f"[任务结束] {latest_task.description} -> {latest_task.status}",
+            EXECUTE_COLOR,
+        )
+    )
+    return {"executed": True, "task": latest_task.to_dict()}
+
+
 class PlanAgent(BaseAgent):
     """
     1. 与用户直接交互的 PlanAgent， 用户不会直接与 ExecuteAgent 交互
@@ -863,13 +909,15 @@ class PlanAgent(BaseAgent):
 
 6. 你的目标是生成清晰的任务列表，而不是直接解决问题。
 
-7. 执行 Agent 会向用户展示执行过程。
+7. 你可以在创建任务后调用 execute_next_task，把待办任务逐个交给 ExecuteAgent 执行；对于需要真正落地的需求，创建任务后就应立即开始调用它。
 
 8. 当你确认要拆分任务时，只调用一次 task_plan。
 
-9. 调用 task_plan 后立刻停止，不要继续追加新的 task_plan，不要假装任务已经执行完成。
+9. 不要继续追加新的 task_plan。创建任务后，应该转入执行和汇总，而不是重复规划。
 
 10. 如果用户只是寒暄、提问或闲聊，不要创建任务。
+
+11. 当 execute_next_task 返回还有待办任务时，继续调用 execute_next_task；当没有待办任务时，再向用户汇总最终结果。
         """
         super().__init__(model, system_prompt, agent_name="PlanAgent")
         self.agent_color = PLAN_COLOR
@@ -962,6 +1010,23 @@ status = "failed"
 # ===================== TOOL Usage Example =====================
 
 
+class ExecuteNextTaskTool(BaseTool):
+    def __init__(self, task_store: TaskStore, exec_agent: ExecuteAgent):
+        self.task_store = task_store
+        self.exec_agent = exec_agent
+
+    name = "execute_next_task"
+    description = "Dispatch next pending task to ExecuteAgent"
+    parameters = {"type": "object", "properties": {}}
+
+    def run(self, parameters):
+        try:
+            result = execute_single_task(self.exec_agent, self.task_store)
+            return self.success(result)
+        except Exception as e:
+            return self.fail(str(e))
+
+
 def print_task_summary(task_store: TaskStore) -> None:
     all_tasks = task_store.list_tasks()
     if not all_tasks:
@@ -972,56 +1037,11 @@ def print_task_summary(task_store: TaskStore) -> None:
         print(f"- [{task['status']}] {task['description']}")
 
 
-def run_tasks(exec_agent: ExecuteAgent, task_store: TaskStore):
-    """
-    调度器负责顺序执行任务，并直接输出进度。
-    """
-    while True:
-        task = task_store.get_next_pending()
-        if task is None:
-            break
-
-        task_store.update_task(task.id, "running")
-        print(color_text(f"\n[执行中] {task.description}", EXECUTE_COLOR))
-
-        # ExecuteAgent 直接向用户展示执行过程
-        task_prompt = (
-            f"任务ID：{task.id}\n"
-            f"任务描述：{task.description}\n\n"
-            "执行完成后请调用 update_task 更新最终状态。"
-        )
-        try:
-            result = exec_agent.chat(task_prompt, silent=False, reset_history=True)
-        except Exception as e:
-            logger.exception("执行任务失败: %s", task.description)
-            result = f"执行异常：{e}"
-            task_store.update_task(task.id, "failed", result=result)
-
-        latest_task = task_store.get(task.id)
-        if latest_task and latest_task.status == "running":
-            task_store.update_task(task.id, "done", result=result)
-            latest_task = task_store.get(task.id)
-        elif latest_task and not latest_task.result:
-            task_store.update_task(task.id, latest_task.status, result=result)
-            latest_task = task_store.get(task.id)
-
-        if latest_task is None:
-            raise RuntimeError(f"task disappeared: {task.id}")
-
-        print(
-            color_text(
-                f"[任务结束] {latest_task.description} -> {latest_task.status}",
-                EXECUTE_COLOR,
-            )
-        )
-
-    print_task_summary(task_store)
-
-
 if __name__ == "__main__":
     task_store = TaskStore()
-    plan_agent = PlanAgent(task_store)
     exec_agent = ExecuteAgent(task_store)
+    plan_agent = PlanAgent(task_store)
+    plan_agent.register_tool(ExecuteNextTaskTool(task_store, exec_agent))
 
     print(f"当前工作区：{WORKSPACE_DIR}")
 
@@ -1034,8 +1054,4 @@ if __name__ == "__main__":
         plan_agent.chat(
             user_input,
             reset_history=True,
-            stop_after_tool_names=["task_plan"],
         )
-        # 2 执行任务（exec_agent 静默执行，反馈给 plan_agent，由 plan_agent 驱动流转）
-        if task_store.list_tasks():
-            run_tasks(exec_agent, task_store)
