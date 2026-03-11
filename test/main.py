@@ -749,6 +749,33 @@ class BaseAgent:
             return f"未找到工具：{name}"
         return tool.run(args)
 
+    def format_tool_result(self, result: str, max_len: int = 600) -> str:
+        try:
+            payload = json.loads(result)
+        except Exception:
+            text = result.strip()
+        else:
+            if isinstance(payload, dict) and "success" in payload:
+                if payload.get("success"):
+                    text = json.dumps(
+                        {"success": True, "data": payload.get("data")},
+                        ensure_ascii=False,
+                    )
+                else:
+                    text = json.dumps(
+                        {"success": False, "error": payload.get("error")},
+                        ensure_ascii=False,
+                    )
+            else:
+                text = json.dumps(payload, ensure_ascii=False)
+
+        text = text.strip()
+        if not text:
+            return "<empty>"
+        if len(text) <= max_len:
+            return text
+        return text[:max_len] + "...<truncated>"
+
     def reset_conversation(self) -> None:
         self.messages = list(self.base_messages)
 
@@ -865,6 +892,12 @@ class BaseAgent:
                         call["function"]["name"],
                         call["function"]["arguments"],
                     )
+                    if not silent:
+                        print(
+                            f"【工具结果】{call['function']['name']} -> "
+                            f"{self.format_tool_result(result)}",
+                            flush=True,
+                        )
                     self.messages.append(
                         {
                             "role": "tool",
