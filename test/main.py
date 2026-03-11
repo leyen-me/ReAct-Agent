@@ -43,6 +43,18 @@ WORKSPACE_DIR = Path(
 ).expanduser().resolve()
 WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
 
+ENABLE_COLOR = os.getenv("NO_COLOR") is None and os.getenv("TERM") != "dumb"
+ANSI_RESET = "\033[0m"
+PLAN_COLOR = "\033[38;5;25m"
+EXECUTE_COLOR = "\033[38;5;81m"
+INFO_COLOR = "\033[38;5;244m"
+
+
+def color_text(text: str, color: str) -> str:
+    if not ENABLE_COLOR:
+        return text
+    return f"{color}{text}{ANSI_RESET}"
+
 # ================= PATH SECURITY =================
 
 
@@ -515,9 +527,14 @@ class GitDiffTool(BaseTool):
 
 class BaseAgent:
     def __init__(
-        self, model: Optional[str] = None, system_prompt: Optional[str] = None
+        self,
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        agent_name: str = "助手",
     ):
         self.model = model or OPENAI_MODEL
+        self.agent_name = agent_name
+        self.agent_color = INFO_COLOR
         self.client = OpenAI(
             api_key=OPENAI_API_KEY,
             base_url=OPENAI_BASE_URL,
@@ -590,7 +607,11 @@ class BaseAgent:
             last_tool_call_id: Optional[str] = None
 
             if not silent:
-                print("\n助手：", end="", flush=True)
+                print(
+                    f"\n{color_text(f'{self.agent_name}：', self.agent_color)}",
+                    end="",
+                    flush=True,
+                )
             tool_call_started = False  # 是否已输出过工具调用前缀
             for chunk in stream:
                 if not chunk.choices:
@@ -842,7 +863,7 @@ class PlanAgent(BaseAgent):
 
 6. 你的目标是生成清晰的任务列表，而不是直接解决问题。
 
-7. 执行 Agent 会静默执行任务，并将结果反馈给你。
+7. 执行 Agent 会向用户展示执行过程。
 
 8. 当你确认要拆分任务时，只调用一次 task_plan。
 
@@ -850,7 +871,8 @@ class PlanAgent(BaseAgent):
 
 10. 如果用户只是寒暄、提问或闲聊，不要创建任务。
         """
-        super().__init__(model, system_prompt)
+        super().__init__(model, system_prompt, agent_name="PlanAgent")
+        self.agent_color = PLAN_COLOR
         self.task_store = task_store
         self.register_tool(ListFilesTool())
         self.register_tool(GetFileMetadataTool())
@@ -923,7 +945,8 @@ status = "failed"
 
 7. 提供简短清晰的执行结果。
         """
-        super().__init__(model, system_prompt)
+        super().__init__(model, system_prompt, agent_name="ExecuteAgent")
+        self.agent_color = EXECUTE_COLOR
         self.task_store = task_store
         self.register_tool(ListFilesTool())
         self.register_tool(GetFileMetadataTool())
@@ -944,7 +967,7 @@ def print_task_summary(task_store: TaskStore) -> None:
     if not all_tasks:
         return
 
-    print("\n助手：任务执行完成，结果如下：")
+    print(f"\n{color_text('助手：任务执行完成，结果如下：', INFO_COLOR)}")
     for task in all_tasks:
         print(f"- [{task['status']}] {task['description']}")
 
@@ -959,16 +982,16 @@ def run_tasks(exec_agent: ExecuteAgent, task_store: TaskStore):
             break
 
         task_store.update_task(task.id, "running")
-        print(f"\n[执行中] {task.description}")
+        print(color_text(f"\n[执行中] {task.description}", EXECUTE_COLOR))
 
-        # exec_agent 静默执行，不向用户打印，结果仅反馈给 plan_agent
+        # ExecuteAgent 直接向用户展示执行过程
         task_prompt = (
             f"任务ID：{task.id}\n"
             f"任务描述：{task.description}\n\n"
             "执行完成后请调用 update_task 更新最终状态。"
         )
         try:
-            result = exec_agent.chat(task_prompt, silent=True, reset_history=True)
+            result = exec_agent.chat(task_prompt, silent=False, reset_history=True)
         except Exception as e:
             logger.exception("执行任务失败: %s", task.description)
             result = f"执行异常：{e}"
@@ -985,7 +1008,12 @@ def run_tasks(exec_agent: ExecuteAgent, task_store: TaskStore):
         if latest_task is None:
             raise RuntimeError(f"task disappeared: {task.id}")
 
-        print(f"[任务结束] {latest_task.description} -> {latest_task.status}")
+        print(
+            color_text(
+                f"[任务结束] {latest_task.description} -> {latest_task.status}",
+                EXECUTE_COLOR,
+            )
+        )
 
     print_task_summary(task_store)
 
